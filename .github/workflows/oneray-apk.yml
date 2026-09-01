@@ -35,6 +35,22 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Set up release signing (skipped if secrets absent -> debug-signed)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "No ANDROID_KEYSTORE_BASE64 secret -> APK will be debug-signed."
+            exit 0
+          fi
+          echo "$KS_B64" | base64 -d > android/app/oneray.jks
+          printf 'storeFile=oneray.jks\nstorePassword=%s\nkeyPassword=%s\nkeyAlias=%s\n' \
+            "$KS_PASS" "$KEY_PASS" "$KEY_ALIAS" > android/key.properties
+          echo "Release signing configured."
+
       - name: Prepare (pub get / codegen / download core .aar)
         run: make android-apk-prepare
 
