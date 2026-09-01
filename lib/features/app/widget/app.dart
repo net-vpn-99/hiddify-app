@@ -81,6 +81,8 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
           child: ConnectionWrapper(
             DynamicColorBuilder(
               builder: (ColorScheme? lightColorScheme, ColorScheme? darkColorScheme) {
+                // OneRay: ignore Material You / wallpaper colors -- always use the
+                // brand gold seed so 光速 looks the same on every device.
                 return MaterialApp.router(
                   routerConfig: router,
                   locale: locale.flutterLocale,
@@ -88,8 +90,8 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
                   localizationsDelegates: GlobalMaterialLocalizations.delegates,
                   debugShowCheckedModeBanner: false,
                   themeMode: themeMode.flutterThemeMode,
-                  theme: theme.lightTheme(lightColorScheme),
-                  darkTheme: theme.darkTheme(darkColorScheme),
+                  theme: theme.lightTheme(null),
+                  darkTheme: theme.darkTheme(null),
                   title: Constants.appName,
                   builder: (context, child) {
                     final theme = Theme.of(context);
