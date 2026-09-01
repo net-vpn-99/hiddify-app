@@ -1,0 +1,68 @@
+name: OneRay APK
+
+# 极简安卓打包：push 到 oneray-rel 分支就自动出 APK。也可在 Actions 页手动 Run。
+# 基于 hiddify-app 的 v4.1.2 正式发布 tag（不是 main，main 领先发布 3 个月未经测试）。
+# 上游那套 ci/release/build.yml 不用（签名/发布/Sentry/TestFlight 太复杂）。
+
+on:
+  push:
+    branches: [oneray-rel]
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: "3.38.5"
+  CHANNEL: prod          # 用正式版 hiddify-next-core v4.1.0（不是 draft）
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: subosito/flutter-action@v2.21.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Set up release signing (skipped if secrets absent -> debug-signed)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "No ANDROID_KEYSTORE_BASE64 secret -> APK will be debug-signed."
+            exit 0
+          fi
+          echo "$KS_B64" | base64 -d > android/app/oneray.jks
+          printf 'storeFile=oneray.jks\nstorePassword=%s\nkeyPassword=%s\nkeyAlias=%s\n' \
+            "$KS_PASS" "$KEY_PASS" "$KEY_ALIAS" > android/key.properties
+          echo "Release signing configured."
+
+      - name: Prepare (pub get / codegen / download core .aar)
+        run: make android-apk-prepare
+
+      - name: Build APK (armeabi-v7a / arm64-v8a / x86_64 / universal via gradle splits)
+        run: flutter build apk --release -t lib/main_prod.dart --dart-define sentry_dsn=
+
+      - name: List outputs
+        run: ls -la build/app/outputs/flutter-apk/ && du -h build/app/outputs/flutter-apk/*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OneRay-APK
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 14
+          if-no-files-found: error
