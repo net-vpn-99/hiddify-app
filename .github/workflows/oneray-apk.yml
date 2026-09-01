@@ -54,14 +54,17 @@ jobs:
       - name: Prepare (pub get / codegen / download core .aar)
         run: make android-apk-prepare
 
-      - name: Build split APKs
-        run: flutter build apk --release --split-per-abi -t lib/main_prod.dart --dart-define sentry_dsn=
-
-      - name: Build universal APK
+      - name: Build APK
+        # NOT --split-per-abi: android/app/build.gradle already has its own
+        # `splits { abi { ... universalApk true } }` block (that's how upstream
+        # Hiddify does it too, via fastforge). Stacking Flutter's own
+        # --split-per-abi on top of that gradle-level split just built (and
+        # uploaded) everything twice for no reason -- drop it, one build now
+        # produces armeabi-v7a / arm64-v8a / x86_64 / universal in one pass.
         run: flutter build apk --release -t lib/main_prod.dart --dart-define sentry_dsn=
 
       - name: List outputs
-        run: ls -la build/app/outputs/flutter-apk/
+        run: ls -la build/app/outputs/flutter-apk/ && du -h build/app/outputs/flutter-apk/*.apk
 
       - uses: actions/upload-artifact@v6
         with:
