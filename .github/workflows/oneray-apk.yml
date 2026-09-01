@@ -1,0 +1,55 @@
+name: OneRay APK
+
+# 极简安卓打包：改完代码 push 到 oneray 分支就自动出 APK。
+# 也可以在 Actions 页面手动点 "Run workflow"。
+# 上游那套 ci/release/build.yml 不用（签名/发布/Sentry/TestFlight 太复杂）。
+
+on:
+  push:
+    branches: [oneray]
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: "3.38.5"
+  CHANNEL: prod          # 用稳定版 hiddify-core (v4.1.0)，不是 draft
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Prepare (pub get / codegen / download core .aar)
+        run: make android-apk-prepare
+
+      - name: Build split APKs
+        run: flutter build apk --release --split-per-abi -t lib/main_prod.dart --dart-define sentry_dsn=
+
+      - name: Build universal APK
+        run: flutter build apk --release -t lib/main_prod.dart --dart-define sentry_dsn=
+
+      - name: List outputs
+        run: ls -la build/app/outputs/flutter-apk/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OneRay-APK
+          path: build/app/outputs/flutter-apk/*.apk
+          retention-days: 14
+          if-no-files-found: error
