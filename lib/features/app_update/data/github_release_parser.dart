@@ -44,6 +44,7 @@ abstract class GithubReleaseParser {
       publishedAt: publishedAt,
       flavor: flavor,
       apkUrl: apkUrl,
+      mandatory: json["mandatory"] == true,
     );
   }
 }

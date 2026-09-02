@@ -17,6 +17,8 @@ class RemoteVersionEntity with _$RemoteVersionEntity {
     required Environment flavor,
     // OneRay: 直接下载地址（自建 releases.json 的 assets[].browser_download_url）
     String? apkUrl,
+    // OneRay: 强制更新 —— releases.json 里 "mandatory": true，弹窗不可关闭
+    @Default(false) bool mandatory,
   }) = _RemoteVersionEntity;
 
   String get presentVersion => flavor == Environment.prod ? version : "$version ${flavor.name}";

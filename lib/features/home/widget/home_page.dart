@@ -43,7 +43,7 @@ class HomePage extends HookConsumerWidget {
         await ref.read(dialogNotifierProvider.notifier).showNewVersion(
               currentVersion: appInfo.presentVersion,
               newVersion: versionInfo,
-              canIgnore: true,
+              canIgnore: !versionInfo.mandatory,
             );
       }
     });

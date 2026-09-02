@@ -28,9 +28,11 @@ class AboutPage extends HookConsumerWidget {
       if (!context.mounted) return;
       switch (next) {
         case AppUpdateStateAvailable(:final versionInfo) || AppUpdateStateIgnored(:final versionInfo):
-          return await ref
-              .read(dialogNotifierProvider.notifier)
-              .showNewVersion(currentVersion: appInfo.presentVersion, newVersion: versionInfo, canIgnore: false);
+          return await ref.read(dialogNotifierProvider.notifier).showNewVersion(
+                currentVersion: appInfo.presentVersion,
+                newVersion: versionInfo,
+                canIgnore: !versionInfo.mandatory,
+              );
         case AppUpdateStateError(:final error):
           return CustomToast.error(t.presentShortError(error)).show(context);
         case AppUpdateStateNotAvailable():

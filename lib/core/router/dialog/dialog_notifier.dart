@@ -36,13 +36,13 @@ class DialogNotifier extends _$DialogNotifier {
   @override
   void build() {}
 
-  Future<T?> _show<T>(Widget child) async {
+  Future<T?> _show<T>(Widget child, {bool barrierDismissible = true}) async {
     final context = rootNavKey.currentContext;
     if (context == null) return null;
     // ref.read(popupCountNotifierProvider.notifier).increase();
-    return await Navigator.of(context).push<T>(DialogRoute(context: context, builder: (context) => child)).then((
-      value,
-    ) {
+    return await Navigator.of(context)
+        .push<T>(DialogRoute(context: context, barrierDismissible: barrierDismissible, builder: (context) => child))
+        .then((value) {
       // ref.read(popupCountNotifierProvider.notifier).decrease();
       return value;
     });
@@ -95,7 +95,10 @@ class DialogNotifier extends _$DialogNotifier {
     required RemoteVersionEntity newVersion,
     required bool canIgnore,
   }) async {
-    return await _show<void>(NewVersionDialog(currentVersion, newVersion, canIgnore: canIgnore));
+    return await _show<void>(
+      NewVersionDialog(currentVersion, newVersion, canIgnore: canIgnore),
+      barrierDismissible: canIgnore,
+    );
   }
 
   Future<bool> showConfirmation({

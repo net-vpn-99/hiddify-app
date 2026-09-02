@@ -80,57 +80,66 @@ class NewVersionDialog extends HookConsumerWidget with PresLogger {
       );
     }
 
-    return AlertDialog(
-      title: Text(t.dialogs.newVersion.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(t.dialogs.newVersion.msg),
-          const Gap(8),
-          Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(text: t.dialogs.newVersion.currentVersion, style: theme.textTheme.bodySmall),
-                TextSpan(text: currentVersion, style: theme.textTheme.labelMedium),
-              ],
-            ),
-          ),
-          Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(text: t.dialogs.newVersion.newVersion, style: theme.textTheme.bodySmall),
-                TextSpan(text: newVersion.presentVersion, style: theme.textTheme.labelMedium),
-              ],
-            ),
-          ),
-          if (error.value != null) ...[
+    return PopScope(
+      canPop: canIgnore,
+      child: AlertDialog(
+        title: Text(t.dialogs.newVersion.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(t.dialogs.newVersion.msg),
             const Gap(8),
-            Text(error.value!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: t.dialogs.newVersion.currentVersion, style: theme.textTheme.bodySmall),
+                  TextSpan(text: currentVersion, style: theme.textTheme.labelMedium),
+                ],
+              ),
+            ),
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: t.dialogs.newVersion.newVersion, style: theme.textTheme.bodySmall),
+                  TextSpan(text: newVersion.presentVersion, style: theme.textTheme.labelMedium),
+                ],
+              ),
+            ),
+            if (!canIgnore) ...[
+              const Gap(8),
+              Text('此版本为必须更新，请立即升级后继续使用。',
+                  style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
+            ],
+            if (error.value != null) ...[
+              const Gap(8),
+              Text(error.value!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
+            ],
           ],
-        ],
-      ),
-      actions: [
-        if (canIgnore)
+        ),
+        actions: [
+          if (canIgnore) ...[
+            TextButton(
+              onPressed: () async {
+                // 以后再说 = 忽略这个版本，下个版本才再提醒
+                await ref.read(appUpdateNotifierProvider.notifier).ignoreRelease(newVersion);
+                if (context.mounted) context.pop();
+              },
+              child: const Text('以后再说'),
+            ),
+          ],
           TextButton(
             onPressed: () async {
-              await ref.read(appUpdateNotifierProvider.notifier).ignoreRelease(newVersion);
-              if (context.mounted) context.pop();
+              if (canInApp) {
+                await startInAppUpdate();
+              } else {
+                await UriUtils.tryLaunch(Uri.parse(newVersion.url));
+              }
             },
-            child: Text(t.common.ignore),
+            child: Text(t.dialogs.newVersion.updateNow),
           ),
-        TextButton(onPressed: context.pop, child: Text(t.common.later)),
-        TextButton(
-          onPressed: () async {
-            if (canInApp) {
-              await startInAppUpdate();
-            } else {
-              await UriUtils.tryLaunch(Uri.parse(newVersion.url));
-            }
-          },
-          child: Text(t.dialogs.newVersion.updateNow),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
