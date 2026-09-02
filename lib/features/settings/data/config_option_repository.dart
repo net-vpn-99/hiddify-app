@@ -45,7 +45,8 @@ abstract class ConfigOptions {
     mapTo: (value) => value.name,
   );
 
-  static final resolveDestination = PreferencesNotifier.create<bool, bool>("resolve-destination", false);
+  // OneRay: 墙内需要开，否则部分域名解析不到（baidu/youtube 打不开）
+  static final resolveDestination = PreferencesNotifier.create<bool, bool>("resolve-destination", true);
 
   static final ipv6Mode = PreferencesNotifier.create<IPv6Mode, String>(
     "ipv6-mode",
@@ -174,7 +175,8 @@ abstract class ConfigOptions {
 
   static final allowConnectionFromLan = PreferencesNotifier.create<bool, bool>("allow-connection-from-lan", false);
 
-  static final enableFakeDns = PreferencesNotifier.create<bool, bool>("enable-fake-dns", false);
+  // OneRay: 墙内需要开，配合 resolve-destination 才能稳定解析
+  static final enableFakeDns = PreferencesNotifier.create<bool, bool>("enable-fake-dns", true);
 
   // static final enableDnsRouting = PreferencesNotifier.create<bool, bool>("enable-dns-routing", true);
 
