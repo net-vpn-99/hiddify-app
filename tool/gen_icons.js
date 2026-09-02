@@ -1,20 +1,28 @@
-// Renders the OneRay / 光速 Android launcher icons with no native deps.
-// Geometry from ui/one-ray/brand/logo-ray-cut.svg (256 viewBox).
+// Renders the OneRay / 光速 Android launcher + notification icons with no native deps.
 //   node tool/gen_icons.js
-// Writes the full mipmap set + adaptive-icon PNGs directly (no flutter_launcher_icons).
+// Geometry + colors are the frozen brand master (VPN repo: ui/one-ray/brand/final/
+// oneray-mark.svg — circle r=112 @ (128,128), upper-right negative-space light slit).
+// Writes the full mipmap set, adaptive foreground + monochrome, and the notification
+// status-bar icon. No flutter_launcher_icons.
 const fs = require("fs");
 const zlib = require("zlib");
 const path = require("path");
 
 const RES = "android/app/src/main/res";
-const GOLD = [0xe4, 0xa8, 0x2c];
-const CREAM = [0xff, 0xf7, 0xe9];
+const GRAPHITE = [0x24, 0x25, 0x20];
+const IVORY = [0xf3, 0xf1, 0xeb];
+const WHITE = [0xff, 0xff, 0xff];
 const SS = 4;
 
-// beam wedge from logo-ray-cut.svg, designed against a r=72 circle at (128,128).
-// scaleBeam() keeps it proportional when the circle is enlarged.
-const beam0 = [[112, 139], [183, 57], [205, 76], [119, 146]];
-const scaleBeam = (r) => beam0.map(([x, y]) => [128 + (x - 128) * (r / 72), 128 + (y - 128) * (r / 72)]);
+// Light-slit wedge from oneray-mark.svg, normalised to the r=112 master circle at
+// (128,128). scaleBeam() keeps it proportional when the mark circle is resized.
+const beam0 = [
+  [196.9541, 39.7428],
+  [103.0267, 146.328],
+  [114.3067, 157.672],
+  [220.8522, 65.3704],
+].map(([x, y]) => [(x - 128) / 112, (y - 128) / 112]);
+const scaleBeam = (r) => beam0.map(([x, y]) => [128 + x * r, 128 + y * r]);
 
 function roundRectContains(x, y, w, h, r) {
   if (x < 0 || y < 0 || x > w || y > h) return false;
@@ -34,26 +42,33 @@ function polyContains(x, y, pts) {
   return inside;
 }
 
-// mode: "legacy" (gold badge + mark, square), "round" (gold disc + mark),
-//       "fg" (mark only, transparent, adaptive-icon safe zone)
+// mode:
+//   "legacy" graphite rounded-square badge + ivory mark
+//   "round"  graphite disc + ivory mark
+//   "fg"     ivory mark only, transparent (adaptive foreground, safe zone)
+//   "mono"   white mark only, transparent (Android 13 themed icon)
+//   "notify" white mark only, transparent (status-bar small icon)
 function render(size, mode) {
   const N = size * SS;
   const px = Buffer.alloc(N * N * 4, 0);
-  const circR = mode === "fg" ? 102 : 96;
-  const beam = scaleBeam(circR);
+  // mark circle radius in the 256 master grid
+  const markR =
+    mode === "fg" || mode === "mono" ? 76 : mode === "notify" ? 92 : mode === "splash" ? 96 : mode === "splash12" ? 46 : 98;
+  const beam = scaleBeam(markR);
+  const markColor = mode === "mono" || mode === "notify" ? WHITE : IVORY;
   for (let py = 0; py < N; py++) {
     for (let pxi = 0; pxi < N; pxi++) {
       const x = (pxi / N) * 256, y = (py / N) * 256;
       let c = [0, 0, 0, 0];
-      const inMark = dist(x, y, 128, 128) <= circR && !polyContains(x, y, beam);
+      const inMark = dist(x, y, 128, 128) <= markR && !polyContains(x, y, beam);
       if (mode === "legacy") {
-        if (roundRectContains(x, y, 256, 256, 52)) c = [...GOLD, 255];
-        if (inMark) c = [...CREAM, 255];
+        if (roundRectContains(x, y, 256, 256, 56)) c = [...GRAPHITE, 255];
+        if (inMark) c = [...markColor, 255];
       } else if (mode === "round") {
-        if (dist(x, y, 128, 128) <= 128) c = [...GOLD, 255];
-        if (inMark) c = [...CREAM, 255];
+        if (dist(x, y, 128, 128) <= 128) c = [...GRAPHITE, 255];
+        if (inMark) c = [...markColor, 255];
       } else {
-        if (inMark) c = [...CREAM, 255];
+        if (inMark) c = [...markColor, 255];
       }
       const o = (py * N + pxi) * 4;
       px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = c[3];
@@ -115,6 +130,7 @@ function writePng(file, rgba, w, h) {
 
 const LEGACY = { mdpi: 48, hdpi: 72, xhdpi: 96, xxhdpi: 144, xxxhdpi: 192 };
 const FG = { mdpi: 108, hdpi: 162, xhdpi: 216, xxhdpi: 324, xxxhdpi: 432 };
+const NOTIFY = { mdpi: 24, hdpi: 36, xhdpi: 48, xxhdpi: 72, xxxhdpi: 96 };
 
 for (const [d, s] of Object.entries(LEGACY)) {
   writePng(`${RES}/mipmap-${d}/ic_launcher.png`, render(s, "legacy"), s, s);
@@ -122,16 +138,25 @@ for (const [d, s] of Object.entries(LEGACY)) {
 }
 for (const [d, s] of Object.entries(FG)) {
   writePng(`${RES}/mipmap-${d}/ic_launcher_foreground.png`, render(s, "fg"), s, s);
+  writePng(`${RES}/mipmap-${d}/ic_launcher_monochrome.png`, render(s, "mono"), s, s);
+}
+for (const [d, s] of Object.entries(NOTIFY)) {
+  writePng(`${RES}/drawable-${d}/ic_stat_logo.png`, render(s, "notify"), s, s);
 }
 // Play Store / generic 512
 fs.mkdirSync("assets/icon", { recursive: true });
 writePng("assets/icon/icon-512.png", render(512, "legacy"), 512, 512);
 
-// adaptive-icon xml + background color (mirrors Hiddify's own ic_banner setup)
+// flutter_native_splash sources (bg color set in pubspec.yaml -> #242520)
+writePng("assets/images/source/ic_launcher_splash.png", render(768, "splash"), 768, 768);
+writePng("assets/images/source/ic_launcher_foreground.png", render(960, "splash12"), 960, 960);
+
+// adaptive-icon xml (+ monochrome for Android 13 themed icons) + background color
 const adaptive = `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
 </adaptive-icon>
 `;
 fs.mkdirSync(`${RES}/mipmap-anydpi-v26`, { recursive: true });
@@ -141,7 +166,7 @@ fs.writeFileSync(
   `${RES}/values/ic_launcher_background.xml`,
   `<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#E4A82C</color>
+    <color name="ic_launcher_background">#242520</color>
 </resources>
 `,
 );
