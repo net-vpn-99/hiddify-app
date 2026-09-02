@@ -99,6 +99,10 @@ abstract class Preferences {
   // OneRay: 是否已登录光速会员账号（同步可读，用于路由判断；令牌本身在 flutter_secure_storage）
   static final panelLoggedIn = PreferencesNotifier.create<bool, bool>("panel_logged_in", false);
 
+  // OneRay: 上次连接的线路名 / 说明，断开时也能在首页显示"当前线路"
+  static final lastNodeName = PreferencesNotifier.create<String, String>("last_node_name", "");
+  static final lastNodeDesc = PreferencesNotifier.create<String, String>("last_node_desc", "");
+
   static final dynamicNotification = PreferencesNotifier.create<bool, bool>("dynamic_notification", true);
 
   static final autoCheckIp = PreferencesNotifier.create<bool, bool>("auto_check_ip", true);

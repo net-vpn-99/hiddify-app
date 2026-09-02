@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/failures.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
@@ -156,6 +157,26 @@ class ProfileTile extends HookConsumerWidget {
                                   ? t.pages.profiles.activeProfileName(name: profile.name)
                                   : t.pages.profiles.nonActiveProfileName(name: profile.name),
                             ),
+                          if (isMain) ...[
+                            Builder(
+                              builder: (context) {
+                                final line = ref.watch(Preferences.lastNodeName);
+                                if (line.isEmpty) return const SizedBox.shrink();
+                                final desc = ref.watch(Preferences.lastNodeDesc);
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 2),
+                                  child: Text(
+                                    desc.isEmpty ? '线路：$line' : '线路：$line · $desc',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
                           if (subInfo != null) ...[
                             const Gap(4),
                             RemainingTrafficIndicator(subInfo.ratio),

@@ -4,6 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/app_update/data/apk_installer.dart';
@@ -15,6 +16,8 @@ import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/widget/profile_tile.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_card.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_delay_indicator.dart';
+import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
+import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/gen/assets.gen.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:sliver_tools/sliver_tools.dart';
@@ -37,6 +40,14 @@ class HomePage extends HookConsumerWidget {
       });
       return null;
     }, const []);
+    // OneRay: 记住当前线路名，断开时首页也能显示
+    ref.listen(activeProxyNotifierProvider, (_, next) {
+      final tag = next.valueOrNull?.tagDisplay ?? '';
+      if (tag.isEmpty) return;
+      final n = splitNodeName(tag);
+      ref.read(Preferences.lastNodeName.notifier).update(n.name);
+      ref.read(Preferences.lastNodeDesc.notifier).update(n.desc);
+    });
     ref.listen(appUpdateNotifierProvider, (_, next) async {
       if (!context.mounted) return;
       if (next case AppUpdateStateAvailable(:final versionInfo)) {
