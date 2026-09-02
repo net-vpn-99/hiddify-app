@@ -17,7 +17,6 @@ class ProxyInfoDialog extends HookConsumerWidget {
     final t = ref.watch(translationsProvider).requireValue;
     final theme = Theme.of(context);
     final n = splitNodeName(outboundInfo.tagDisplay);
-    final delay = outboundInfo.urlTestDelay;
     final loc = [outboundInfo.ipinfo.city, outboundInfo.ipinfo.region]
         .where((e) => e.isNotEmpty)
         .join(' · ');
@@ -45,8 +44,6 @@ class ProxyInfoDialog extends HookConsumerWidget {
               padding: const EdgeInsets.only(bottom: 8),
               child: Text(n.desc, style: theme.textTheme.bodySmall),
             ),
-          if (delay > 0 && delay < 65000) row('延迟', '$delay ms'),
-          if (delay >= 65000) row('延迟', '超时'),
           if (loc.isNotEmpty) row('出口', loc),
         ],
       ),
