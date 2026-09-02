@@ -1,9 +1,13 @@
 import 'package:dartx/dartx.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
+import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
+import 'package:hiddify/features/app_update/notifier/app_update_state.dart';
 import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/widget/profile_tile.dart';
@@ -22,6 +26,25 @@ class HomePage extends HookConsumerWidget {
     final t = ref.watch(translationsProvider).requireValue;
     // final hasAnyProfile = ref.watch(hasAnyProfileProvider);
     final activeProfile = ref.watch(activeProfileProvider);
+
+    // OneRay: 启动后静默检查更新一次（源 = guangsuleida.com/oneray/android/releases.json）
+    useEffect(() {
+      Future.delayed(const Duration(seconds: 3), () {
+        if (context.mounted) ref.read(appUpdateNotifierProvider.notifier).check();
+      });
+      return null;
+    }, const []);
+    ref.listen(appUpdateNotifierProvider, (_, next) async {
+      if (!context.mounted) return;
+      if (next case AppUpdateStateAvailable(:final versionInfo)) {
+        final appInfo = ref.read(appInfoProvider).requireValue;
+        await ref.read(dialogNotifierProvider.notifier).showNewVersion(
+              currentVersion: appInfo.presentVersion,
+              newVersion: versionInfo,
+              canIgnore: true,
+            );
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
