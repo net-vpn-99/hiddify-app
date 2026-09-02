@@ -99,6 +99,41 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     }
   }
 
+  Future<String?> sendEmailCode(String email) async {
+    try {
+      await _api.sendEmailCode(email);
+      return null;
+    } on PanelApiException catch (e) {
+      return e.message;
+    } catch (e) {
+      return '出错了：$e';
+    }
+  }
+
+  Future<String?> resetPassword(String email, String newPassword, String code) async {
+    try {
+      await _api.resetPassword(email, newPassword, code);
+      return null;
+    } on PanelApiException catch (e) {
+      return e.message;
+    } catch (e) {
+      return '出错了：$e';
+    }
+  }
+
+  Future<({String code, String link})?> getInvite() async {
+    final token = await currentToken();
+    if (token == null || token.isEmpty) return null;
+    try {
+      return await _api.getInvite(token);
+    } on PanelApiException catch (e) {
+      if (e.unauthorized) await logout();
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> logout() async {
     await _secureStorage.delete(key: _kTokenKey);
     await _secureStorage.delete(key: _kEmailKey);

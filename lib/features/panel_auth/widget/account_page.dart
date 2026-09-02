@@ -97,13 +97,19 @@ class AccountPage extends HookConsumerWidget {
             OutlinedButton.icon(
               icon: const Icon(Icons.group_add_outlined),
               label: const Text('邀请好友'),
-              onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.panelInviteUrl)),
+              onPressed: () => context.pushNamed('invite'),
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
               icon: const Icon(Icons.password_outlined),
               label: const Text('修改密码'),
-              onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.panelProfileUrl)),
+              onPressed: () {
+                final mail = a?.email ?? auth.email;
+                context.pushNamed(
+                  'resetPassword',
+                  queryParameters: {if (mail != null && mail.isNotEmpty) 'email': mail},
+                );
+              },
             ),
             const SizedBox(height: 24),
             TextButton(

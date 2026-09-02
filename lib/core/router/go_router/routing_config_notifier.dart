@@ -11,7 +11,9 @@ import 'package:hiddify/features/home/widget/home_page.dart';
 import 'package:hiddify/features/intro/widget/intro_page.dart';
 import 'package:hiddify/features/log/overview/logs_page.dart';
 import 'package:hiddify/features/panel_auth/widget/account_page.dart';
+import 'package:hiddify/features/panel_auth/widget/invite_page.dart';
 import 'package:hiddify/features/panel_auth/widget/login_page.dart';
+import 'package:hiddify/features/panel_auth/widget/reset_password_page.dart';
 import 'package:hiddify/features/per_app_proxy/overview/per_app_proxy_page.dart';
 import 'package:hiddify/features/profile/details/profile_details_page.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
@@ -256,6 +258,12 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         GoRoute(name: 'intro', path: '/intro', builder: (_, _) => const IntroPage()),
         GoRoute(name: 'login', path: '/login', builder: (_, _) => const LoginPage()),
         GoRoute(name: 'account', path: '/account', builder: (_, _) => const AccountPage()),
+        GoRoute(name: 'invite', path: '/invite', builder: (_, _) => const InvitePage()),
+        GoRoute(
+          name: 'resetPassword',
+          path: '/reset-password',
+          builder: (_, state) => ResetPasswordPage(email: state.uri.queryParameters['email']),
+        ),
       ],
     );
   }

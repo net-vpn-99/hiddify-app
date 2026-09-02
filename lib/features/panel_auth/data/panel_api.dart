@@ -103,6 +103,72 @@ class PanelApi {
     );
   }
 
+  /// 发邮箱验证码（注册 / 找回密码用）。
+  Future<void> sendEmailCode(String email) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '/api/v1/passport/comm/sendEmailVerify',
+        data: {'email': email.trim()},
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    final data = _dataOf(res.data);
+    if (data != null || res.statusCode == 200) return;
+    throw PanelApiException(_messageOf(res.data) ?? '验证码发送失败，请稍后再试');
+  }
+
+  /// 用邮箱验证码重置密码。
+  Future<void> resetPassword(String email, String newPassword, String code) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '/api/v1/passport/auth/forget',
+        data: {'email': email.trim(), 'password': newPassword, 'email_code': code.trim()},
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    if (_dataOf(res.data) != null || res.statusCode == 200) return;
+    throw PanelApiException(_messageOf(res.data) ?? '重置失败，请检查验证码');
+  }
+
+  /// 拿邀请码（没有就让面板生成一个），返回 (code, link)。
+  Future<({String code, String link})> getInvite(String token) async {
+    final opt = Options(headers: {'auth_data': token, 'Authorization': token});
+    String? readCode(dynamic body) {
+      final data = _dataOf(body);
+      final codes = data?['codes'];
+      if (codes is List) {
+        for (final c in codes) {
+          if (c is Map && c['code'] is String && (c['code'] as String).isNotEmpty) {
+            return c['code'] as String;
+          }
+        }
+      }
+      return null;
+    }
+
+    Response<dynamic> res;
+    try {
+      res = await _dio.get<dynamic>('/api/v1/user/invite/fetch', options: opt);
+      if (res.statusCode == 401 || res.statusCode == 403) {
+        throw PanelApiException('登录已过期，请重新登录', unauthorized: true);
+      }
+      var code = readCode(res.data);
+      if (code == null) {
+        await _dio.get<dynamic>('/api/v1/user/invite/save', options: opt);
+        res = await _dio.get<dynamic>('/api/v1/user/invite/fetch', options: opt);
+        code = readCode(res.data);
+      }
+      if (code == null) throw PanelApiException('面板没有返回邀请码');
+      return (code: code, link: 'https://www.guangsuleida.com/i/?c=$code');
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+  }
+
   // --- helpers ---
 
   String? _extractToken(dynamic body) {

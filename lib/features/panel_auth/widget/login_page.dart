@@ -117,14 +117,13 @@ class LoginPage extends HookConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     TextButton(
-                      onPressed: () => UriUtils.tryLaunch(
-                        Uri.parse(Constants.panelRegisterUrl),
-                      ),
+                      onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.panelRegisterUrl)),
                       child: const Text('注册账号'),
                     ),
                     TextButton(
-                      onPressed: () => UriUtils.tryLaunch(
-                        Uri.parse(Constants.panelForgotUrl),
+                      onPressed: () => context.pushNamed(
+                        'resetPassword',
+                        queryParameters: {if (emailCtrl.text.trim().isNotEmpty) 'email': emailCtrl.text.trim()},
                       ),
                       child: const Text('忘记密码'),
                     ),
