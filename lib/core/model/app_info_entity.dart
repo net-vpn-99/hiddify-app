@@ -17,7 +17,9 @@ class AppInfoEntity with _$AppInfoEntity {
     required Environment environment,
   }) = _AppInfoEntity;
 
-  String get userAgent => "HiddifyNext/$version ($operatingSystem) like ClashMeta v2ray sing-box";
+  // OneRay: 不含 "sing-box" / "clash" —— 否则 Xboard 订阅返回完整 sing-box 模板，
+  // hiddify-core 提取不出节点会崩。用 v2ray token 让它返回 vless:// 列表，core 自己套模板。
+  String get userAgent => "OneRay/$version ($operatingSystem) v2ray";
 
   String get presentVersion => environment == Environment.prod ? version : "$version ${environment.name}";
 
