@@ -96,6 +96,9 @@ abstract class Preferences {
 
   static final markNewProfileActive = PreferencesNotifier.create<bool, bool>("mark_new_profile_active", true);
 
+  // OneRay: 是否已登录光速会员账号（同步可读，用于路由判断；令牌本身在 flutter_secure_storage）
+  static final panelLoggedIn = PreferencesNotifier.create<bool, bool>("panel_logged_in", false);
+
   static final dynamicNotification = PreferencesNotifier.create<bool, bool>("dynamic_notification", true);
 
   static final autoCheckIp = PreferencesNotifier.create<bool, bool>("auto_check_ip", true);

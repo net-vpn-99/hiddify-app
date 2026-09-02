@@ -241,7 +241,19 @@ class AddProfileManual extends HookConsumerWidget {
               ],
             ),
           ),
-          // const Gap(16),
+          const Divider(indent: 16, endIndent: 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.person_outline),
+              label: const Text('用光速账号登录（自动导入）'),
+              onPressed: () {
+                final router = GoRouter.of(context);
+                Navigator.of(context).pop(); // 关掉底部弹层
+                router.pushNamed('login');
+              },
+            ),
+          ),
         ],
       ),
     );

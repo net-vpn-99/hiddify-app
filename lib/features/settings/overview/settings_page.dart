@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
+import 'package:hiddify/features/panel_auth/widget/account_tile.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
 import 'package:hiddify/features/settings/notifier/reset_tunnel/reset_tunnel_notifier.dart';
 import 'package:hiddify/utils/utils.dart';
@@ -141,6 +142,8 @@ class SettingsPage extends HookConsumerWidget {
       body: ListView(
         children: [
           // TipCard(message: t.settings.experimentalMsg),
+          const AccountTile(),
+          const Divider(height: 1),
           SettingsSection(
             title: t.pages.settings.general.title,
             icon: Icons.layers_rounded,

@@ -3,9 +3,14 @@ import 'package:flutter/services.dart';
 
 abstract class Constants {
   static const appName = "光速";
+  // OneRay: 会员系统 API（登录 / 拉订阅），对接 Xboard，与桌面版同一套接口
+  static const panelApiBase = "https://api.guangsuleida.com";
+  static const panelRegisterUrl = "https://panel.guangsuleida.com/#/register";
+  static const panelForgotUrl = "https://panel.guangsuleida.com/#/forget";
   static const githubUrl = "https://www.guangsuleida.com/help.html";
   static const licenseUrl = "https://www.guangsuleida.com/help.html";
-  static const githubReleasesApiUrl = "https://api.github.com/repos/net-vpn-99/hiddify-app/releases";
+  // OneRay: 自建更新源（GitHub releases API 国内连不上）。JSON 只需 tag_name / prerelease / published_at / html_url
+  static const githubReleasesApiUrl = "https://www.guangsuleida.com/oneray/android/releases.json";
   static const githubLatestReleaseUrl = "https://www.guangsuleida.com/";
   static const appCastUrl = "https://www.guangsuleida.com/oneray/android/appcast.xml";
   static const telegramChannelUrl = "https://t.me/+LQ-pvMvK4ClkNzFk";
