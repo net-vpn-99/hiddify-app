@@ -57,10 +57,22 @@ jobs:
       - name: Regenerate brand launcher icons (OneRay / 光速)
         run: node tool/gen_icons.js
 
+      - name: Resolve version from pubspec
+        id: ver
+        run: |
+          V=$(grep -m1 '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//')
+          NAME=${V%%+*}
+          CODE=${V##*+}
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "构建版本 $NAME ($CODE)  commit ${GITHUB_SHA::7}" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build APK (armeabi-v7a / arm64-v8a / x86_64 / universal via gradle splits)
         run: |
           set -o pipefail
-          flutter build apk --release -t lib/main_prod.dart --dart-define sentry_dsn= 2>&1 | tee /tmp/build.log
+          flutter build apk --release -t lib/main_prod.dart \
+            --build-name=${{ steps.ver.outputs.name }} --build-number=${{ steps.ver.outputs.code }} \
+            --dart-define sentry_dsn= 2>&1 | tee /tmp/build.log
 
       - name: Show build errors (on failure)
         if: failure()
@@ -75,12 +87,19 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: List outputs
-        run: ls -la build/app/outputs/flutter-apk/ && du -h build/app/outputs/flutter-apk/*.apk
+      - name: List outputs + rename APKs with version
+        run: |
+          cd build/app/outputs/flutter-apk
+          ls -la
+          for f in *.apk; do
+            abi=$(echo "$f" | sed -E 's/app-(.*)-release\.apk/\1/; s/app-release\.apk/universal/')
+            mv "$f" "OneRay-${{ steps.ver.outputs.name }}-${abi}.apk"
+          done
+          ls -la; du -h *.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: OneRay-APK
+          name: OneRay-APK-v${{ steps.ver.outputs.name }}-${{ github.run_number }}
           path: build/app/outputs/flutter-apk/*.apk
           retention-days: 14
           if-no-files-found: error
