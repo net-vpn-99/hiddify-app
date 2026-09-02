@@ -6,6 +6,7 @@ import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/app_update/data/apk_installer.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_state.dart';
 import 'package:hiddify/features/home/widget/connection_button.dart';
@@ -27,8 +28,9 @@ class HomePage extends HookConsumerWidget {
     // final hasAnyProfile = ref.watch(hasAnyProfileProvider);
     final activeProfile = ref.watch(activeProfileProvider);
 
-    // OneRay: 启动后静默检查更新一次（源 = guangsuleida.com/oneray/android/releases.json）
+    // OneRay: 启动后清掉残留更新包 + 静默检查更新一次
     useEffect(() {
+      ApkInstaller.cleanupApks();
       Future.delayed(const Duration(seconds: 3), () {
         if (context.mounted) ref.read(appUpdateNotifierProvider.notifier).check();
       });
