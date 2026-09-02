@@ -126,30 +126,38 @@ class SettingsPage extends HookConsumerWidget {
             icon: Icons.layers_rounded,
             namedLocation: context.namedLocation('general'),
           ),
-          SettingsSection(
-            title: t.pages.settings.routing.title,
-            icon: Icons.route_rounded,
-            namedLocation: context.namedLocation('routeOptions'),
-          ),
-          SettingsSection(
-            title: t.pages.settings.dns.title,
-            icon: Icons.dns_rounded,
-            namedLocation: context.namedLocation('dnsOptions'),
-          ),
-          SettingsSection(
-            title: t.pages.settings.inbound.title,
-            icon: Icons.input_rounded,
-            namedLocation: context.namedLocation('inboundOptions'),
-          ),
-          SettingsSection(
-            title: t.pages.settings.tlsTricks.title,
-            icon: Icons.content_cut_rounded,
-            namedLocation: context.namedLocation('tlsTricks'),
-          ),
-          SettingsSection(
-            title: t.pages.settings.warp.title,
-            icon: Icons.cloud_rounded,
-            namedLocation: context.namedLocation('warpOptions'),
+          // OneRay: 高级设置默认折叠 —— 普通用户用不到路由/DNS/入站/TLS/WARP
+          ExpansionTile(
+            leading: const Icon(Icons.tune_rounded),
+            title: const Text('高级设置'),
+            childrenPadding: const EdgeInsets.only(left: 16),
+            children: [
+              SettingsSection(
+                title: t.pages.settings.routing.title,
+                icon: Icons.route_rounded,
+                namedLocation: context.namedLocation('routeOptions'),
+              ),
+              SettingsSection(
+                title: t.pages.settings.dns.title,
+                icon: Icons.dns_rounded,
+                namedLocation: context.namedLocation('dnsOptions'),
+              ),
+              SettingsSection(
+                title: t.pages.settings.inbound.title,
+                icon: Icons.input_rounded,
+                namedLocation: context.namedLocation('inboundOptions'),
+              ),
+              SettingsSection(
+                title: t.pages.settings.tlsTricks.title,
+                icon: Icons.content_cut_rounded,
+                namedLocation: context.namedLocation('tlsTricks'),
+              ),
+              SettingsSection(
+                title: t.pages.settings.warp.title,
+                icon: Icons.cloud_rounded,
+                namedLocation: context.namedLocation('warpOptions'),
+              ),
+            ],
           ),
           if (PlatformUtils.isIOS)
             Material(

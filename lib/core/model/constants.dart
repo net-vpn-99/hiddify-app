@@ -7,6 +7,9 @@ abstract class Constants {
   static const panelApiBase = "https://api.guangsuleida.com";
   static const panelRegisterUrl = "https://panel.guangsuleida.com/#/register";
   static const panelForgotUrl = "https://panel.guangsuleida.com/#/forget";
+  static const panelPlanUrl = "https://panel.guangsuleida.com/#/plan"; // 续费/购买
+  static const panelProfileUrl = "https://panel.guangsuleida.com/#/profile"; // 改密码
+  static const panelInviteUrl = "https://panel.guangsuleida.com/#/invite"; // 邀请好友
   static const githubUrl = "https://www.guangsuleida.com/help.html";
   static const licenseUrl = "https://www.guangsuleida.com/help.html";
   // OneRay: 自建更新源（GitHub releases API 国内连不上）。JSON 只需 tag_name / prerelease / published_at / html_url

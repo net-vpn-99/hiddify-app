@@ -67,6 +67,39 @@ class PanelApi {
     return PanelSubscribe(
       subscribeUrl: url,
       email: (data['email'] as String?)?.trim(),
+      account: _accountOf(data),
+    );
+  }
+
+  /// 单独拉账号信息（会员页刷新用）。
+  Future<PanelAccount> getAccount(String token) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.get<dynamic>(
+        '/api/v1/user/getSubscribe',
+        options: Options(headers: {'auth_data': token, 'Authorization': token}),
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw PanelApiException('登录已过期，请重新登录', unauthorized: true);
+    }
+    final data = _dataOf(res.data);
+    if (data == null) throw PanelApiException(_messageOf(res.data) ?? '获取账号信息失败');
+    return _accountOf(data);
+  }
+
+  PanelAccount _accountOf(Map<String, dynamic> data) {
+    num n(dynamic v) => v is num ? v : num.tryParse('$v') ?? 0;
+    final plan = data['plan'];
+    return PanelAccount(
+      email: (data['email'] as String?)?.trim(),
+      planName: (plan is Map ? plan['name'] as String? : null)?.trim() ?? (data['plan_name'] as String?)?.trim(),
+      expiredAt: data['expired_at'] == null ? null : n(data['expired_at']).toInt(),
+      transferEnable: n(data['transfer_enable']).toInt(),
+      used: (n(data['u']) + n(data['d'])).toInt(),
+      deviceLimit: n(data['device_limit']).toInt(),
     );
   }
 
@@ -110,9 +143,31 @@ class PanelApi {
 }
 
 class PanelSubscribe {
-  const PanelSubscribe({required this.subscribeUrl, this.email});
+  const PanelSubscribe({required this.subscribeUrl, this.email, this.account});
   final String subscribeUrl;
   final String? email;
+  final PanelAccount? account;
+}
+
+class PanelAccount {
+  const PanelAccount({
+    this.email,
+    this.planName,
+    this.expiredAt,
+    this.transferEnable = 0,
+    this.used = 0,
+    this.deviceLimit = 0,
+  });
+
+  final String? email;
+  final String? planName;
+  final int? expiredAt; // unix 秒；null = 长期有效
+  final int transferEnable; // 总流量字节
+  final int used; // 已用字节
+  final int deviceLimit; // 0 = 不限
+
+  bool get lifetime => expiredAt == null || expiredAt == 0;
+  int get remainingBytes => (transferEnable - used).clamp(0, transferEnable);
 }
 
 class PanelApiException implements Exception {

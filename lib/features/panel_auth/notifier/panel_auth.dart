@@ -85,6 +85,20 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     }
   }
 
+  /// 会员页拉最新账号信息。未登录 / 失败返回 null。
+  Future<PanelAccount?> fetchAccount() async {
+    final token = await currentToken();
+    if (token == null || token.isEmpty) return null;
+    try {
+      return await _api.getAccount(token);
+    } on PanelApiException catch (e) {
+      if (e.unauthorized) await logout();
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> logout() async {
     await _secureStorage.delete(key: _kTokenKey);
     await _secureStorage.delete(key: _kEmailKey);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/proxy/active/ip_widget.dart';
+import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/gen/fonts.gen.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
@@ -17,13 +18,15 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final n = splitNodeName(proxy.tagDisplay);
 
     return ListTile(
       // shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       title: Text(
-        proxy.tagDisplay,
+        n.name,
         overflow: TextOverflow.ellipsis,
-        style: PlatformUtils.isWindows ? const TextStyle(fontFamily: FontFamily.emoji) : null,
+        style: (PlatformUtils.isWindows ? const TextStyle(fontFamily: FontFamily.emoji) : const TextStyle())
+            .copyWith(fontWeight: FontWeight.w600),
       ),
       leading: IPCountryFlag(
         countryCode: proxy.ipinfo.countryCode,
@@ -31,19 +34,13 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
         size: 40,
         padding: const EdgeInsetsDirectional.only(end: 8),
       ),
-      subtitle: Text.rich(
-        TextSpan(
-          text: proxy.type,
-          children: [
-            if (proxy.isGroup)
-              TextSpan(
-                text: ' (${proxy.groupSelectedTagDisplay.trim()})',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-          ],
-        ),
+      subtitle: Text(
+        n.desc.isNotEmpty
+            ? n.desc
+            : (proxy.isGroup ? '${proxy.type} (${proxy.groupSelectedTagDisplay.trim()})' : proxy.type),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodySmall,
       ),
       trailing: Column(
         children: [
