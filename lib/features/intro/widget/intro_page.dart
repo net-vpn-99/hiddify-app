@@ -233,7 +233,9 @@ class IntroPage extends HookConsumerWidget with PresLogger {
       case "IR":
         return RegionLocale(Region.ir, AppLocale.fa);
       case "CN":
-        return RegionLocale(Region.cn, AppLocale.zhCn);
+        // OneRay: 全部流量走我们的节点，不用 cn 分流模式
+        // （cn 模式会让 core 去 GitHub 下 geosite/geoip 规则集，国内下不动 → 域名全打不开、地区页白屏）
+        return RegionLocale(Region.other, AppLocale.zhCn);
       case "RU":
         return RegionLocale(Region.ru, AppLocale.ru);
       case "AF":

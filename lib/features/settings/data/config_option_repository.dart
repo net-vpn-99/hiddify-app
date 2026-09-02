@@ -56,7 +56,8 @@ abstract class ConfigOptions {
 
   static final remoteDnsAddress = PreferencesNotifier.create<String, String>(
     "remote-dns-address",
-    "tcp://8.8.8.8",
+    // OneRay: tcp://8.8.8.8 在国内会被 RST，用走代理的 DoH
+    "https://1.1.1.1/dns-query",
     possibleValues: List.of([
       "local",
       // "udp://223.5.5.5",
@@ -92,7 +93,8 @@ abstract class ConfigOptions {
       "4.4.2.2",
       "8.8.8.8",
     ]),
-    defaultValueFunction: (ref) => ref.read(region) == Region.cn ? "223.5.5.5" : "1.1.1.1",
+    // OneRay: 直连 DNS 固定阿里，国内 udp://1.1.1.1 会被污染
+    defaultValueFunction: (ref) => "223.5.5.5",
     validator: (value) => value.isNotBlank,
   );
 
