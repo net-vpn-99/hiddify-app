@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,7 +8,6 @@ import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/failures.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
-import 'package:hiddify/features/profile/details/json_editor.dart';
 import 'package:hiddify/features/profile/details/profile_details_notifier.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/utils/utils.dart';
@@ -101,26 +98,7 @@ class ProfileDetailsPage extends HookConsumerWidget with PresLogger {
                             hint: t.pages.profileDetails.form.nameHint,
                           ),
                         ),
-                        if (data.profile case RemoteProfileEntity(:final url))
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  t.common.url,
-                                  style: theme.textTheme.labelMedium!.copyWith(color: theme.colorScheme.onSurface),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const Gap(4),
-                                SelectableText(
-                                  url,
-                                  style: theme.textTheme.bodySmall!.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                                ),
-                              ],
-                            ),
-                          ),
+                        // OneRay: 不显示订阅 URL（防止用户泄露链接被蹭号）
                         const Divider(indent: 16, endIndent: 16),
                         if (data.profile case RemoteProfileEntity(:final options)) ...[
                           SwitchListTile.adaptive(
@@ -247,37 +225,7 @@ class ProfileDetailsPage extends HookConsumerWidget with PresLogger {
                       ],
                     ),
                   ),
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.7,
-                    child: isJson(data.configContent)
-                        ? JsonEditor(
-                            expandedObjects: const ["outbounds", "endpoints"],
-                            onChanged: (value) {
-                              if (value == null) return;
-                              try {
-                                const encoder = JsonEncoder.withIndent('  ');
-                                ref.read(provider.notifier).setContent(encoder.convert(value));
-                              } catch (e) {
-                                ref.read(provider.notifier).setContent("$value");
-                              }
-                            },
-                            enableHorizontalScroll: true,
-                            json: data.configContent,
-                          )
-                        : TextFormField(
-                            onChanged: (value) {
-                              ref.read(provider.notifier).setContent(value);
-                            },
-                            maxLines: null,
-                            minLines: null,
-                            expands: true,
-                            textAlignVertical: TextAlignVertical.top,
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.only(left: 5, top: 8, bottom: 8),
-                            ),
-                          ),
-                  ),
+                  // OneRay: 移除「Config Editor」—— 不暴露服务器 IP / Reality 密钥等节点信息
                 ],
               ),
             );
@@ -313,11 +261,4 @@ class ProfileDetailsPage extends HookConsumerWidget with PresLogger {
   }
 }
 
-bool isJson(String value) {
-  try {
-    jsonDecode(value);
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+

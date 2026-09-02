@@ -1,13 +1,11 @@
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/failures.dart';
-import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
@@ -249,41 +247,7 @@ class ProfileActionsMenu extends HookConsumerWidget {
             ref.read(updateProfileNotifierProvider(profile.id).notifier).updateProfile(profile as RemoteProfileEntity);
           },
         ),
-      AdaptiveMenuItem(
-        title: t.common.share,
-        icon: AdaptiveIcon(context).share,
-        subItems: [
-          if (profile case RemoteProfileEntity(:final url, :final name)) ...[
-            AdaptiveMenuItem(
-              title: t.pages.profiles.share.urlToClipboard,
-              onTap: () async {
-                final link = LinkParser.generateSubShareLink(url, name);
-                if (link.isNotEmpty) {
-                  await Clipboard.setData(ClipboardData(text: link));
-                  if (context.mounted) {
-                    ref
-                        .read(inAppNotificationControllerProvider)
-                        .showSuccessToast(t.common.msg.export.clipboard.success);
-                  }
-                }
-              },
-            ),
-            AdaptiveMenuItem(
-              title: t.pages.profiles.share.showUrlQr,
-              onTap: () async {
-                final link = LinkParser.generateSubShareLink(url, name);
-                if (link.isNotEmpty) {
-                  await ref.read(dialogNotifierProvider.notifier).showQrCode(link, message: name);
-                }
-              },
-            ),
-          ],
-          AdaptiveMenuItem(
-            title: t.pages.profiles.share.jsonToClipboard,
-            onTap: () async => await ref.read(profilesNotifierProvider.notifier).exportConfigToClipboard(profile),
-          ),
-        ],
-      ),
+      // OneRay: 移除「分享」（复制订阅URL / 二维码 / 导出配置）—— 防止泄露订阅链接被蹭号
       AdaptiveMenuItem(
         icon: Icons.edit_rounded,
         title: t.common.edit,

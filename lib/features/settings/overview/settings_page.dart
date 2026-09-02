@@ -94,31 +94,7 @@ class SettingsPage extends HookConsumerWidget {
                 ],
                 child: Text(t.common.import),
               ),
-              SubmenuButton(
-                menuChildren: <Widget>[
-                  MenuItemButton(
-                    onPressed: () async => await ref.read(configOptionNotifierProvider.notifier).exportJsonClipboard(),
-                    child: Text(t.pages.settings.options.export.anonymousToClipboard),
-                  ),
-                  MenuItemButton(
-                    onPressed: () async => await ref.read(configOptionNotifierProvider.notifier).exportJsonFile(),
-                    child: Text(t.pages.settings.options.export.anonymousToFile),
-                  ),
-                  const PopupMenuDivider(),
-                  MenuItemButton(
-                    onPressed: () async => await ref
-                        .read(configOptionNotifierProvider.notifier)
-                        .exportJsonClipboard(excludePrivate: false),
-                    child: Text(t.pages.settings.options.export.allToClipboard),
-                  ),
-                  MenuItemButton(
-                    onPressed: () async =>
-                        await ref.read(configOptionNotifierProvider.notifier).exportJsonFile(excludePrivate: false),
-                    child: Text(t.pages.settings.options.export.allToFile),
-                  ),
-                ],
-                child: Text(t.common.export),
-              ),
+              // OneRay: 移除「导出配置」—— 只保留导入（客服发配置时用）+ 重置
               const PopupMenuDivider(),
               MenuItemButton(
                 child: Text(t.pages.settings.options.reset),
