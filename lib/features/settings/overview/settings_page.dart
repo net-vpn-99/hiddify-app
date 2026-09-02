@@ -157,6 +157,12 @@ class SettingsPage extends HookConsumerWidget {
                 icon: Icons.cloud_rounded,
                 namedLocation: context.namedLocation('warpOptions'),
               ),
+              if (Breakpoint(context).isMobile())
+                SettingsSection(
+                  title: t.pages.logs.title,
+                  icon: Icons.description_rounded,
+                  namedLocation: context.namedLocation('logs'),
+                ),
             ],
           ),
           if (PlatformUtils.isIOS)
@@ -170,11 +176,6 @@ class SettingsPage extends HookConsumerWidget {
               ),
             ),
           if (Breakpoint(context).isMobile()) ...[
-            SettingsSection(
-              title: t.pages.logs.title,
-              icon: Icons.description_rounded,
-              namedLocation: context.namedLocation('logs'),
-            ),
             const DiagTile(),
             SettingsSection(
               title: t.pages.about.title,
