@@ -15,7 +15,6 @@ import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/widget/profile_tile.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_card.dart';
-import 'package:hiddify/features/proxy/active/active_proxy_delay_indicator.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/gen/assets.gen.dart';
@@ -166,7 +165,6 @@ class HomePage extends HookConsumerWidget {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     ConnectionButton(),
-                                    ActiveProxyDelayIndicator(),
                                     StabilityIndicator(),
                                   ],
                                 ),
