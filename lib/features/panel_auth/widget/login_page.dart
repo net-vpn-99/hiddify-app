@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
 import 'package:hiddify/utils/uri_utils.dart';
@@ -43,7 +44,11 @@ class LoginPage extends HookConsumerWidget {
         busy.value = false;
         return;
       }
-      await ref.read(addProfileNotifierProvider.notifier).addClipboard(url);
+      // 固定名字「光速」—— 别用订阅 URL 的最后一段（那是 token，敏感）
+      await ref.read(addProfileNotifierProvider.notifier).addManual(
+            url: url,
+            userOverride: const UserOverride(name: '光速'),
+          );
       if (!context.mounted) return;
       busy.value = false;
       context.go('/home');
