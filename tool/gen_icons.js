@@ -127,23 +127,22 @@ for (const [d, s] of Object.entries(FG)) {
 fs.mkdirSync("assets/icon", { recursive: true });
 writePng("assets/icon/icon-512.png", render(512, "legacy"), 512, 512);
 
-// adaptive-icon xml + background color
+// adaptive-icon xml + background color (mirrors Hiddify's own ic_banner setup)
 const adaptive = `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
 </adaptive-icon>
 `;
 fs.mkdirSync(`${RES}/mipmap-anydpi-v26`, { recursive: true });
 fs.writeFileSync(`${RES}/mipmap-anydpi-v26/ic_launcher.xml`, adaptive);
 fs.writeFileSync(`${RES}/mipmap-anydpi-v26/ic_launcher_round.xml`, adaptive);
-fs.mkdirSync(`${RES}/drawable`, { recursive: true });
 fs.writeFileSync(
-  `${RES}/drawable/ic_launcher_background.xml`,
+  `${RES}/values/ic_launcher_background.xml`,
   `<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#E4A82C" />
-</shape>
+<resources>
+    <color name="ic_launcher_background">#E4A82C</color>
+</resources>
 `,
 );
 console.log("done");
