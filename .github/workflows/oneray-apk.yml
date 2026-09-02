@@ -74,12 +74,25 @@ jobs:
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "构建版本 $NAME ($CODE)  commit ${GITHUB_SHA::7}" >> "$GITHUB_STEP_SUMMARY"
 
+      # build.gradle 读的是 local.properties 里的 flutter.versionName，
+      # 新版 Flutter 的 --build-name 不一定写进去 -> 强制写一遍。
+      - name: Force version into local.properties
+        run: |
+          LP=android/local.properties
+          [ -f "$LP" ] && grep -v '^flutter\.version' "$LP" > "$LP.tmp" || : > "$LP.tmp"
+          mv "$LP.tmp" "$LP"
+          printf 'flutter.versionName=%s\nflutter.versionCode=%s\n' \
+            "${{ steps.ver.outputs.name }}" "${{ steps.ver.outputs.code }}" >> "$LP"
+          echo "--- $LP ---"; cat "$LP"
+
       - name: Build APK (armeabi-v7a / arm64-v8a / x86_64 / universal via gradle splits)
         run: |
           set -o pipefail
           flutter build apk --release -t lib/main_prod.dart \
             --build-name=${{ steps.ver.outputs.name }} --build-number=${{ steps.ver.outputs.code }} \
             --dart-define sentry_dsn= 2>&1 | tee /tmp/build.log
+          echo "--- APK versionName check ---"
+          "$ANDROID_SDK_ROOT"/build-tools/*/aapt dump badging build/app/outputs/flutter-apk/app-arm64-v8a-release.apk 2>/dev/null | grep -o "versionName='[^']*'" || true
 
       - name: Show build errors (on failure)
         if: failure()
