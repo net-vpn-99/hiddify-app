@@ -2,17 +2,49 @@ import 'dart:convert';
 
 import 'package:hiddify/utils/link_parsers.dart';
 
-/// 从订阅原文里离线读出线路列表（不用连接）。
-/// 我们的订阅是 Xboard 返回的 base64 vless:// 列表，每行一个节点，名字在 `#` 后面。
-/// 返回 splitNodeName 拆好的 (name, desc)，按订阅顺序、去重。
-List<({String name, String desc})> parseSubscriptionLines(String raw) {
-  var text = raw.trim();
-  final decoded = safeDecodeBase64(text);
-  if (decoded.contains('://')) text = decoded;
+/// 非节点的出站类型（分组 / 内置），选线路时要跳过。
+const _nonNodeOutboundTypes = {
+  'selector', 'urltest', 'loadbalance', 'loadbalancer',
+  'direct', 'block', 'dns', 'dns-out',
+};
 
+/// 离线读出当前订阅里的线路列表（不用连接）。
+///
+/// hiddify-core 会把订阅（我们是 base64 vless:// 列表）转成一份 sing-box JSON 存到
+/// 本地 profile 文件里，所以这里拿到的一般是 JSON —— 从 `outbounds` 里挑真实协议的出站。
+/// 兜底也能处理 base64 / 纯文本的 vless 列表（`#` 后是名字）。
+/// 返回 splitNodeName 拆好的 (name, desc)，按顺序、按 name 去重。
+List<({String name, String desc})> parseSubscriptionLines(String raw) {
+  final text = raw.trim();
   final result = <({String name, String desc})>[];
   final seen = <String>{};
-  for (final rawLine in const LineSplitter().convert(text)) {
+  void add(String tag) {
+    final s = splitNodeName(tag);
+    if (s.name.isNotEmpty && seen.add(s.name)) result.add(s);
+  }
+
+  // 1) sing-box JSON
+  try {
+    final obj = jsonDecode(text);
+    if (obj is Map && obj['outbounds'] is List) {
+      for (final ob in obj['outbounds'] as List) {
+        if (ob is! Map) continue;
+        final type = (ob['type'] ?? '').toString().toLowerCase();
+        final tag = (ob['tag'] ?? '').toString();
+        if (tag.isEmpty || _nonNodeOutboundTypes.contains(type) || isAutoGroupTag(tag)) continue;
+        add(tag);
+      }
+      return result;
+    }
+  } catch (_) {
+    // 不是 JSON，走下面的行解析
+  }
+
+  // 2) base64 / 纯文本的 proxy URI 列表
+  var lines = text;
+  final decoded = safeDecodeBase64(lines);
+  if (decoded.contains('://')) lines = decoded;
+  for (final rawLine in const LineSplitter().convert(lines)) {
     final line = rawLine.trim();
     if (line.isEmpty || !line.contains('://')) continue;
 
@@ -31,9 +63,7 @@ List<({String name, String desc})> parseSubscriptionLines(String raw) {
       } catch (_) {}
     }
     if (frag == null || frag.trim().isEmpty) continue;
-
-    final split = splitNodeName(frag);
-    if (seen.add(split.name)) result.add(split);
+    add(frag);
   }
   return result;
 }
