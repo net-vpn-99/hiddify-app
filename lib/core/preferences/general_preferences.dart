@@ -103,6 +103,10 @@ abstract class Preferences {
   static final lastNodeName = PreferencesNotifier.create<String, String>("last_node_name", "");
   static final lastNodeDesc = PreferencesNotifier.create<String, String>("last_node_desc", "");
 
+  // OneRay: 用户在首页线路选择器里选的线路名（splitNodeName 后的 name 段）。
+  // 断开时也能选；连接后由 autoLineFixer 按名字匹配到真实出站并切过去。空 = 不指定。
+  static final preferredLineName = PreferencesNotifier.create<String, String>("preferred_line_name", "");
+
   static final dynamicNotification = PreferencesNotifier.create<bool, bool>("dynamic_notification", true);
 
   static final autoCheckIp = PreferencesNotifier.create<bool, bool>("auto_check_ip", true);

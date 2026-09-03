@@ -7,7 +7,6 @@ import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/failures.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
-import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
 import 'package:hiddify/core/widget/adaptive_icon.dart';
@@ -15,6 +14,7 @@ import 'package:hiddify/core/widget/adaptive_menu.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/features/profile/overview/profiles_notifier.dart';
+import 'package:hiddify/features/proxy/line/line_picker.dart';
 import 'package:hiddify/gen/fonts.gen.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -49,6 +49,23 @@ class ProfileTile extends HookConsumerWidget {
       RemoteProfileEntity(:final subInfo) => subInfo,
       _ => null,
     };
+
+    // OneRay: 首页那张卡的标题 = 当前线路名（用户在 Xboard 后台配的节点名 + | 说明），
+    // 不再显示订阅名（"光速"）。一条订阅里有多条线路，卡上点一下就能二选一。
+    var mainTitle = profile.name;
+    var mainDesc = '';
+    if (isMain) {
+      final lastLineName = ref.watch(Preferences.lastNodeName);
+      final lastLineDesc = ref.watch(Preferences.lastNodeDesc);
+      final offlineLines = ref.watch(activeProfileLinesProvider).valueOrNull ?? const <LineOption>[];
+      if (lastLineName.isNotEmpty) {
+        mainTitle = lastLineName;
+        mainDesc = lastLineDesc;
+      } else if (offlineLines.isNotEmpty) {
+        mainTitle = offlineLines.first.name;
+        mainDesc = offlineLines.first.desc;
+      }
+    }
 
     final showActionButton = profile is RemoteProfileEntity || !isMain;
 
@@ -94,11 +111,8 @@ class ProfileTile extends HookConsumerWidget {
                         : ProfileTileConst.cardBorderRadius,
                     onTap: () {
                       if (isMain) {
-                        if (Breakpoint(context).isMobile()) {
-                          ref.read(bottomSheetsNotifierProvider.notifier).showProfilesOverview();
-                        } else {
-                          context.goNamed('profiles');
-                        }
+                        // OneRay: 点首页卡 = 选线路（同一条订阅里二选一）；换订阅在选择器里
+                        showLinePicker(context, ref);
                       } else {
                         if (selectActiveMutation.state.isInProgress) return;
                         // if (profile.active) return;
@@ -131,13 +145,13 @@ class ProfileTile extends HookConsumerWidget {
                                   children: [
                                     Flexible(
                                       child: Text(
-                                        profile.name,
+                                        mainTitle,
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                         style: theme.textTheme.titleMedium?.copyWith(
                                           fontFamily: PlatformUtils.isWindows ? FontFamily.emoji : null,
                                         ),
-                                        semanticsLabel: t.pages.profiles.activeProfileName(name: profile.name),
+                                        semanticsLabel: '当前线路：$mainTitle，点击切换',
                                       ),
                                     ),
                                     const Icon(Icons.arrow_drop_down_rounded),
@@ -157,26 +171,18 @@ class ProfileTile extends HookConsumerWidget {
                                   ? t.pages.profiles.activeProfileName(name: profile.name)
                                   : t.pages.profiles.nonActiveProfileName(name: profile.name),
                             ),
-                          if (isMain) ...[
-                            Builder(
-                              builder: (context) {
-                                final line = ref.watch(Preferences.lastNodeName);
-                                if (line.isEmpty) return const SizedBox.shrink();
-                                final desc = ref.watch(Preferences.lastNodeDesc);
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 2),
-                                  child: Text(
-                                    desc.isEmpty ? '线路：$line' : '线路：$line · $desc',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                );
-                              },
+                          if (isMain && mainDesc.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                mainDesc,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
                             ),
-                          ],
                           if (subInfo != null) ...[
                             const Gap(4),
                             RemainingTrafficIndicator(subInfo.ratio),

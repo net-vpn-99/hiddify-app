@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
-import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -24,31 +23,12 @@ class ActiveProxyFooter extends ConsumerWidget with InfraLogger {
     final activeProxy = ref.watch(activeProxyNotifierProvider.select((value) => value.valueOrNull));
     final t = ref.watch(translationsProvider).requireValue;
 
-    final theme = Theme.of(context);
-
-    // 未连接：仍然显示一个"线路"入口，点进去可以看/选线路（连接后才有实时列表）。
+    // 未连接：不显示这个卡（首页的"光速卡"已经带线路名 + 点它能切线路了）。
     if (connectionState != const Connected() || activeProxy == null) {
-      final lastName = ref.watch(Preferences.lastNodeName);
-      final lastDesc = ref.watch(Preferences.lastNodeDesc);
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.background.withOpacity(1),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(color: theme.colorScheme.secondary.withOpacity(.21), blurRadius: 10, offset: const Offset(0, 4)),
-          ],
-        ),
-        child: ListTile(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          leading: const Icon(Icons.alt_route_rounded),
-          title: Text(lastName.isEmpty ? '选择线路' : lastName, style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text(lastName.isEmpty ? '连接后可切换 / 测速' : (lastDesc.isEmpty ? '点此切换线路' : lastDesc)),
-          trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-          onTap: () => context.goNamed('proxies'),
-        ),
-      );
+      return const SizedBox.shrink();
     }
+
+    final theme = Theme.of(context);
 
     // Handle URL test in a way that won't trigger during build
     Future<void> handleUrlTest() async {
