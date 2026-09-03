@@ -31,7 +31,7 @@ class NewVersionDialog extends HookConsumerWidget with PresLogger {
     final cancelToken = useMemoized(() => CancelToken());
 
     // 安卓 + 有直链 → 应用内下载安装；否则退回打开下载页
-    final canInApp = !kIsWeb && Platform.isAndroid && (newVersion.apkUrl?.isNotEmpty ?? false);
+    final canInApp = !kIsWeb && Platform.isAndroid && newVersion.apkUrls.isNotEmpty;
 
     Future<void> startInAppUpdate() async {
       error.value = null;
@@ -39,7 +39,7 @@ class NewVersionDialog extends HookConsumerWidget with PresLogger {
       downloading.value = true;
       try {
         await ApkInstaller.downloadAndInstall(
-          newVersion.apkUrl!,
+          newVersion.apkUrls,
           sha256Hex: newVersion.apkSha256,
           cancelToken: cancelToken,
           onProgress: (p) => progress.value = p,

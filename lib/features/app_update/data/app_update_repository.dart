@@ -29,13 +29,25 @@ class AppUpdateRepositoryImpl with ExceptionHandler, InfraLogger implements AppU
       if (!release.allowCustomUpdateChecker) {
         throw Exception("custom update checkers are not supported");
       }
-      final response = await httpClient.get<List>(Constants.githubReleasesApiUrl);
-      if (response.statusCode != 200 || response.data == null) {
-        loggy.warning("failed to fetch latest version info");
+      // OneRay: 主（搬瓦工中转直连）→ 备（香港源站），逐个试
+      List? data;
+      for (final url in Constants.releasesJsonUrls) {
+        try {
+          final response = await httpClient.get<List>(url);
+          if (response.statusCode == 200 && response.data != null) {
+            data = response.data;
+            break;
+          }
+        } catch (e) {
+          loggy.warning("releases.json fetch failed for $url: $e");
+        }
+      }
+      if (data == null) {
+        loggy.warning("failed to fetch latest version info from all mirrors");
         return left(const AppUpdateFailure.unexpected());
       }
 
-      final releases = response.data!.map((e) => GithubReleaseParser.parse(e as Map<String, dynamic>));
+      final releases = data.map((e) => GithubReleaseParser.parse(e as Map<String, dynamic>));
       late RemoteVersionEntity latest;
       if (includePreReleases) {
         latest = releases.first;

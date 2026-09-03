@@ -12,8 +12,13 @@ abstract class Constants {
   static const panelInviteUrl = "https://panel.guangsuleida.com/#/invite"; // 邀请好友
   static const githubUrl = "https://www.guangsuleida.com/help.html";
   static const licenseUrl = "https://www.guangsuleida.com/help.html";
-  // OneRay: 自建更新源，放 Cloudflare R2（`dl.guangsuleida.com`，从 CF 边缘发，不依赖源站）
-  static const githubReleasesApiUrl = "https://dl.guangsuleida.com/android/releases.json";
+  // OneRay: 更新清单。主 = 搬瓦工中转直连（快、抗封），备 = 香港源站（CF）。逐个试。
+  static const releasesJsonUrls = [
+    "https://dl2.meadowfoundry.com/android/releases.json",
+    "https://www.guangsuleida.com/dengta/android/releases.json",
+  ];
+  // 兼容旧字段名（仍被 app_update_repository 读；实际用上面的列表）
+  static const githubReleasesApiUrl = "https://dl2.meadowfoundry.com/android/releases.json";
   static const githubLatestReleaseUrl = "https://www.guangsuleida.com/";
   static const appCastUrl = "https://www.guangsuleida.com/oneray/android/appcast.xml";
   static const telegramChannelUrl = "https://t.me/+LQ-pvMvK4ClkNzFk";

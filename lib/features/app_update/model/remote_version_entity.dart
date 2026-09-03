@@ -15,8 +15,10 @@ class RemoteVersionEntity with _$RemoteVersionEntity {
     required String url,
     required DateTime publishedAt,
     required Environment flavor,
-    // OneRay: 直接下载地址（自建 releases.json 的 assets[].browser_download_url）
+    // OneRay: 主下载地址（自建 releases.json 的 assets[].browser_download_url）
     String? apkUrl,
+    // OneRay: 备用下载地址（assets[].mirrors），主地址失败时逐个回落
+    @Default(<String>[]) List<String> apkMirrors,
     // OneRay: APK 的 sha256（releases.json 的 assets[].sha256），下载后校验
     String? apkSha256,
     // OneRay: 强制更新 —— releases.json 里 "mandatory": true，弹窗不可关闭
@@ -24,4 +26,10 @@ class RemoteVersionEntity with _$RemoteVersionEntity {
   }) = _RemoteVersionEntity;
 
   String get presentVersion => flavor == Environment.prod ? version : "$version ${flavor.name}";
+
+  // OneRay: 主 + 备，按顺序尝试
+  List<String> get apkUrls => [
+        if (apkUrl != null && apkUrl!.isNotEmpty) apkUrl!,
+        ...apkMirrors.where((e) => e.isNotEmpty),
+      ];
 }

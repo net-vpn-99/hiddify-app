@@ -126,38 +126,21 @@ jobs:
               "prerelease": false,
               "mandatory": false,
               "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-              "html_url": "https://www.guangsuleida.com/android/",
+              "html_url": "https://www.guangsuleida.com/dengta/android/",
               "body": "见更新说明",
               "assets": [
-                { "name": "oneray.apk", "browser_download_url": "https://dl.guangsuleida.com/android/oneray.apk", "sha256": "$SHA" }
+                {
+                  "name": "oneray.apk",
+                  "browser_download_url": "https://dl2.meadowfoundry.com/android/oneray.apk",
+                  "mirrors": ["https://www.guangsuleida.com/dengta/android/oneray.apk"],
+                  "sha256": "$SHA"
+                }
               ]
             }
           ]
           EOF
           echo "SHA256(arm64) = $SHA" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload to Cloudflare R2 (skipped if secrets absent)
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: |
-          if [ -z "$R2_ACCOUNT_ID" ]; then
-            echo "无 R2_* secret -> 跳过上传，手动传 artifact 里的 oneray.apk + releases.json" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          cd build/app/outputs/flutter-apk
-          export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
-          export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
-          EP="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          aws s3 cp oneray.apk "s3://${R2_BUCKET}/android/oneray.apk" \
-            --endpoint-url "$EP" --content-type application/vnd.android.package-archive \
-            --cache-control "public, max-age=300"
-          aws s3 cp releases.json "s3://${R2_BUCKET}/android/releases.json" \
-            --endpoint-url "$EP" --content-type application/json \
-            --cache-control "public, max-age=60"
-          echo "✅ 已上传到 R2：dl.guangsuleida.com/android/oneray.apk + releases.json（版本 ${{ steps.ver.outputs.name }}）" >> "$GITHUB_STEP_SUMMARY"
+          echo "artifact 里有 oneray.apk + releases.json —— 按 docs/客户端-下载源.md 传到搬瓦工中转 + 香港源站的 android/ 目录" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -167,14 +150,3 @@ jobs:
             build/app/outputs/flutter-apk/releases.json
           retention-days: 14
           if-no-files-found: error
-
-      - name: Purge Cloudflare cache (skipped if secrets absent)
-        env:
-          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-        run: |
-          if [ -z "$CF_API_TOKEN" ]; then exit 0; fi
-          curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/purge_cache" \
-            -H "Authorization: Bearer ${CF_API_TOKEN}" -H "Content-Type: application/json" \
-            --data '{"files":["https://dl.guangsuleida.com/android/oneray.apk","https://dl.guangsuleida.com/android/releases.json"]}' \
-            > /dev/null && echo "已清 CF 缓存" >> "$GITHUB_STEP_SUMMARY" || true
