@@ -1,6 +1,8 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
+import 'package:hiddify/features/profile/overview/profiles_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 const _kTokenKey = 'oneray_panel_token';
@@ -78,7 +80,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       final sub = await _api.getSubscribe(token);
       return sub.subscribeUrl;
     } on PanelApiException catch (e) {
-      if (e.unauthorized) await logout();
+      if (e.unauthorized) await logout(wipe: false);
       return null;
     } catch (_) {
       return null;
@@ -92,7 +94,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     try {
       return await _api.getAccount(token);
     } on PanelApiException catch (e) {
-      if (e.unauthorized) await logout();
+      if (e.unauthorized) await logout(wipe: false);
       return null;
     } catch (_) {
       return null;
@@ -127,17 +129,36 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     try {
       return await _api.getInvite(token);
     } on PanelApiException catch (e) {
-      if (e.unauthorized) await logout();
+      if (e.unauthorized) await logout(wipe: false);
       return null;
     } catch (_) {
       return null;
     }
   }
 
-  Future<void> logout() async {
+  /// 退出登录。
+  /// [wipe] = true（用户手动点「退出登录」）：断开连接 + 删掉导入的订阅 + 清掉记住的线路。
+  /// [wipe] = false（令牌失效等内部调用）：只清令牌，保留已导入的订阅，避免误删。
+  Future<void> logout({bool wipe = true}) async {
     await _secureStorage.delete(key: _kTokenKey);
     await _secureStorage.delete(key: _kEmailKey);
     await ref.read(Preferences.panelLoggedIn.notifier).update(false);
     state = state.copyWith(loading: false, clearEmail: true);
+    if (!wipe) return;
+
+    // 退出 = 不能再连。断开 + 删订阅。
+    try {
+      await ref.read(connectionNotifierProvider.notifier).abortConnection();
+    } catch (_) {}
+    try {
+      final profiles = await ref.read(profilesNotifierProvider.future);
+      for (final p in profiles) {
+        await ref.read(profilesNotifierProvider.notifier).deleteProfile(p);
+      }
+    } catch (_) {}
+    try {
+      await ref.read(Preferences.lastNodeName.notifier).update('');
+      await ref.read(Preferences.lastNodeDesc.notifier).update('');
+    } catch (_) {}
   }
 }

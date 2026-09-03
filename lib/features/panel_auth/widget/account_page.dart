@@ -116,11 +116,11 @@ class AccountPage extends HookConsumerWidget {
               onPressed: () async {
                 final ok = await ref.read(dialogNotifierProvider.notifier).showConfirmation(
                       title: '退出登录',
-                      message: '退出后需要重新登录才能拉取订阅。已导入的订阅不会被删除。',
+                      message: '退出后会断开连接、清除已导入的订阅，需要重新登录才能继续使用。',
                     );
                 if (!ok) return;
                 await ref.read(panelAuthProvider.notifier).logout();
-                if (context.mounted) context.go('/home');
+                if (context.mounted) context.go('/login');
               },
               child: Text('退出登录', style: TextStyle(color: theme.colorScheme.error)),
             ),

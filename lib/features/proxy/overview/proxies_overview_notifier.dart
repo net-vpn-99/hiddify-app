@@ -8,6 +8,7 @@ import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/utils/preferences_utils.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
+import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/features/proxy/model/proxy_failure.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
@@ -164,16 +165,23 @@ class ProxiesOverviewNotifier extends _$ProxiesOverviewNotifier with AppLogger {
         return (b.upload + b.download).compareTo(a.upload + a.download);
       }),
     };
+    final all = <OutboundInfo>[];
     final items = <OutboundInfo>[];
     for (final item in sortedItems) {
-      // if (groupWithSelected.keys.contains(item.tag)) {
-      //   items.add(item.copyWith(selectedTag: groupWithSelected[item.tag]));
-      // } else {
+      all.add(item);
+      // 藏掉 hiddify-core 自动生成的 balance / lowest / select 等均衡组，只留真实线路
+      if (item.isGroup || isAutoGroupTag(item.tag)) continue;
       items.add(item);
-      // }
     }
+    // 万一过滤后一个不剩（不该发生），回退成原列表，别给用户一个空页面
+    final visible = items.isNotEmpty ? items : all;
     proxies.items.clear();
-    proxies.items.addAll(items);
+    proxies.items.addAll(visible);
+    // 当前选中的是被藏掉的均衡组（默认就是 balance）→ 显示上先高亮第一个真实线路，
+    // 实际切换由 autoLineFixer 在连接后完成。
+    if (items.isNotEmpty && !items.any((e) => e.tag == proxies.selected)) {
+      proxies.selected = visible.first.tag;
+    }
     return proxies;
   }
 

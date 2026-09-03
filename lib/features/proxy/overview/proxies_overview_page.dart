@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/failures.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/proxy/model/proxy_failure.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
 import 'package:hiddify/features/proxy/widget/proxy_tile.dart';
 import 'package:hiddify/utils/utils.dart';
@@ -75,8 +77,47 @@ class ProxiesOverviewPage extends HookConsumerWidget with PresLogger {
                 },
               )
             : Center(child: Text(t.pages.proxies.empty)),
-        error: (error, stackTrace) => Center(child: Text(t.presentShortError(error))),
+        error: (error, stackTrace) => error is ServiceNotRunning
+            ? _DisconnectedHint(ref)
+            : Center(child: Text(t.presentShortError(error))),
         loading: () => const Center(child: CircularProgressIndicator()),
+      ),
+    );
+  }
+}
+
+/// 未连接时的线路页：给个说明 + 连接按钮，连上后自动显示线路列表。
+class _DisconnectedHint extends StatelessWidget {
+  const _DisconnectedHint(this.ref);
+
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.wifi_off_rounded, size: 48, color: theme.colorScheme.onSurfaceVariant),
+            const Gap(16),
+            Text('连接后才能查看和切换线路', style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+            const Gap(8),
+            Text(
+              '线路信息由已连接的服务实时提供。连上后回到这里即可切换、测速。',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+            const Gap(24),
+            FilledButton.icon(
+              icon: const Icon(Icons.bolt_rounded),
+              label: const Text('立即连接'),
+              onPressed: () => ref.read(connectionNotifierProvider.notifier).toggleConnection(),
+            ),
+          ],
+        ),
       ),
     );
   }

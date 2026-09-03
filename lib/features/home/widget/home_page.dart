@@ -16,6 +16,7 @@ import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/widget/profile_tile.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_card.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
+import 'package:hiddify/features/proxy/active/auto_line_fixer.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/gen/assets.gen.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -30,6 +31,8 @@ class HomePage extends HookConsumerWidget {
     final t = ref.watch(translationsProvider).requireValue;
     // final hasAnyProfile = ref.watch(hasAnyProfileProvider);
     final activeProfile = ref.watch(activeProfileProvider);
+    // 连接后自动把默认的 balance/lowest 均衡组切成真实线路
+    ref.watch(autoLineFixerProvider);
 
     // OneRay: 启动后清掉残留更新包 + 静默检查更新一次
     useEffect(() {
