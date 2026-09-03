@@ -42,17 +42,7 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.bodySmall,
       ),
-      trailing: Column(
-        children: [
-          if (proxy.urlTestDelay != 0)
-            Text(
-              proxy.urlTestDelay > 65000 ? "×" : proxy.urlTestDelay.toString(),
-              style: TextStyle(color: delayColor(context, proxy.urlTestDelay)),
-            ),
-
-          if (proxy.download > 0) Text("⬩", style: Theme.of(context).textTheme.bodySmall),
-        ],
-      ),
+      trailing: proxy.urlTestDelay != 0 ? _NodeSignal(delay: proxy.urlTestDelay) : null,
 
       selected: selected,
       selectedTileColor: theme.colorScheme.primaryContainer,
@@ -61,19 +51,41 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
       horizontalTitleGap: 4,
     );
   }
+}
 
-  Color delayColor(BuildContext context, int delay) {
-    if (Theme.of(context).brightness == Brightness.dark) {
-      return switch (delay) {
-        < 800 => Colors.lightGreen,
-        < 1500 => Colors.orange,
-        _ => Colors.redAccent,
-      };
-    }
-    return switch (delay) {
-      < 800 => Colors.green,
-      < 1500 => Colors.deepOrangeAccent,
-      _ => Colors.red,
+/// 节点信号：从 urlTest 延迟换算成"很稳 / 稳定 / 一般 / 慢 / 超时" + 信号格。
+class _NodeSignal extends StatelessWidget {
+  const _NodeSignal({required this.delay});
+  final int delay;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final (label, bars, color) = switch (delay) {
+      >= 65000 => ('超时', 0, theme.colorScheme.error),
+      < 200 => ('很稳', 4, const Color(0xFF3FA372)),
+      < 400 => ('稳定', 3, const Color(0xFF3FA372)),
+      < 800 => ('一般', 2, theme.colorScheme.onSurfaceVariant),
+      _ => ('慢', 1, const Color(0xFFCF8A3B)),
     };
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        ...List.generate(4, (i) {
+          return Container(
+            width: 3,
+            height: 5.0 + i * 3,
+            margin: const EdgeInsets.symmetric(horizontal: 1),
+            decoration: BoxDecoration(
+              color: i < bars ? color : color.withValues(alpha: 0.25),
+              borderRadius: BorderRadius.circular(1),
+            ),
+          );
+        }),
+        const SizedBox(width: 6),
+        Text(label, style: theme.textTheme.bodySmall?.copyWith(color: color, fontWeight: FontWeight.w600)),
+      ],
+    );
   }
 }
