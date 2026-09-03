@@ -12,8 +12,8 @@ abstract class Constants {
   static const panelInviteUrl = "https://panel.guangsuleida.com/#/invite"; // 邀请好友
   static const githubUrl = "https://www.guangsuleida.com/help.html";
   static const licenseUrl = "https://www.guangsuleida.com/help.html";
-  // OneRay: 自建更新源（GitHub releases API 国内连不上）。JSON 只需 tag_name / prerelease / published_at / html_url
-  static const githubReleasesApiUrl = "https://www.guangsuleida.com/oneray/android/releases.json";
+  // OneRay: 自建更新源，放 Cloudflare R2（`dl.guangsuleida.com`，从 CF 边缘发，不依赖源站）
+  static const githubReleasesApiUrl = "https://dl.guangsuleida.com/android/releases.json";
   static const githubLatestReleaseUrl = "https://www.guangsuleida.com/";
   static const appCastUrl = "https://www.guangsuleida.com/oneray/android/appcast.xml";
   static const telegramChannelUrl = "https://t.me/+LQ-pvMvK4ClkNzFk";
