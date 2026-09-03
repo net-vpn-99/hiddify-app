@@ -26,6 +26,7 @@ abstract class GithubReleaseParser {
 
     // OneRay: 挑 arm64 的 apk（没有就退回第一个 .apk）
     String? apkUrl;
+    String? apkSha256;
     if (json["assets"] is List) {
       final assets = (json["assets"] as List).whereType<Map<String, dynamic>>().where(
             (a) => (a["name"] as String? ?? "").toLowerCase().endsWith(".apk"),
@@ -33,6 +34,7 @@ abstract class GithubReleaseParser {
       final arm64 = assets.firstOrNullWhere((a) => (a["name"] as String).toLowerCase().contains("arm64"));
       final chosen = arm64 ?? assets.firstOrNull;
       apkUrl = chosen?["browser_download_url"] as String?;
+      apkSha256 = chosen?["sha256"] as String?;
     }
 
     return RemoteVersionEntity(
@@ -44,6 +46,7 @@ abstract class GithubReleaseParser {
       publishedAt: publishedAt,
       flavor: flavor,
       apkUrl: apkUrl,
+      apkSha256: apkSha256,
       mandatory: json["mandatory"] == true,
     );
   }

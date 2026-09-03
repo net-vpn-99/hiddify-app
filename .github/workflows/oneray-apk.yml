@@ -107,7 +107,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: List outputs + rename APKs with version
+      - name: List outputs + rename APKs + generate releases.json
         run: |
           cd build/app/outputs/flutter-apk
           ls -la
@@ -116,10 +116,33 @@ jobs:
             mv "$f" "OneRay-${{ steps.ver.outputs.name }}-${abi}.apk"
           done
           ls -la; du -h *.apk
+          SHA=$(sha256sum "OneRay-${{ steps.ver.outputs.name }}-arm64-v8a.apk" | cut -d' ' -f1)
+          cat > releases.json <<EOF
+          [
+            {
+              "tag_name": "v${{ steps.ver.outputs.name }}",
+              "name": "光速安卓 ${{ steps.ver.outputs.name }}",
+              "prerelease": false,
+              "mandatory": false,
+              "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "html_url": "https://www.guangsuleida.com/android/",
+              "body": "见更新说明",
+              "assets": [
+                { "name": "oneray.apk", "browser_download_url": "https://www.guangsuleida.com/android/oneray.apk", "sha256": "$SHA" }
+              ]
+            }
+          ]
+          EOF
+          echo "## 发版用文件（都在 artifact 里）" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`OneRay-${{ steps.ver.outputs.name }}-arm64-v8a.apk\` → 服务器改名 \`oneray.apk\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`releases.json\`（已带 sha256 \`$SHA\`）→ 服务器 \`/var/www/dengtago/oneray/android/releases.json\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 大版本强制更新：把 releases.json 里 \`mandatory\` 改成 \`true\`" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
           name: OneRay-APK-v${{ steps.ver.outputs.name }}-${{ github.run_number }}
-          path: build/app/outputs/flutter-apk/*.apk
+          path: |
+            build/app/outputs/flutter-apk/*.apk
+            build/app/outputs/flutter-apk/releases.json
           retention-days: 14
           if-no-files-found: error

@@ -40,6 +40,7 @@ class NewVersionDialog extends HookConsumerWidget with PresLogger {
       try {
         await ApkInstaller.downloadAndInstall(
           newVersion.apkUrl!,
+          sha256Hex: newVersion.apkSha256,
           cancelToken: cancelToken,
           onProgress: (p) => progress.value = p,
         );
