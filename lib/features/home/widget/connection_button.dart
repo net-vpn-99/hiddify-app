@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/failures.dart';
+import 'package:hiddify/core/notification/in_app_notification_controller.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/dialog/widgets/custom_alert_dialog.dart';
@@ -123,8 +126,16 @@ class ConnectionButton extends HookConsumerWidget {
         },
         AsyncData(value: Disconnected()) || AsyncError() => () async {
           if (ref.read(activeProfileProvider).valueOrNull == null) {
+            // OneRay: 没订阅 —— 没登录就先引导登录（订阅登录后自动导入），
+            // 不再弹 Hiddify 那个「选择配置文件」通用空状态。
+            if (!ref.read(Preferences.panelLoggedIn)) {
+              ref.read(inAppNotificationControllerProvider).showInfoToast('请先登录光速账号');
+              context.go('/login');
+              return;
+            }
             await ref.read(dialogNotifierProvider.notifier).showNoActiveProfile();
             ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile();
+            return;
           }
           if (await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
             return await ref.read(connectionNotifierProvider.notifier).toggleConnection();

@@ -108,15 +108,18 @@ class HomePage extends HookConsumerWidget {
               onPressed: () => ref.read(bottomSheetsNotifierProvider.notifier).showQuickSettings(),
             ),
           ),
-          const Gap(8),
-          Semantics(
-            key: const ValueKey("profile_add_button"),
-            label: t.pages.profiles.add,
-            child: IconButton(
-              icon: Icon(Icons.add_rounded, color: theme.colorScheme.primary),
-              onPressed: () => ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(),
+          // OneRay: 登录后订阅自动导入，不需要手动加订阅 —— 只给没登录的老用户留这个入口
+          if (!ref.watch(Preferences.panelLoggedIn)) ...[
+            const Gap(8),
+            Semantics(
+              key: const ValueKey("profile_add_button"),
+              label: t.pages.profiles.add,
+              child: IconButton(
+                icon: Icon(Icons.add_rounded, color: theme.colorScheme.primary),
+                onPressed: () => ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(),
+              ),
             ),
-          ),
+          ],
           const Gap(8),
         ],
       ),

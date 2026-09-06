@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/constants.dart';
-import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
@@ -128,24 +127,6 @@ class LoginPage extends HookConsumerWidget {
                       child: const Text('忘记密码'),
                     ),
                   ],
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: loading
-                      ? null
-                      : () {
-                          if (context.canPop()) {
-                            context.pop();
-                          } else {
-                            context.go('/home');
-                          }
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            ref
-                                .read(bottomSheetsNotifierProvider.notifier)
-                                .showAddProfile();
-                          });
-                        },
-                  child: const Text('已有订阅链接？手动添加'),
                 ),
               ],
             ),
