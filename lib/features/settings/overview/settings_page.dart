@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
+import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
 import 'package:hiddify/features/diagnostic/diag_tile.dart';
 import 'package:hiddify/features/panel_auth/widget/account_tile.dart';
+import 'package:hiddify/features/panel_auth/widget/invite_reward_tile.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
 import 'package:hiddify/features/settings/notifier/reset_tunnel/reset_tunnel_notifier.dart';
+import 'package:hiddify/features/support/widget/support_entry_tile.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -56,9 +60,11 @@ class SettingsPage extends HookConsumerWidget {
     //   },
     // );
 
+    final loggedIn = ref.watch(Preferences.panelLoggedIn);
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(t.pages.settings.title),
+        title: const Text('我的'),
         actions: [
           MenuAnchor(
             menuChildren: <Widget>[
@@ -118,9 +124,31 @@ class SettingsPage extends HookConsumerWidget {
       ),
       body: ListView(
         children: [
-          // TipCard(message: t.settings.experimentalMsg),
+          // ── 账户信息 ──
           const AccountTile(),
           const Divider(height: 1),
+
+          // ── 邀请好友 ──
+          if (loggedIn) ...[
+            const InviteRewardTile(),
+            const Divider(height: 1),
+          ],
+
+          // ── 帮助与客服 ──
+          _groupHeader(context, '帮助与客服'),
+          const SupportEntryTile(),
+          Material(
+            child: ListTile(
+              leading: const Icon(Icons.help_outline_rounded),
+              title: const Text('常见问题'),
+              trailing: const Icon(Icons.open_in_new_rounded),
+              onTap: () => UriUtils.tryLaunch(Uri.parse(Constants.faqUrl)),
+            ),
+          ),
+          const DiagTile(),
+
+          // ── 应用设置 ──
+          _groupHeader(context, '应用设置'),
           SettingsSection(
             title: t.pages.settings.general.title,
             icon: Icons.layers_rounded,
@@ -175,8 +203,9 @@ class SettingsPage extends HookConsumerWidget {
                 },
               ),
             ),
+          // ── 关于 ──
           if (Breakpoint(context).isMobile()) ...[
-            const DiagTile(),
+            _groupHeader(context, '关于'),
             SettingsSection(
               title: t.pages.about.title,
               icon: Icons.info_rounded,
@@ -188,6 +217,18 @@ class SettingsPage extends HookConsumerWidget {
     );
   }
 }
+
+/// 「我的」页里的分组小标题（不可点，只是分隔）。
+Widget _groupHeader(BuildContext context, String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
 
 class SettingsSection extends HookConsumerWidget {
   const SettingsSection({super.key, required this.title, required this.icon, required this.namedLocation});

@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
-import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class AccountPage extends HookConsumerWidget {
@@ -91,7 +89,7 @@ class AccountPage extends HookConsumerWidget {
             FilledButton.icon(
               icon: const Icon(Icons.card_membership),
               label: const Text('续费 / 升级套餐'),
-              onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.panelPlanUrl)),
+              onPressed: () => context.pushNamed('purchase'),
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(

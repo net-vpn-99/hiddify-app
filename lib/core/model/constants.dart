@@ -12,6 +12,8 @@ abstract class Constants {
   static const panelInviteUrl = "https://panel.guangsuleida.com/#/invite"; // 邀请好友
   static const githubUrl = "https://www.guangsuleida.com/help.html";
   static const licenseUrl = "https://www.guangsuleida.com/help.html";
+  // OneRay: 「我的 → 帮助与客服 → 常见问题」跳这里（官网帮助页）。
+  static const faqUrl = "https://www.guangsuleida.com/help.html";
   // OneRay: 更新清单。主 = 搬瓦工中转直连（快、抗封），备 = 香港源站（CF）。逐个试。
   static const releasesJsonUrls = [
     "https://dl2.meadowfoundry.com/android/releases.json",

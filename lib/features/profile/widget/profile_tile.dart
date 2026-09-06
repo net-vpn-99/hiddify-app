@@ -316,7 +316,8 @@ class ProfileSubscriptionInfo extends HookConsumerWidget {
     } else if (subInfo.ratio >= 1) {
       return (t.components.subscriptionInfo.noTraffic, theme.colorScheme.error);
     } else if (subInfo.remaining.inDays > 365) {
-      return (t.components.subscriptionInfo.remainingDuration(duration: "∞"), null);
+      // OneRay: 长期套餐不显示「剩余 ∞ 天」，直接说「长期有效」。
+      return ('长期有效', null);
     } else {
       return (t.components.subscriptionInfo.remainingDuration(duration: subInfo.remaining.inDays), null);
     }
@@ -335,11 +336,10 @@ class ProfileSubscriptionInfo extends HookConsumerWidget {
           textDirection: TextDirection.ltr,
           child: Flexible(
             child: Text(
-              subInfo.total >
-                      10 *
-                          1099511627776 //10TB
+              // OneRay: 写清「已用 / 共」，别让用户猜这两个数是什么。
+              subInfo.total > 10 * 1099511627776 //10TB
                   ? "∞ GiB"
-                  : subInfo.consumption.sizeOf(subInfo.total),
+                  : '已用 ${subInfo.consumption.sizeGB()} / 共 ${subInfo.total.sizeGB()}',
               semanticsLabel: t.components.subscriptionInfo.remainingTrafficSemanticLabel(
                 consumed: subInfo.consumption.sizeGB(),
                 total: subInfo.total.sizeGB(),

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
 
 /// 对接 Xboard 会员系统。接口与桌面版 OneRay 保持一致
 /// （见 VPN 仓库 src/control/XboardControlPlane.cpp）。
@@ -167,6 +168,52 @@ class PanelApi {
     } on DioException catch (e) {
       throw PanelApiException(_networkMessage(e));
     }
+  }
+
+  /// 拉服务器下发的邀请文案（GslInviteBonus 插件，走 guest/comm/config，免登录）。
+  /// 改文案不用发客户端版本。`bonus` = 奖励额度（如「2 天 2G」），`share` = 分享文案
+  /// 模板（含 {bonus} / {link} 占位符）。拿不到对应项为 null。
+  Future<({String? bonus, String? share})> getInviteTexts() async {
+    try {
+      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
+      final data = _dataOf(res.data);
+      if (data == null) return (bonus: null, share: null);
+      final gsl = data['gsl_invite'];
+      final Map<String, dynamic>? obj = gsl is Map ? gsl.cast<String, dynamic>() : null;
+      String? pick(String k) {
+        final raw = (obj != null ? obj[k] : null) ?? data[k];
+        return (raw is String && raw.trim().isNotEmpty) ? raw.trim() : null;
+      }
+
+      return (bonus: pick('bonus_text'), share: pick('share_text'));
+    } catch (_) {
+      return (bonus: null, share: null);
+    }
+  }
+
+  /// 「我邀请的人」列表（邮箱打码）。需要登录令牌。
+  Future<({List<InviteReferral> items, int total})> getReferrals(String token, {int page = 1}) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.get<dynamic>(
+        '/api/v1/user/gsl_invite/referrals',
+        queryParameters: {'page': page},
+        options: Options(headers: {'auth_data': token, 'Authorization': token}),
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw PanelApiException('登录已过期，请重新登录', unauthorized: true);
+    }
+    final body = res.data;
+    final rawList = (body is Map && body['data'] is List) ? body['data'] as List<dynamic> : const [];
+    final items = rawList
+        .whereType<Map>()
+        .map((m) => InviteReferral.fromJson(m.cast<String, dynamic>()))
+        .toList();
+    final total = (body is Map && body['total'] is num) ? (body['total'] as num).toInt() : items.length;
+    return (items: items, total: total);
   }
 
   // --- helpers ---

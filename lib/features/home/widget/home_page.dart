@@ -18,6 +18,7 @@ import 'package:hiddify/features/proxy/active/active_proxy_card.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/active/auto_line_fixer.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
+import 'package:hiddify/features/support/widget/support_failure_link.dart';
 import 'package:hiddify/gen/assets.gen.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:sliver_tools/sliver_tools.dart';
@@ -169,6 +170,7 @@ class HomePage extends HookConsumerWidget {
                                   children: [
                                     ConnectionButton(),
                                     StabilityIndicator(),
+                                    SupportFailureLink(),
                                   ],
                                 ),
                               ),

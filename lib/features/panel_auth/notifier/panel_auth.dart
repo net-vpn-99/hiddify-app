@@ -2,6 +2,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
+import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
 import 'package:hiddify/features/profile/overview/profiles_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -34,6 +35,11 @@ typedef PanelLoginResult = ({String? subscribeUrl, String? error});
 
 final panelAuthProvider =
     NotifierProvider<PanelAuthNotifier, PanelAuthState>(PanelAuthNotifier.new);
+
+/// 邀请文案（服务器下发，改文案不用发版）：`bonus` = 奖励额度，`share` = 分享文案模板。
+/// 拿不到对应项为 null，UI 兜底（入口显示「查看邀请奖励」，分享用客户端内置文案）。
+final inviteTextsProvider =
+    FutureProvider.autoDispose<({String? bonus, String? share})>((ref) => PanelApi().getInviteTexts());
 
 class PanelAuthNotifier extends Notifier<PanelAuthState> {
   final PanelApi _api = PanelApi();
@@ -128,6 +134,20 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     if (token == null || token.isEmpty) return null;
     try {
       return await _api.getInvite(token);
+    } on PanelApiException catch (e) {
+      if (e.unauthorized) await logout(wipe: false);
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 「我邀请的人」列表。未登录 / 失败返回 null。
+  Future<({List<InviteReferral> items, int total})?> getReferrals({int page = 1}) async {
+    final token = await currentToken();
+    if (token == null || token.isEmpty) return null;
+    try {
+      return await _api.getReferrals(token, page: page);
     } on PanelApiException catch (e) {
       if (e.unauthorized) await logout(wipe: false);
       return null;

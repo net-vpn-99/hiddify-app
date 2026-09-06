@@ -19,6 +19,7 @@ import 'package:hiddify/features/profile/details/profile_details_page.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/overview/profiles_page.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_page.dart';
+import 'package:hiddify/features/purchase/widget/purchase_page.dart';
 import 'package:hiddify/features/settings/overview/sections/dns_options_page.dart';
 import 'package:hiddify/features/settings/overview/sections/general_page.dart';
 import 'package:hiddify/features/settings/overview/sections/inbound_options_page.dart';
@@ -26,6 +27,7 @@ import 'package:hiddify/features/settings/overview/sections/route_options_page.d
 import 'package:hiddify/features/settings/overview/sections/tls_tricks_page.dart';
 import 'package:hiddify/features/settings/overview/sections/warp_options_page.dart';
 import 'package:hiddify/features/settings/overview/settings_page.dart';
+import 'package:hiddify/features/support/widget/support_chat_page.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -259,6 +261,8 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         GoRoute(name: 'login', path: '/login', builder: (_, _) => const LoginPage()),
         GoRoute(name: 'account', path: '/account', builder: (_, _) => const AccountPage()),
         GoRoute(name: 'invite', path: '/invite', builder: (_, _) => const InvitePage()),
+        GoRoute(name: 'purchase', path: '/purchase', builder: (_, _) => const PurchasePage()),
+        GoRoute(name: 'supportChat', path: '/support-chat', builder: (_, _) => const SupportChatPage()),
         GoRoute(
           name: 'resetPassword',
           path: '/reset-password',

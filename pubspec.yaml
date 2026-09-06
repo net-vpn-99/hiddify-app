@@ -1,7 +1,7 @@
 name: hiddify
 description: Cross Platform Multi Protocol Proxy Frontend.
 publish_to: "none"
-version: 1.0.7+10007
+version: 1.1.0+10100
 
 environment:
   sdk: ^3.10.4
@@ -54,6 +54,8 @@ dependencies:
 
   url_launcher: ^6.2.5
   vclibs: ^0.1.2
+  image_picker: ^1.1.2 # OneRay: 在线客服发图 —— 相册选图 + 拍照
+  gal: ^2.3.1 # OneRay: 在线客服 —— 长按客服发来的图，保存到相册
   launch_at_startup: ^0.5.1
   sentry_flutter: ^8.14.0
   sentry_dart_plugin: ^2.4.1

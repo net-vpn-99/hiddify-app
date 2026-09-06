@@ -20,6 +20,7 @@ import 'package:hiddify/features/connection/widget/connection_wrapper.dart';
 import 'package:hiddify/features/per_app_proxy/overview/per_app_proxy_service_notifier.dart';
 import 'package:hiddify/features/profile/notifier/profiles_update_notifier.dart';
 import 'package:hiddify/features/shortcut/shortcut_wrapper.dart';
+import 'package:hiddify/features/support/notifier/support_chat_notifier.dart';
 import 'package:hiddify/features/system_tray/notifier/system_tray_notifier.dart';
 import 'package:hiddify/features/window/widget/window_wrapper.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
@@ -42,11 +43,13 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
     if (PlatformUtils.isDesktop) return;
     isOnPauseCalled = true;
     ref.read(hiddifyCoreServiceProvider).closeFront();
+    ref.read(supportChatNotifierProvider.notifier).setAppActive(false);
   }
 
   void onResume(WidgetRef ref) {
     // if (PlatformUtils.isDesktop) return;
     ref.read(hiddifyCoreServiceProvider).init();
+    ref.read(supportChatNotifierProvider.notifier).setAppActive(true);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (isOnPauseCalled && PlatformUtils.isAndroid) ref.invalidate(perAppProxyServiceProvider);
@@ -67,6 +70,28 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
     ref.listen(foregroundProfilesUpdateNotifierProvider, (_, _) {});
     if (PlatformUtils.isAndroid) ref.listen(perAppProxyServiceProvider, (_, _) {});
     if (PlatformUtils.isDesktop) ref.listen(systemTrayNotifierProvider, (_, _) {});
+
+    // 客服页没开着时收到新回复 → 应用内提醒（点一下进客服页）。
+    // 只在 App 前台有效；切后台靠 Chatwoot「离线转邮件」兜底。
+    ref.listen(supportChatNotifierProvider, (prev, next) {
+      if (next.unseenAgentCount <= (prev?.unseenAgentCount ?? 0)) return;
+      final preview = next.latestUnseenPreview ?? '';
+      toastification.show(
+        title: const Text('客服回复了'),
+        description: preview.isEmpty ? null : Text(preview, maxLines: 2, overflow: TextOverflow.ellipsis),
+        type: ToastificationType.info,
+        style: ToastificationStyle.fillColored,
+        alignment: AlignmentDirectional.topCenter,
+        autoCloseDuration: const Duration(seconds: 6),
+        closeOnClick: true,
+        callbacks: ToastificationCallbacks(
+          onTap: (_) {
+            toastification.dismissAll();
+            router.pushNamed('supportChat');
+          },
+        ),
+      );
+    });
 
     // updating ActiveBreakpointNotifier value
     useEffect(() {
