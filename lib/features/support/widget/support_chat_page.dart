@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
@@ -8,7 +9,6 @@ import 'package:hiddify/features/support/model/support_message.dart';
 import 'package:hiddify/features/support/notifier/support_chat_notifier.dart';
 import 'package:hiddify/features/support/widget/support_image_viewer.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 
 class SupportChatPage extends ConsumerStatefulWidget {
   const SupportChatPage({super.key});
@@ -20,7 +20,6 @@ class SupportChatPage extends ConsumerStatefulWidget {
 class _SupportChatPageState extends ConsumerState<SupportChatPage> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
-  final _picker = ImagePicker();
   int _lastCount = 0;
 
   @override
@@ -61,55 +60,19 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
   }
 
   Future<void> _pickFromGallery() async {
+    FocusScope.of(context).unfocus();
     try {
-      final files = await _picker.pickMultiImage(imageQuality: 80);
-      if (files.isNotEmpty) {
-        await ref.read(supportChatNotifierProvider.notifier).sendImages(files.map((f) => f.path).toList());
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: true,
+      );
+      final paths = result?.files.map((f) => f.path).whereType<String>().toList() ?? const [];
+      if (paths.isNotEmpty) {
+        await ref.read(supportChatNotifierProvider.notifier).sendImages(paths);
       }
     } catch (_) {
       _snack('打开相册失败');
     }
-  }
-
-  Future<void> _pickFromCamera() async {
-    try {
-      final file = await _picker.pickImage(source: ImageSource.camera, imageQuality: 80);
-      if (file != null) {
-        await ref.read(supportChatNotifierProvider.notifier).sendImages([file.path]);
-      }
-    } catch (_) {
-      _snack('打开相机失败');
-    }
-  }
-
-  void _openPlusSheet() {
-    FocusScope.of(context).unfocus();
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('从相册选'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickFromGallery();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('拍照'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickFromCamera();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   void _send() {
@@ -288,8 +251,8 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             IconButton(
-              icon: const Icon(Icons.add_circle_outline),
-              onPressed: state.ready ? _openPlusSheet : null,
+              icon: const Icon(Icons.image_outlined),
+              onPressed: state.ready ? _pickFromGallery : null,
               tooltip: '发图片',
             ),
             Expanded(
