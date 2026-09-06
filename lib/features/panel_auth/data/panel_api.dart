@@ -120,6 +120,46 @@ class PanelApi {
     throw PanelApiException(_messageOf(res.data) ?? '验证码发送失败，请稍后再试');
   }
 
+  /// 注册选项（站点是否要邮箱验证 / 是否强制邀请码 / 是否有人机验证）。
+  /// 走 guest/comm/config，免登录。出错时返回保守默认（要验证码、不强制邀请、无 recaptcha）。
+  Future<({bool emailVerify, bool inviteForce, bool recaptcha})> getRegisterOptions() async {
+    try {
+      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
+      final data = _dataOf(res.data);
+      bool flag(String k) => data?[k] == true || data?[k] == 1 || data?[k] == '1';
+      return (
+        emailVerify: data == null || flag('is_email_verify'),
+        inviteForce: flag('is_invite_force'),
+        recaptcha: flag('is_recaptcha'),
+      );
+    } catch (_) {
+      return (emailVerify: true, inviteForce: false, recaptcha: false);
+    }
+  }
+
+  /// 注册新账号。成功返回 auth 令牌（部分站点注册后不直接返回，则由调用方改用登录）。
+  Future<String?> register(String email, String password, {String? code, String? inviteCode}) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '/api/v1/passport/auth/register',
+        data: {
+          'email': email.trim(),
+          'password': password,
+          if (code != null && code.trim().isNotEmpty) 'email_code': code.trim(),
+          if (inviteCode != null && inviteCode.trim().isNotEmpty) 'invite_code': inviteCode.trim(),
+        },
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    final token = _extractToken(res.data);
+    if (token != null && token.isNotEmpty) return token;
+    // 注册成功但没返回令牌：账号已建好，调用方用密码登录一次即可。
+    if (_dataOf(res.data) != null || res.statusCode == 200) return null;
+    throw PanelApiException(_messageOf(res.data) ?? '注册失败，请检查信息后重试');
+  }
+
   /// 用邮箱验证码重置密码。
   Future<void> resetPassword(String email, String newPassword, String code) async {
     Response<dynamic> res;

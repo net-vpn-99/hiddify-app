@@ -19,6 +19,7 @@ class CustomTextFormField extends HookConsumerWidget {
     this.isDense = false,
     this.autoValidate = false,
     this.autoCorrect = false,
+    this.obscureText = false,
   });
 
   final ValueChanged<String>? onChanged;
@@ -33,6 +34,7 @@ class CustomTextFormField extends HookConsumerWidget {
   final bool isDense;
   final bool autoValidate;
   final bool autoCorrect;
+  final bool obscureText;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -46,6 +48,8 @@ class CustomTextFormField extends HookConsumerWidget {
       controller: textController,
       textCapitalization: TextCapitalization.sentences,
       maxLines: maxLines,
+      obscureText: obscureText,
+      enableSuggestions: !obscureText,
       onChanged: onChanged,
       textDirection: textController.textDirection,
       decoration: InputDecoration(
@@ -65,7 +69,7 @@ class CustomTextFormField extends HookConsumerWidget {
       textInputAction: TextInputAction.next,
       inputFormatters: inputFormatters,
       autovalidateMode: autoValidate ? AutovalidateMode.always : AutovalidateMode.disabled,
-      autocorrect: autoCorrect,
+      autocorrect: autoCorrect && !obscureText,
     );
   }
 }

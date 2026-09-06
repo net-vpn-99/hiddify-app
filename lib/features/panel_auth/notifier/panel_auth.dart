@@ -78,6 +78,47 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     }
   }
 
+  /// 注册并直接登入，返回订阅地址。失败时 subscribeUrl 为 null、error 为中文提示。
+  Future<PanelLoginResult> register(
+    String email,
+    String password, {
+    String? code,
+    String? inviteCode,
+  }) async {
+    if (state.loading) return (subscribeUrl: null, error: null);
+    state = state.copyWith(loading: true);
+
+    Future<PanelLoginResult> finish(String token) async {
+      final sub = await _api.getSubscribe(token);
+      await _secureStorage.write(key: _kTokenKey, value: token);
+      await _secureStorage.write(key: _kEmailKey, value: sub.email ?? email.trim());
+      await ref.read(Preferences.panelLoggedIn.notifier).update(true);
+      state = state.copyWith(loading: false, email: sub.email ?? email.trim());
+      return (subscribeUrl: sub.subscribeUrl, error: null);
+    }
+
+    try {
+      var token = await _api.register(email.trim(), password, code: code, inviteCode: inviteCode);
+      // 部分站点注册后不直接返回令牌 —— 账号已建好，用密码登录一次。
+      token ??= await _api.login(email.trim(), password);
+      return await finish(token);
+    } on PanelApiException catch (e) {
+      // 注册答复可能丢了但账号已建好（之后重试会报「邮箱已存在」把人卡死）—— 先用
+      // 这套凭据登录一次，成功就当注册成功。
+      try {
+        return await finish(await _api.login(email.trim(), password));
+      } catch (_) {}
+      state = state.copyWith(loading: false);
+      return (subscribeUrl: null, error: e.message);
+    } catch (e) {
+      state = state.copyWith(loading: false);
+      return (subscribeUrl: null, error: '注册出错：$e');
+    }
+  }
+
+  Future<({bool emailVerify, bool inviteForce, bool recaptcha})> registerOptions() =>
+      _api.getRegisterOptions();
+
   /// 用已保存的令牌重新拉一次订阅地址（启动时刷新用）。失败返回 null。
   Future<String?> refreshSubscribeUrl() async {
     final token = await currentToken();

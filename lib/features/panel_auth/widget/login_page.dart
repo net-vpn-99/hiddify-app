@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
-import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 光速会员账号登录。登录成功后自动把订阅加成配置并回主页。
@@ -84,6 +82,7 @@ class LoginPage extends HookConsumerWidget {
                   controller: passCtrl,
                   maxLines: 1,
                   label: '密码',
+                  obscureText: obscure.value,
                   validator: (v) =>
                       (v == null || v.isEmpty) ? '请输入密码' : null,
                   suffixIcon: IconButton(
@@ -116,7 +115,7 @@ class LoginPage extends HookConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     TextButton(
-                      onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.panelRegisterUrl)),
+                      onPressed: () => context.pushNamed('register'),
                       child: const Text('注册账号'),
                     ),
                     TextButton(
