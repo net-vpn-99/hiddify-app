@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
@@ -18,6 +19,7 @@ class PurchaseState {
     this.plansLoading = true,
     this.plans = const [],
     this.plansError,
+    this.selected,
     this.stage = PurchaseStage.browsing,
     this.error,
     this.tradeNo,
@@ -28,6 +30,9 @@ class PurchaseState {
   final bool plansLoading;
   final List<PlanOffer> plans;
   final String? plansError;
+
+  /// 当前选中的价格档（底栏「去支付」用）。plans 加载完自动选推荐档。
+  final PlanOffer? selected;
 
   final PurchaseStage stage;
 
@@ -43,6 +48,7 @@ class PurchaseState {
     bool? plansLoading,
     List<PlanOffer>? plans,
     Object? plansError = _keep,
+    Object? selected = _keep,
     PurchaseStage? stage,
     Object? error = _keep,
     Object? tradeNo = _keep,
@@ -53,6 +59,7 @@ class PurchaseState {
       plansLoading: plansLoading ?? this.plansLoading,
       plans: plans ?? this.plans,
       plansError: plansError == _keep ? this.plansError : plansError as String?,
+      selected: selected == _keep ? this.selected : selected as PlanOffer?,
       stage: stage ?? this.stage,
       error: error == _keep ? this.error : error as String?,
       tradeNo: tradeNo == _keep ? this.tradeNo : tradeNo as String?,
@@ -66,6 +73,11 @@ class PurchaseState {
 
 final purchaseNotifierProvider =
     NotifierProvider.autoDispose<PurchaseNotifier, PurchaseState>(PurchaseNotifier.new);
+
+/// 购买页顶部「账户 + 剩余流量」卡片用。拉最新订阅信息，失败 / 未登录返回 null。
+final purchaseAccountProvider = FutureProvider.autoDispose<PanelAccount?>(
+  (ref) => ref.read(panelAuthProvider.notifier).fetchAccount(),
+);
 
 class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
   final _service = PurchaseService();
@@ -91,6 +103,7 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
         plansLoading: false,
         plans: plans,
         plansError: plans.isEmpty ? '暂时没有可购买的套餐' : null,
+        selected: _pickDefault(plans),
       );
     } on PurchaseException catch (e) {
       state = state.copyWith(plansLoading: false, plansError: e.message);
@@ -98,6 +111,17 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
       state = state.copyWith(plansLoading: false, plansError: '拉取套餐失败，请检查网络');
     }
   }
+
+  static PlanOffer? _pickDefault(List<PlanOffer> plans) {
+    if (plans.isEmpty) return null;
+    for (final o in plans) {
+      if (o.recommended) return o;
+    }
+    return plans.first;
+  }
+
+  /// 底栏 / 卡片选中某一档。
+  void select(PlanOffer offer) => state = state.copyWith(selected: offer);
 
   /// 选中一个套餐档 → 建单 → 结账 → 打开收银台。
   Future<void> startPurchase(PlanOffer offer) async {

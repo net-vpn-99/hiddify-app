@@ -23,12 +23,16 @@ class PlanOffer {
     required this.durationLabel,
     required this.priceCents,
     required this.periodDays,
+    this.deviceLimit,
     this.recommended = false,
     this.badge,
   });
 
   final int planId;
   final String name;
+
+  /// 套餐设备上限；null = 不限（后台 device_limit 为 null）。
+  final int? deviceLimit;
 
   /// 例如「50 GB」/「不限流量」。短期档是短期专属额度（见 [kShortTermTrafficGb]）。
   final String trafficLabel;
@@ -69,6 +73,7 @@ class PlanOffer {
         durationLabel: durationLabel,
         priceCents: priceCents,
         periodDays: periodDays,
+        deviceLimit: deviceLimit,
         recommended: recommended ?? this.recommended,
         badge: badge ?? this.badge,
       );
@@ -85,6 +90,8 @@ class PlanOffer {
     if (id <= 0) return const [];
     final name = (plan['name'] as String?)?.trim() ?? '套餐';
     final isShortTermPlan = id == kShortTermPlanId;
+    final rawDevice = plan['device_limit'];
+    final deviceLimit = rawDevice == null ? null : n(rawDevice).toInt();
 
     // (period 键, 周期文案, 时长文案, 参考天数)
     final cycles = <(String, String, String, int)>[
@@ -123,6 +130,7 @@ class PlanOffer {
           durationLabel: duration,
           priceCents: cents,
           periodDays: days,
+          deviceLimit: deviceLimit,
           recommended: key == kRecommendedPeriod,
           badge: key == kRecommendedPeriod ? '推荐选择' : null,
         ),
