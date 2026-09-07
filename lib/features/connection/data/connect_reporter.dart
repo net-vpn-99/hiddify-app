@@ -8,10 +8,13 @@ import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/profile/data/profile_data_providers.dart';
+import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:path/path.dart' as p;
 
-/// Reports one row per connect attempt to the panel (GslInviteBonus 1.17.0's
+/// Reports one row per connect attempt to the panel (GslInviteBonus's
 /// `POST /api/v1/guest/gsl_connect/report`) so the server can see which of the
 /// eight stages an attempt got stuck on. Mirrors the Windows client's
 /// ConnectReporter -- see D:/VPN/docs/连接轨迹采集-数据协议.md.
@@ -24,6 +27,16 @@ import 'package:path/path.dart' as p;
 ///  - upload must survive a dead VPN: primary apiBase, then api-hk direct, then
 ///    an on-disk queue flushed on the next attempt. attempt_id dedupes.
 ///  - no toast. Surfaces only on the diagnostics screen.
+///
+/// 1.1.6:
+///  - node_tag = the actually-selected outbound tag (resolved from the local
+///    profile), not the subscription name; the subscription name goes in
+///    sub_name. host/port of that outbound are kept for the TCP probe.
+///  - on failure: snapshot box.log synchronously (a reconnect truncates it),
+///    then actively TCP-probe the node and report dest / ms / errno / err
+///    directly -- not only via the core log.
+///  - the report carries the panel Authorization token so the server binds the
+///    attempt to the real account instead of trusting a self-reported email.
 class ConnectReporter {
   ConnectReporter(this._ref);
 
@@ -45,11 +58,16 @@ class ConnectReporter {
   static const int _bundleMaxPerDay = 3;
 
   String? _attemptId;
+  String _subName = '';
   String _nodeTag = '';
+  String? _nodeHost;
+  int? _nodePort;
   int _reached = 0;
   bool _done = false;
+  bool _snapDone = false;
   DateTime _startedAt = DateTime.now();
   Map<String, dynamic> _sub = {};
+  Map<String, dynamic>? _tcp;
 
   // "", "sent", "queued", "failed" -- read by the diagnostics screen.
   String state = '';
@@ -72,7 +90,7 @@ class ConnectReporter {
 
   String _host(String url) => Uri.tryParse(url)?.host ?? url;
 
-  Future<Directory?> _workingDir() async {
+  Directory? _workingDirSync() {
     try {
       return _ref.read(appDirectoriesProvider).requireValue.workingDir;
     } catch (_) {
@@ -80,10 +98,21 @@ class ConnectReporter {
     }
   }
 
+  Future<Directory?> _workingDir() async => _workingDirSync();
+
   String? _email() {
     try {
       final e = _ref.read(panelAuthProvider).email;
       return (e != null && e.isNotEmpty) ? e : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _panelToken() async {
+    try {
+      final t = await _ref.read(panelAuthProvider.notifier).currentToken();
+      return (t != null && t.isNotEmpty) ? t : null;
     } catch (_) {
       return null;
     }
@@ -99,13 +128,24 @@ class ConnectReporter {
 
   // -------------------------------------------------------------- lifecycle
 
-  Future<void> beginAttempt(String nodeTag) async {
+  /// [subName] is the active profile / subscription name ("光速").
+  /// [preferredLine] is Preferences.preferredLineName -- the line the user
+  /// picked on the home card, if any; used to resolve which outbound (and thus
+  /// which host:port) this attempt will actually dial.
+  Future<void> beginAttempt(String subName, {String? preferredLine}) async {
     _attemptId = _mintId();
-    _nodeTag = nodeTag.length > 64 ? nodeTag.substring(0, 64) : nodeTag;
+    _subName = subName.length > 64 ? subName.substring(0, 64) : subName;
     _startedAt = DateTime.now();
     _done = false;
+    _snapDone = false;
+    _tcp = null;
     state = '';
     code = '';
+
+    final node = await _resolveSelectedNode(preferredLine);
+    _nodeTag = node.tag.length > 64 ? node.tag.substring(0, 64) : node.tag;
+    _nodeHost = node.host;
+    _nodePort = node.port;
 
     _sub = await _readSubFetch();
     final subStage = _sub.remove('_stage') as int? ?? 0;
@@ -121,6 +161,20 @@ class ConnectReporter {
   void abandon() {
     _attemptId = null;
     _done = true;
+  }
+
+  /// Synchronous, cheap, idempotent. Call the instant a failure is observed --
+  /// before any retry `start()` truncates box.log.
+  void captureCoreLogSync() {
+    if (_snapDone) return;
+    try {
+      final dir = _workingDirSync();
+      if (dir == null) return;
+      final src = File(p.join(dir.path, 'box.log'));
+      if (!src.existsSync() || src.lengthSync() == 0) return;
+      src.copySync(p.join(dir.path, 'box.log.snap'));
+      _snapDone = true;
+    } catch (_) {}
   }
 
   Future<void> reportSuccess(int proxyMs) async {
@@ -140,11 +194,28 @@ class ConnectReporter {
     if (!attemptOpen) return;
     _done = true;
 
+    captureCoreLogSync();
+
     final failStage = _mapFailStage(engineError, _reached);
+
+    // Active TCP probe: whenever we got at least as far as tunnel takeover, or
+    // the mapped stage is node-level, probe the node ourselves so we record the
+    // dest / latency / OS error code / text directly, not only via the core log.
+    if (_tcp == null &&
+        _nodeHost != null &&
+        _nodePort != null &&
+        (_reached >= stageTunnelReady ||
+            failStage == 'node_tcp' ||
+            failStage == 'node_tls' ||
+            failStage == 'proxy_request')) {
+      _tcp = await _probeTcp(_nodeHost!, _nodePort!);
+    }
+
     final payload = _basePayload('fail')
       ..['fail_stage'] = failStage
       ..['reached_stage'] = _reached;
     if (_sub.isNotEmpty) payload['sub'] = _sub;
+    if (_tcp != null) payload['tcp'] = _tcp;
 
     String? bundle;
     final sig = '$failStage|$_nodeTag|${_host(_primaryApiBase())}';
@@ -160,6 +231,11 @@ class ConnectReporter {
     _attemptId = _mintId();
     _startedAt = DateTime.now();
     _done = true;
+    _snapDone = false;
+    _tcp = null;
+    _nodeTag = '';
+    _nodeHost = null;
+    _nodePort = null;
     _sub = await _readSubFetch();
     final subStage = _sub.remove('_stage') as int? ?? 0;
     final subFail = _sub.remove('_fail_stage') as String?;
@@ -183,6 +259,8 @@ class ConnectReporter {
       'apibase': _host(_primaryApiBase()),
     };
     if (_nodeTag.isNotEmpty) m['node_tag'] = _nodeTag;
+    if (_subName.isNotEmpty) m['sub_name'] = _subName;
+    // Fallback only -- the server prefers the account resolved from the token.
     final e = _email();
     if (e != null) m['email'] = e;
     return m;
@@ -256,6 +334,130 @@ class ConnectReporter {
     if (reached >= stageTunnelReady) return 'node_tcp';
     if (reached >= stageCoreStarted) return 'tunnel';
     return 'unknown';
+  }
+
+  // -------------------------------------------------------------- selected node
+
+  /// Read the local profile config and work out which outbound this attempt
+  /// will dial (and its host:port). Fully offline -- does not need the core.
+  Future<({String tag, String? host, int? port})> _resolveSelectedNode(String? preferred) async {
+    final pref = (preferred ?? '').trim();
+    try {
+      final profile = await _ref.read(activeProfileProvider.future);
+      if (profile == null) return (tag: pref, host: null, port: null);
+      final repo = await _ref.read(profileRepositoryProvider.future);
+      final raw = await repo.getRawConfig(profile.id).getOrElse((_) => '').run();
+      final picked = _pickNodeFromConfig(raw, pref);
+      if (picked != null) return picked;
+    } catch (_) {}
+    return (tag: pref, host: null, port: null);
+  }
+
+  static const _nonNodeTypes = {
+    'selector', 'urltest', 'loadbalance', 'loadbalancer',
+    'direct', 'block', 'dns', 'dns-out',
+  };
+
+  ({String tag, String? host, int? port})? _pickNodeFromConfig(String raw, String preferred) {
+    final text = raw.trim();
+    if (text.isEmpty) return null;
+
+    // 1) sing-box JSON (hiddify-core stores the generated config here)
+    try {
+      final obj = jsonDecode(text);
+      if (obj is Map && obj['outbounds'] is List) {
+        final nodes = <({String tag, String? host, int? port})>[];
+        for (final ob in obj['outbounds'] as List) {
+          if (ob is! Map) continue;
+          final type = (ob['type'] ?? '').toString().toLowerCase();
+          final tag = (ob['tag'] ?? '').toString();
+          if (tag.isEmpty || _nonNodeTypes.contains(type) || isAutoGroupTag(tag)) {
+            continue;
+          }
+          final server = (ob['server'] ?? '').toString();
+          final port = (ob['server_port'] is num) ? (ob['server_port'] as num).toInt() : null;
+          nodes.add((tag: tag, host: server.isEmpty ? null : server, port: port));
+        }
+        if (nodes.isEmpty) return null;
+        if (preferred.isNotEmpty) {
+          for (final n in nodes) {
+            if (splitNodeName(n.tag).name == preferred) return n;
+          }
+        }
+        return nodes.first;
+      }
+    } catch (_) {
+      // not JSON -- fall through
+    }
+
+    // 2) base64 / plaintext proxy-URI list
+    var lines = text;
+    try {
+      final decoded = utf8.decode(base64.decode(base64.normalize(text.replaceAll(RegExp(r'\s'), ''))));
+      if (decoded.contains('://')) lines = decoded;
+    } catch (_) {}
+    final parsed = <({String tag, String? host, int? port})>[];
+    for (final rawLine in const LineSplitter().convert(lines)) {
+      final line = rawLine.trim();
+      if (line.isEmpty || !line.contains('://')) continue;
+      final uri = Uri.tryParse(line);
+      if (uri == null || uri.host.isEmpty) continue;
+      String frag = '';
+      final hashIdx = line.indexOf('#');
+      if (hashIdx >= 0 && hashIdx < line.length - 1) {
+        try {
+          frag = Uri.decodeComponent(line.substring(hashIdx + 1));
+        } catch (_) {
+          frag = line.substring(hashIdx + 1);
+        }
+      }
+      parsed.add((tag: frag, host: uri.host, port: uri.hasPort ? uri.port : null));
+    }
+    if (parsed.isEmpty) return null;
+    if (preferred.isNotEmpty) {
+      for (final n in parsed) {
+        if (splitNodeName(n.tag).name == preferred) return n;
+      }
+    }
+    return parsed.first;
+  }
+
+  // -------------------------------------------------------------- TCP probe
+
+  /// Bare TCP connect to the node we were about to use. Records the exact dest,
+  /// how long it took, and the OS error (code + text) verbatim. Runs only on
+  /// failure. NB: with the TUN up this dials through the tunnel, so a node_tcp
+  /// failure here reproduces the core's own dial -- the error code
+  /// (ECONNREFUSED / ETIMEDOUT / EHOSTUNREACH) is the diagnostic value.
+  Future<Map<String, dynamic>> _probeTcp(String host, int port) async {
+    final dest = '$host:$port';
+    final sw = Stopwatch()..start();
+    try {
+      final s = await Socket.connect(host, port, timeout: const Duration(seconds: 6));
+      sw.stop();
+      s.destroy();
+      return {'dest': dest, 'ms': sw.elapsedMilliseconds, 'ok': true, 'errno': 0};
+    } on SocketException catch (e) {
+      sw.stop();
+      final msg = (e.osError?.message ?? e.message).trim();
+      return {
+        'dest': dest,
+        'ms': sw.elapsedMilliseconds,
+        'ok': false,
+        'errno': e.osError?.errorCode ?? -1,
+        'err': msg.length > 180 ? msg.substring(0, 180) : msg,
+      };
+    } catch (e) {
+      sw.stop();
+      final msg = e.toString();
+      return {
+        'dest': dest,
+        'ms': sw.elapsedMilliseconds,
+        'ok': false,
+        'errno': -1,
+        'err': msg.length > 180 ? msg.substring(0, 180) : msg,
+      };
+    }
   }
 
   // -------------------------------------------------------------- sub-fetch.json
@@ -335,16 +537,31 @@ class ConnectReporter {
         if (s == stageSubDownloaded && _sub.isNotEmpty) step.addAll(_sub);
         trace.add(step);
       }
-      trace.add({'stage': failStage, 'ok': false});
+      final failStep = <String, dynamic>{'stage': failStage, 'ok': false};
+      if (_tcp != null) failStep['tcp'] = _tcp;
+      trace.add(failStep);
+
+      // box.log: prefer the failure-time snapshot (a reconnect truncates the
+      // live file). app.log is app-written and append-only, read live.
+      final snap = File(p.join(dir.path, 'box.log.snap'));
+      final boxPath = snap.existsSync() ? snap.path : p.join(dir.path, 'box.log');
 
       final text = StringBuffer()
         ..writeln('===== 光速 连接轨迹 =====')
         ..writeln('time: ${_startedAt.toIso8601String()}')
         ..writeln('ver: ${_version()}  os: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
         ..writeln('fail_stage: $failStage  reached: $_reached')
+        ..writeln('node: ${_nodeTag.isEmpty ? "-" : _nodeTag}'
+            '${_nodeHost != null ? "  dest: $_nodeHost:${_nodePort ?? "?"}" : ""}')
+        ..writeln('sub: ${_subName.isEmpty ? "-" : _subName}');
+      if (_tcp != null) {
+        text.writeln('tcp_probe: ${jsonEncode(_tcp)}');
+      }
+      text
+        ..writeln('box.log source: ${snap.existsSync() ? "snapshot" : "live"}')
         ..writeln()
         ..writeln('--- box.log (tail) ---')
-        ..writeln(await _tail(p.join(dir.path, 'box.log'), 400, 180 * 1024))
+        ..writeln(await _tail(boxPath, 400, 180 * 1024))
         ..writeln()
         ..writeln('--- app.log (tail) ---')
         ..writeln(await _tail(p.join(dir.path, 'app.log'), 200, 80 * 1024));
@@ -354,6 +571,9 @@ class ConnectReporter {
         'attempt_id': _attemptId,
         'started_at': _startedAt.toUtc().toIso8601String(),
         'fail_stage': failStage,
+        'node_tag': _nodeTag,
+        'sub_name': _subName,
+        if (_tcp != null) 'tcp': _tcp,
         'trace': trace,
         'log_tail': text.toString(),
       };
@@ -376,16 +596,28 @@ class ConnectReporter {
         _ => 'unknown',
       };
 
+  /// Tail of a text file, robust to a byte-offset landing mid-UTF-8 and to NUL
+  /// padding (Android's rotated logs). Decodes leniently, drops NULs, and skips
+  /// the partial first line when we did not start at offset 0.
   Future<String> _tail(String path, int maxLines, int maxBytes) async {
     try {
       final f = File(path);
       if (!f.existsSync()) return '(none)';
       final len = await f.length();
       final start = len > maxBytes ? len - maxBytes : 0;
-      final raw = await f.openRead(start).transform(utf8.decoder).join();
+      final bytes = <int>[];
+      await for (final chunk in f.openRead(start)) {
+        bytes.addAll(chunk);
+      }
+      var raw = utf8.decode(bytes, allowMalformed: true).replaceAll('\x00', '');
+      if (start > 0) {
+        final nl = raw.indexOf('\n');
+        if (nl >= 0) raw = raw.substring(nl + 1);
+      }
       final lines = raw.split('\n');
       final tail = lines.length > maxLines ? lines.sublist(lines.length - maxLines) : lines;
-      return tail.join('\n');
+      final out = tail.join('\n').trim();
+      return out.isEmpty ? '(empty)' : out;
     } catch (e) {
       return '(read failed: $e)';
     }
@@ -395,8 +627,9 @@ class ConnectReporter {
 
   Future<void> _send(Map<String, dynamic> payload, String? bundleGzB64) async {
     if (bundleGzB64 != null) payload['bundle_gz'] = bundleGzB64;
+    final token = await _panelToken();
 
-    final r1 = await _post(_primaryApiBase(), payload);
+    final r1 = await _post(_primaryApiBase(), payload, token);
     if (r1 == _PostResult.ok) {
       _setState('sent', bundleGzB64 != null ? (_attemptId ?? '').substring(0, 8) : '');
       return;
@@ -405,7 +638,7 @@ class ConnectReporter {
       _setState('failed', '');
       return;
     }
-    final r2 = await _post(_fallbackApiBase, payload);
+    final r2 = await _post(_fallbackApiBase, payload, token);
     if (r2 == _PostResult.ok) {
       _setState('sent', bundleGzB64 != null ? (_attemptId ?? '').substring(0, 8) : '');
       return;
@@ -418,9 +651,12 @@ class ConnectReporter {
     _setState('queued', '');
   }
 
-  Future<_PostResult> _post(String baseUrl, Map<String, dynamic> payload) async {
+  Future<_PostResult> _post(String baseUrl, Map<String, dynamic> payload, String? token) async {
     try {
-      final res = await _dio(baseUrl).post<dynamic>(_reportPath, data: payload);
+      final opt = token != null
+          ? Options(headers: {'Authorization': token, 'auth_data': token})
+          : null;
+      final res = await _dio(baseUrl).post<dynamic>(_reportPath, data: payload, options: opt);
       final s = res.statusCode ?? 0;
       if (s >= 200 && s < 300) return _PostResult.ok;
       if (s >= 400 && s < 600) return _PostResult.rejected;
@@ -466,13 +702,14 @@ class ConnectReporter {
       final queue = jsonDecode(await f.readAsString()) as List<dynamic>;
       if (queue.isEmpty) return;
 
+      final token = await _panelToken();
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final remaining = <dynamic>[];
       for (final entry in queue) {
         final at = ((entry as Map)['at'] as num?)?.toInt() ?? 0;
         if (now - at > _queueTtlSecs) continue;
         final payload = Map<String, dynamic>.from(entry['payload'] as Map);
-        final r = await _post(_primaryApiBase(), payload);
+        final r = await _post(_primaryApiBase(), payload, token);
         if (r == _PostResult.network) remaining.add(entry); // keep; 2xx or rejection drops it
       }
       if (remaining.isEmpty) {

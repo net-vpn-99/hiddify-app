@@ -74,6 +74,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           reporter.markStage(ConnectReporter.stageTunnelReady);
           Future<void>.delayed(const Duration(seconds: 15), () {
             if (reporter.attemptOpen) {
+              reporter.captureCoreLogSync();
               reporter.reportFailure("连接后 15 秒内没有一次通过隧道的请求成功（proxy_request）");
             }
           });
@@ -166,7 +167,10 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       unawaited(reporter.reportNoRoute());
       return;
     }
-    await reporter.beginAttempt(activeProfile.name);
+    await reporter.beginAttempt(
+      activeProfile.name,
+      preferredLine: ref.read(Preferences.preferredLineName),
+    );
     await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).mapLeft((
       ConnectionFailure err,
     ) async {
@@ -176,6 +180,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       if (err is MissingWarpLicense) {
         reporter.abandon();
       } else {
+        // snapshot box.log NOW, synchronously, before any retry start() truncates it
+        reporter.captureCoreLogSync();
         unawaited(reporter.reportFailure(err.toString()));
       }
       await ref
