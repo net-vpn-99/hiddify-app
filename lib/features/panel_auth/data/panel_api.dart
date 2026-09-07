@@ -321,6 +321,26 @@ class PanelAccount {
 
   bool get lifetime => expiredAt == null || expiredAt == 0;
   int get remainingBytes => (transferEnable - used).clamp(0, transferEnable);
+
+  /// 连接轨迹「账号原因」归类用的状态标记（跟 Windows 客户端 accountStateSlug 一致）：
+  /// ok / traffic_exhausted / expired / no_plan。
+  String get stateSlug {
+    if (transferEnable > 0 && used >= transferEnable) return 'traffic_exhausted';
+    final exp = expiredAt;
+    if (exp != null && exp > 0 && DateTime.now().millisecondsSinceEpoch >= exp * 1000) {
+      return 'expired';
+    }
+    final noPlan = (planName == null || planName!.trim().isEmpty) &&
+        transferEnable <= 0 &&
+        (exp == null || exp == 0);
+    return noPlan ? 'no_plan' : 'ok';
+  }
+
+  /// 流量用完 / 会员到期 —— 连不上是账号原因，不是节点问题。
+  bool get exhausted {
+    final s = stateSlug;
+    return s == 'traffic_exhausted' || s == 'expired';
+  }
 }
 
 class PanelApiException implements Exception {

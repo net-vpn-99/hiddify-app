@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/actions_at_closing.dart';
 import 'package:hiddify/core/router/dialog/widgets/action_at_closing_dialog.dart';
 import 'package:hiddify/core/router/dialog/widgets/confirmation_dialog.dart';
@@ -24,6 +25,7 @@ import 'package:hiddify/core/router/go_router/go_router_notifier.dart';
 import 'package:hiddify/features/app_update/model/remote_version_entity.dart';
 import 'package:hiddify/features/common/qr_code_dialog.dart';
 import 'package:hiddify/features/common/qr_code_scanner_screen.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:protobuf/protobuf.dart';
@@ -245,5 +247,22 @@ class DialogNotifier extends _$DialogNotifier {
 
   Future<void> showCustomAlertFromErr(({String type, String? message}) err) async {
     return await _show<void>(CustomAlertDialog.fromErr(err));
+  }
+
+  /// 流量用完 / 会员到期时弹这个（连不上其实是账号原因，不是节点问题）。
+  /// 点「去续费」跳购买页。
+  Future<void> showQuotaExhausted(PanelAccount account) async {
+    final traffic = account.stateSlug == 'traffic_exhausted';
+    final ok = await showConfirmation(
+      title: traffic ? '流量已用完' : '会员已到期',
+      message: traffic
+          ? '当前套餐流量已用完，续费或升级套餐后即可继续连接。'
+          : '会员已到期，续费后即可继续连接。',
+      icon: Icons.data_usage_outlined,
+      positiveBtnTxt: '去续费',
+    );
+    if (!ok) return;
+    final context = rootNavKey.currentContext;
+    if (context != null && context.mounted) context.pushNamed('purchase');
   }
 }

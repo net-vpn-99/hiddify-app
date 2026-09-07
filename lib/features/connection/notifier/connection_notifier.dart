@@ -10,6 +10,7 @@ import 'package:hiddify/features/connection/data/connection_data_providers.dart'
 import 'package:hiddify/features/connection/data/connection_repository.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
@@ -72,11 +73,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           reporter.markStage(ConnectReporter.stageCoreStarted);
         case Connected():
           reporter.markStage(ConnectReporter.stageTunnelReady);
-          Future<void>.delayed(const Duration(seconds: 15), () {
-            if (reporter.attemptOpen) {
-              reporter.captureCoreLogSync();
-              reporter.reportFailure("连接后 15 秒内没有一次通过隧道的请求成功（proxy_request）");
-            }
+          Future<void>.delayed(const Duration(seconds: 15), () async {
+            if (!reporter.attemptOpen) return;
+            reporter.captureCoreLogSync();
+            // 连上了但 15 秒没有一次成功的隧道请求 —— 先看是不是这段时间流量用完了。
+            if (await _accountExhaustedAfterFailure(reporter)) return;
+            await reporter.reportFailure("连接后 15 秒内没有一次通过隧道的请求成功（proxy_request）");
           });
         case Disconnected() || Disconnecting():
           reporter.abandon();
@@ -157,6 +159,20 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     );
   }
 
+  /// 连接失败后复核账号：若是流量用完 / 会员到期，当「账号原因」处理（不记节点失败），
+  /// 返回 true 表示已按账号原因处理完。
+  Future<bool> _accountExhaustedAfterFailure(ConnectReporter reporter) async {
+    try {
+      await ref.read(panelAuthProvider.notifier).syncAccountQuietly();
+    } catch (_) {}
+    final acc = ref.read(panelAuthProvider).account;
+    if (acc != null && acc.exhausted) {
+      reporter.abandon();
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _connectThrottled() async {
     final reporter = ref.read(connectReporterProvider);
     final activeProfile = await ref.read(activeProfileProvider.future);
@@ -167,6 +183,18 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       unawaited(reporter.reportNoRoute());
       return;
     }
+
+    // 流量用完 / 会员到期：不发起这次注定失败的连接（只会在连接轨迹里留一条 fail、
+    // 把节点失败率带脏，用户看到的还是「连接失败」于是一直重试）。直接引导续费。
+    final acc = ref.read(panelAuthProvider).account;
+    if (acc != null && acc.exhausted) {
+      await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc);
+      await ref.read(Preferences.startedByUser.notifier).update(false);
+      return;
+    }
+    // 流量用量本地可能已过时——连接前静默补一次（不阻塞本次；真超额了下次点击会拦）。
+    unawaited(ref.read(panelAuthProvider.notifier).syncAccountQuietly());
+
     await reporter.beginAttempt(
       activeProfile.name,
       preferredLine: ref.read(Preferences.preferredLineName),
@@ -182,6 +210,16 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       } else {
         // snapshot box.log NOW, synchronously, before any retry start() truncates it
         reporter.captureCoreLogSync();
+        // 失败也可能只是这次连接期间流量用完了：复核账号，是账号原因就别记成节点失败，
+        // 直接弹「流量用完 · 去续费」而不是笼统的连接错误。
+        if (await _accountExhaustedAfterFailure(reporter)) {
+          await ref
+              .read(dialogNotifierProvider.notifier)
+              .showQuotaExhausted(ref.read(panelAuthProvider).account!);
+          await ref.read(Preferences.startedByUser.notifier).update(false);
+          state = AsyncError(err, StackTrace.current);
+          return;
+        }
         unawaited(reporter.reportFailure(err.toString()));
       }
       await ref

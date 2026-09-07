@@ -263,6 +263,12 @@ class ConnectReporter {
     // Fallback only -- the server prefers the account resolved from the token.
     final e = _email();
     if (e != null) m['email'] = e;
+    // 上报时的配额状态（GslInviteBonus 1.22.0）——让服务端把「流量用完 / 会员到期」
+    // 这类失败单独归类，不计节点失败率、不触发告警。
+    try {
+      final acc = _ref.read(panelAuthProvider).account;
+      if (acc != null) m['account_state'] = acc.stateSlug;
+    } catch (_) {}
     return m;
   }
 

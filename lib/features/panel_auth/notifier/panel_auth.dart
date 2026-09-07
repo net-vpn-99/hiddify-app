@@ -14,19 +14,30 @@ const _secureStorage = FlutterSecureStorage(
 );
 
 class PanelAuthState {
-  const PanelAuthState({this.loading = false, this.email});
+  const PanelAuthState({this.loading = false, this.email, this.account});
 
   final bool loading;
 
   /// 已登录账号的邮箱；null = 未登录。
   final String? email;
 
+  /// 最近一次拉到的账号信息（登录 / 启动刷订阅 / 会员页 / 连接前都会更新）。
+  /// 连接流程用它判断流量是否用完，避免发起注定失败的连接。
+  final PanelAccount? account;
+
   bool get loggedIn => email != null;
 
-  PanelAuthState copyWith({bool? loading, String? email, bool clearEmail = false}) {
+  PanelAuthState copyWith({
+    bool? loading,
+    String? email,
+    PanelAccount? account,
+    bool clearEmail = false,
+    bool clearAccount = false,
+  }) {
     return PanelAuthState(
       loading: loading ?? this.loading,
       email: clearEmail ? null : (email ?? this.email),
+      account: clearAccount ? null : (account ?? this.account),
     );
   }
 }
@@ -67,7 +78,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       await _secureStorage.write(key: _kTokenKey, value: token);
       await _secureStorage.write(key: _kEmailKey, value: sub.email ?? email.trim());
       await ref.read(Preferences.panelLoggedIn.notifier).update(true);
-      state = state.copyWith(loading: false, email: sub.email ?? email.trim());
+      state = state.copyWith(loading: false, email: sub.email ?? email.trim(), account: sub.account);
       return (subscribeUrl: sub.subscribeUrl, error: null);
     } on PanelApiException catch (e) {
       state = state.copyWith(loading: false);
@@ -93,7 +104,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       await _secureStorage.write(key: _kTokenKey, value: token);
       await _secureStorage.write(key: _kEmailKey, value: sub.email ?? email.trim());
       await ref.read(Preferences.panelLoggedIn.notifier).update(true);
-      state = state.copyWith(loading: false, email: sub.email ?? email.trim());
+      state = state.copyWith(loading: false, email: sub.email ?? email.trim(), account: sub.account);
       return (subscribeUrl: sub.subscribeUrl, error: null);
     }
 
@@ -125,6 +136,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     if (token == null || token.isEmpty) return null;
     try {
       final sub = await _api.getSubscribe(token);
+      if (sub.account != null) state = state.copyWith(account: sub.account);
       return sub.subscribeUrl;
     } on PanelApiException catch (e) {
       if (e.unauthorized) await logout(wipe: false);
@@ -134,18 +146,28 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     }
   }
 
-  /// 会员页拉最新账号信息。未登录 / 失败返回 null。
+  /// 会员页拉最新账号信息。未登录 / 失败返回 null。顺带更新缓存（连接流程会读）。
   Future<PanelAccount?> fetchAccount() async {
     final token = await currentToken();
     if (token == null || token.isEmpty) return null;
     try {
-      return await _api.getAccount(token);
+      final acc = await _api.getAccount(token);
+      state = state.copyWith(account: acc);
+      return acc;
     } on PanelApiException catch (e) {
       if (e.unauthorized) await logout(wipe: false);
       return null;
     } catch (_) {
       return null;
     }
+  }
+
+  /// 后台静默刷一次账号缓存（app 回前台、连接前、连接失败后调用）。不抛异常。
+  Future<void> syncAccountQuietly() async {
+    if (!state.loggedIn) return;
+    try {
+      await fetchAccount();
+    } catch (_) {}
   }
 
   Future<String?> sendEmailCode(String email) async {
@@ -204,7 +226,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     await _secureStorage.delete(key: _kTokenKey);
     await _secureStorage.delete(key: _kEmailKey);
     await ref.read(Preferences.panelLoggedIn.notifier).update(false);
-    state = state.copyWith(loading: false, clearEmail: true);
+    state = state.copyWith(loading: false, clearEmail: true, clearAccount: true);
     if (!wipe) return;
 
     // 退出 = 不能再连。断开 + 删订阅。
