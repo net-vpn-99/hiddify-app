@@ -134,6 +134,13 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
         await Future.delayed(const Duration(milliseconds: 200));
       } on TimeoutException {
         // just retry
+      } on GrpcError catch (e) {
+        // On a fresh install the first connect fires while the Android VPN
+        // permission dialog is still up, so the background service (and its
+        // gRPC endpoint) is not listening yet -> UNAVAILABLE. Keep polling like
+        // a timeout instead of bubbling a raw "gRPC Error (code: 14)" banner.
+        if (e.code != StatusCode.unavailable) rethrow;
+        await Future.delayed(const Duration(milliseconds: 300));
       }
     }
     loggy.info("Waiting for starting core finished");

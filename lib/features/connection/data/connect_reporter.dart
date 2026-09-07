@@ -214,9 +214,16 @@ class ConnectReporter {
     if (has('missingnotificationpermission') ||
         has('backgroundcorenotavailable') ||
         has('start service') ||
+        has('starting background core') ||
         has('foreground') ||
         has('panic') ||
-        has('core')) {
+        has('core') ||
+        // gRPC UNAVAILABLE (code 14) = the core's gRPC endpoint is not up yet.
+        // Happens on the very first connect of a fresh install, before the
+        // Android VPN-permission grant lets the tunnel service start.
+        has('grpc') ||
+        has('unavailable') ||
+        has('code: 14')) {
       return 'core_start';
     }
     if (has('invalidconfig') ||
