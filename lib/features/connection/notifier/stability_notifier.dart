@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -74,6 +75,16 @@ class StabilityNotifier extends Notifier<StabilityState> {
     final ok = delay > 0 && delay < 60000;
     _consecFail = ok ? 0 : _consecFail + 1;
     _warmed = true;
+
+    // First real request through the tunnel this attempt == the connect-trace
+    // reporter's stage 8 passed (the "it actually works" signal).
+    if (ok) {
+      final reporter = ref.read(connectReporterProvider);
+      if (reporter.attemptOpen) {
+        reporter.markStage(ConnectReporter.stageProxyRequest);
+        unawaited(reporter.reportSuccess(delay));
+      }
+    }
 
     final int g;
     if (_consecFail >= 5) {

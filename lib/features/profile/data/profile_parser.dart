@@ -5,6 +5,7 @@ import 'package:dartx/dartx.dart';
 import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/db/db.dart';
+import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/http_client/dio_http_client.dart';
 import 'package:hiddify/features/profile/data/profile_data_mapper.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
@@ -14,6 +15,7 @@ import 'package:hiddify/singbox/model/singbox_proxy_type.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:meta/meta.dart';
+import 'package:path/path.dart' as p;
 
 /// parse profile subscription url and headers for data
 ///
@@ -149,6 +151,7 @@ class ProfileParser {
     // if (url.startsWith("http://"))
     //   throw const ProfileFailure.invalidUrl('HTTP is not supported. Please use HTTPS for secure connection.');
 
+    final swProfile = Stopwatch()..start();
     final rs = await _httpClient
         .download(
           url.trim(),
@@ -162,6 +165,7 @@ class ProfileParser {
           if (CancelToken.isCancel(err as DioException)) {
             throw const ProfileFailure.cancelByUser('HTTP request for getting profile content canceled by user.');
           }
+          _writeSubFetch(stage: 'sub_download', ok: false, ms: swProfile.elapsedMilliseconds);
           throw err;
         });
     await expandRemoteLinesInParallel(
@@ -171,11 +175,51 @@ class ProfileParser {
       ref: _ref,
     );
     // fixing headers before return
-    return rs.headers.map.map((key, value) {
+    final headers = rs.headers.map.map((key, value) {
       if (value.length == 1) return MapEntry(key, value.first);
       return MapEntry(key, value);
     });
+    // Connect-trace reporter (GslInviteBonus 1.17.0): note how this subscription
+    // pull went so the client can attach stages 1-3 + sub.* to connect attempts.
+    _writeSubFetch(
+      stage: 'nodes_parsed',
+      ok: true,
+      status: rs.statusCode,
+      bytes: File(tempFilePath).existsSync() ? File(tempFilePath).lengthSync() : null,
+      cache: (headers['cf-cache-status'] ?? headers['x-cache'])?.toString(),
+      ms: swProfile.elapsedMilliseconds,
+      host: Uri.tryParse(url.trim())?.host,
+    );
+    return headers;
   }, (err, st) => err is ProfileFailure ? err : ProfileFailure.unexpected(err, st));
+
+  /// Best-effort: drop one line to runtime/sub-fetch.json. Never throws.
+  void _writeSubFetch({
+    required String stage,
+    required bool ok,
+    int? status,
+    int? bytes,
+    String? cache,
+    int? ms,
+    String? host,
+  }) {
+    try {
+      final dir = _ref.read(appDirectoriesProvider).requireValue.workingDir;
+      final f = File(p.join(dir.path, 'sub-fetch.json'));
+      f.writeAsStringSync(
+        jsonEncode({
+          'ts': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'host': host ?? '',
+          'stage': stage,
+          'ok': ok,
+          'status': status ?? 0,
+          'bytes': bytes ?? 0,
+          'cache': cache ?? '',
+          'ms': ms ?? 0,
+        }),
+      );
+    } catch (_) {}
+  }
   Future<void> expandRemoteLinesInParallel({
     required String tempFilePath,
     required DioHttpClient httpClient,

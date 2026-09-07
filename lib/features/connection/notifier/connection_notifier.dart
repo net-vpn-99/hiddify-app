@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:hiddify/core/haptic/haptic_service.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/connection_data_providers.dart';
 import 'package:hiddify/features/connection/data/connection_repository.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
@@ -58,6 +60,25 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     yield* _connectionRepo.watchConnectionStatus().doOnData((event) {
       if (event case Disconnected(connectionFailure: final _?) when PlatformUtils.isDesktop) {
         ref.read(Preferences.startedByUser.notifier).update(false);
+      }
+      // Connect-trace reporter (GslInviteBonus 1.17.0): the Go core is up (TUN +
+      // routes) at Connected -- as far as this signal proves. The attempt is only
+      // reported "ok" once a real request goes through the tunnel (stability
+      // probe); if none has by 15s, it is a proxy_request failure. A teardown
+      // before the attempt resolves is inconclusive -> abandon.
+      final reporter = ref.read(connectReporterProvider);
+      switch (event) {
+        case Connecting():
+          reporter.markStage(ConnectReporter.stageCoreStarted);
+        case Connected():
+          reporter.markStage(ConnectReporter.stageTunnelReady);
+          Future<void>.delayed(const Duration(seconds: 15), () {
+            if (reporter.attemptOpen) {
+              reporter.reportFailure("连接后 15 秒内没有一次通过隧道的请求成功（proxy_request）");
+            }
+          });
+        case Disconnected() || Disconnecting():
+          reporter.abandon();
       }
       loggy.info("connection status: ${event.format()}");
     });
@@ -136,16 +157,27 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   Future<void> _connectThrottled() async {
+    final reporter = ref.read(connectReporterProvider);
     final activeProfile = await ref.read(activeProfileProvider.future);
     if (activeProfile == null) {
       loggy.info("no active profile, not connecting");
+      // Pressed connect with a plan but no profile: the subscription fetch is
+      // why. reportNoRoute() reads runtime/sub-fetch.json for the reason.
+      unawaited(reporter.reportNoRoute());
       return;
     }
+    await reporter.beginAttempt(activeProfile.name);
     await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).mapLeft((
       ConnectionFailure err,
     ) async {
       loggy.warning("error connecting", err);
       //Go err is not normal object to see the go errors are string and need to be dumped
+      // MissingWarpLicense = user declined a prompt, not a connectivity failure.
+      if (err is MissingWarpLicense) {
+        reporter.abandon();
+      } else {
+        unawaited(reporter.reportFailure(err.toString()));
+      }
       await ref
           .read(dialogNotifierProvider.notifier)
           .showCustomAlertFromErr(err.present(ref.read(translationsProvider).requireValue));
@@ -159,6 +191,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   Future<void> _disconnect() async {
+    ref.read(connectReporterProvider).abandon();
     await _connectionRepo.disconnect().mapLeft((err) {
       loggy.warning("error disconnecting", err);
       ref
