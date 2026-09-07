@@ -91,7 +91,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
             const SizedBox(height: 4),
             Text('${offer.trafficLabel} · ${offer.priceLabel}'),
             const SizedBox(height: 12),
-            const Text('点「去支付」会打开收银台（支付宝 / 微信），付完回到 App。', style: TextStyle(fontSize: 12)),
+            const Text('点「去支付」会打开收银台，付完回到 App。', style: TextStyle(fontSize: 12)),
           ],
         ),
         actions: [
@@ -218,20 +218,18 @@ class _PlanGroup extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.all(14),
             color: theme.colorScheme.surfaceContainerHighest,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(head.name, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 2),
-                Text(head.trafficLabel, style: theme.textTheme.bodySmall),
-              ],
+            child: Text(
+              head.name,
+              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
           ),
           for (final o in offers)
             ListTile(
               title: Row(
                 children: [
-                  Text('${o.periodLabel}（${o.durationLabel}）'),
+                  Text(o.periodLabel == o.durationLabel
+                      ? o.durationLabel
+                      : '${o.periodLabel}（${o.durationLabel}）'),
                   if (o.badge != null) ...[
                     const SizedBox(width: 8),
                     Container(
@@ -248,7 +246,9 @@ class _PlanGroup extends StatelessWidget {
                   ],
                 ],
               ),
-              subtitle: o.dailyLabel != null ? Text(o.dailyLabel!) : null,
+              subtitle: Text(
+                o.dailyLabel != null ? '${o.trafficLabel} · ${o.dailyLabel}' : o.trafficLabel,
+              ),
               trailing: Text(
                 o.priceLabel,
                 style: theme.textTheme.titleMedium?.copyWith(

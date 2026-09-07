@@ -34,7 +34,7 @@ class PurchaseService {
     return null;
   }
 
-  /// 拉可购买的套餐（已展开成「套餐 × 周期」并打好标签）。
+  /// 拉可购买的套餐（已展开成「套餐 × 周期」，推荐位在 expand 里按运营常量标好）。
   Future<List<PlanOffer>> fetchPlans(String token) async {
     final res = await _dio.get<dynamic>('/api/v1/user/plan/fetch', options: _opt(token));
     if (res.statusCode == 401 || res.statusCode == 403) {
@@ -46,7 +46,7 @@ class PurchaseService {
     for (final p in list) {
       if (p is Map) offers.addAll(PlanOffer.expand(p.cast<String, dynamic>()));
     }
-    return PlanOffer.withBadges(offers);
+    return offers;
   }
 
   /// 清理这个账号所有「未支付」的旧订单，避免「上一笔订单未完成」挡住新下单。
