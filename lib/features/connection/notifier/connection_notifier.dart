@@ -156,9 +156,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     );
   }
 
-  bool _coldStartRetried = false;
-
-  Future<void> _connectThrottled({bool isRetry = false}) async {
+  Future<void> _connectThrottled() async {
     final reporter = ref.read(connectReporterProvider);
     final activeProfile = await ref.read(activeProfileProvider.future);
     if (activeProfile == null) {
@@ -168,30 +166,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       unawaited(reporter.reportNoRoute());
       return;
     }
-    if (!isRetry) await reporter.beginAttempt(activeProfile.name);
+    await reporter.beginAttempt(activeProfile.name);
     await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).mapLeft((
       ConnectionFailure err,
     ) async {
       loggy.warning("error connecting", err);
       //Go err is not normal object to see the go errors are string and need to be dumped
-
-      // Fresh install: the first connect fires while the Android VPN-permission
-      // dialog is still up, so the core service is not listening yet
-      // (gRPC UNAVAILABLE / startService). Give it one silent retry ~2s later --
-      // by then the user has tapped 允许 -- instead of showing a scary banner.
-      final s = err.toString().toLowerCase();
-      final looksColdStart = s.contains('unavailable') ||
-          s.contains('code: 14') ||
-          s.contains('starting background core') ||
-          s.contains('startservice');
-      if (looksColdStart && !isRetry && !_coldStartRetried) {
-        _coldStartRetried = true;
-        loggy.info("cold-start connect failure, retrying once in 2s");
-        await Future<void>.delayed(const Duration(seconds: 2));
-        await _connectThrottled(isRetry: true);
-        return;
-      }
-
       // MissingWarpLicense = user declined a prompt, not a connectivity failure.
       if (err is MissingWarpLicense) {
         reporter.abandon();
