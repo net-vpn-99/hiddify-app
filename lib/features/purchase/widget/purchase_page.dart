@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
+import 'package:hiddify/features/purchase/data/purchase_service.dart';
 import 'package:hiddify/features/purchase/model/plan_offer.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
 import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
@@ -91,6 +92,15 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
             children: [
               _AccountCard(t: t, account: account, loading: acctAsync.isLoading),
               const SizedBox(height: 16),
+              if (state.pendingOrder != null) ...[
+                _PendingOrderBanner(
+                  t: t,
+                  order: state.pendingOrder!,
+                  onPay: () => ref.read(purchaseNotifierProvider.notifier).resumePendingOrder(),
+                  onCancel: () => _confirmCancelPending(t),
+                ),
+                const SizedBox(height: 12),
+              ],
               if (state.error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -209,7 +219,8 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
             const SizedBox(height: 4),
             Text('${offer.trafficLabel} · ${offer.priceLabel}'),
             const SizedBox(height: 12),
-            const Text('点「去支付」会打开收银台，付完回到 App，自动确认套餐状态。', style: TextStyle(fontSize: 12)),
+            const Text('点「去支付」会打开收银台，付完回到 App，自动确认套餐状态。'
+                '\n实际应付以订单核算为准（续费 / 升级可能有抵扣）。', style: TextStyle(fontSize: 12)),
           ],
         ),
         actions: [
@@ -224,6 +235,23 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     );
     if (ok == true) {
       await ref.read(purchaseNotifierProvider.notifier).startPurchase(offer);
+    }
+  }
+
+  Future<void> _confirmCancelPending(PurchaseTokens t) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: t.raised,
+        content: const Text('取消这笔未完成的订单？如果你已经付款，请不要取消，改点「去支付」查状态。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('再想想')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('取消订单')),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await ref.read(purchaseNotifierProvider.notifier).cancelPendingOrder();
     }
   }
 
@@ -243,6 +271,13 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
             const SizedBox(height: 8),
             Text('在收银台完成付款，然后回到这里点下面的按钮。',
                 textAlign: TextAlign.center, style: TextStyle(color: t.secondary)),
+            if (state.quote != null) ...[
+              const SizedBox(height: 10),
+              Text('应付 ${state.quote!.payableLabel}',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: t.text)),
+              if (state.quote!.note.isNotEmpty)
+                Text(state.quote!.note, style: TextStyle(fontSize: 11, color: t.secondary)),
+            ],
             if (state.error != null) ...[
               const SizedBox(height: 12),
               Text(state.error!, textAlign: TextAlign.center, style: TextStyle(color: t.empty)),
@@ -280,16 +315,29 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
   }
 
   Widget _success(PurchaseTokens t, PurchaseState state) {
+    final fulfilled = state.fulfilled;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check_circle_rounded, size: 56, color: t.remaining),
+            Icon(fulfilled ? Icons.check_circle_rounded : Icons.hourglass_top_rounded,
+                size: 56, color: fulfilled ? t.remaining : t.warning),
             const SizedBox(height: 16),
-            Text('购买成功，套餐已开通', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: t.text)),
+            Text(fulfilled ? '购买成功，套餐已开通' : '已收到付款，套餐开通中',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: t.text)),
             const SizedBox(height: 12),
+            if (!fulfilled) ...[
+              Text('后台正在开通权益，通常一两分钟内完成。',
+                  textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: t.secondary)),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () => ref.read(purchaseNotifierProvider.notifier).recheckFulfillment(),
+                child: const Text('再查一次'),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (state.refreshing)
               Text('正在刷新订阅信息…', style: TextStyle(fontSize: 13, color: t.secondary))
             else if (state.refreshFailed) ...[
@@ -595,6 +643,66 @@ class _CheckoutBar extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 顶部「你有一笔未完成的订单」横幅 —— Xboard 有未完成订单时不让下新单，
+/// 必须先处理这一笔（去支付 / 取消）。
+class _PendingOrderBanner extends StatelessWidget {
+  const _PendingOrderBanner({
+    required this.t,
+    required this.order,
+    required this.onPay,
+    required this.onCancel,
+  });
+
+  final PurchaseTokens t;
+  final RecoverableOrder order;
+  final VoidCallback onPay;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final activating = order.status == OrderStatus.activating;
+    final desc = [
+      if (order.planName != null && order.planName!.isNotEmpty) order.planName!,
+      if (order.amountLabel.isNotEmpty) order.amountLabel,
+    ].join(' · ');
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.selected,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.primary),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(activating ? '你有一笔订单正在开通中' : '你有一笔未完成的订单',
+              style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.bold)),
+          if (desc.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(desc, style: TextStyle(color: t.secondary, fontSize: 12)),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: t.primary,
+                  foregroundColor: t.onPrimary,
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: onPay,
+                child: Text(activating ? '查看状态' : '去支付'),
+              ),
+              const SizedBox(width: 8),
+              TextButton(onPressed: onCancel, child: const Text('取消这笔')),
+            ],
+          ),
+        ],
       ),
     );
   }
