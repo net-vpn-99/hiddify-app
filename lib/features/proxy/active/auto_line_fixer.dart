@@ -8,10 +8,14 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 连接后跑一次：
 ///  - 如果用户在首页选过线路（preferredLineName），按名字匹配到真实出站并切过去；
-///  - 否则，如果当前选中的是 hiddify-core 自动生成的均衡组（select / balance / lowest，
-///    默认就是 balance 的 round-robin，一半流量走美国），切到**延迟最低**的真实线路
-///    —— 以前是切「订阅里第一条」，结果所有没选过线的用户全挤在排在最前的洛杉矶节点上。
-/// UI 里这些均衡组是藏掉的，用户没法自己改回来。
+///  - 否则，如果当前选中的是 hiddify-core 自动生成的均衡组（select / balance / lowest），
+///    切到**服务端推荐的那条**（订阅第一条 —— 服务端插件 1.25.0 起会按各节点实时
+///    负载给订阅排序，第一条就是它算出来最合适的）。只有推荐节点实测连不上
+///    （urltest 超时 / 无路由）才回退到延迟最低的真实节点。
+///
+/// 为什么优先服务端：服务端有全局负载视野（每个节点多少人、CPU/内存多少），
+/// 客户端只看得到自己到各节点的延迟。以前（1.1.8 早期）直接挑最快，结果大家
+/// 都挑到同一条「最快」的、又挤到一起。服务端的选择该赢，除非它真连不上。
 ///
 /// 在首页 `ref.watch` 一下即可。preferredLineName 变了会重新跑（已连接则立即切）。
 final autoLineFixerProvider = StreamProvider<void>((ref) async* {
@@ -45,8 +49,7 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
     // 2) 没有偏好：只有当前选中的是被藏掉的均衡组时才纠正
     if (real.any((o) => o.tag == group.selected)) return;
 
-    // 挑延迟最低的真实节点。延迟还没测出来就催一次 urltest、等测速回来。
-    final picked = await _pickFastestReal(repo, group.tag, real);
+    final picked = await _pickServerRecommended(repo, group.tag, real);
     if (picked != null && picked != group.selected) {
       await repo.selectProxy(group.tag, picked).run();
     }
@@ -71,26 +74,36 @@ String? _fastestTag(Iterable<OutboundInfo> items) {
   return bestTag;
 }
 
-/// 返回真实节点里延迟最低的那条的 tag。测速结果没出来就先催一次 urltest，
-/// 每 ~700ms 轮一次内核的分组状态，最多等 ~8 秒：
-///  - 全部节点都测出延迟 → 立刻返回最快的；
-///  - 到点了 → 返回已测出的里最快的；一条都没测出来 → 返回订阅第一条兜底。
-Future<String?> _pickFastestReal(
+OutboundInfo? _byTag(Iterable<OutboundInfo> items, String tag) {
+  for (final o in items) {
+    if (o.tag == tag) return o;
+  }
+  return null;
+}
+
+/// 服务端推荐 = 订阅第一条（real.first）。策略：
+///  - 推荐节点现成 urltest 就有效 → 直接用；
+///  - 否则催一轮 urltest，最多等 ~6s：
+///      · 推荐节点测出有效延迟 → 用推荐（服务端有全局负载视野，它说了算）；
+///      · 推荐节点超时、但其它节点都测完了 → 说明推荐这条大概率连不上，回退最快；
+///  - 到点了：推荐节点有效就用，否则用已知最快，再不行兜底还是推荐。
+Future<String?> _pickServerRecommended(
   ProxyRepository repo,
   String groupTag,
   List<OutboundInfo> real,
 ) async {
+  final recommended = real.first.tag;
   final realTags = real.map((o) => o.tag).toSet();
 
-  // 内核启动时一般已经自己跑过一轮 urltest，先看现成结果。
-  if (real.every((o) => _validDelay(o) != null)) {
-    return _fastestTag(real) ?? real.first.tag;
+  final r0 = _byTag(real, recommended);
+  if (r0 != null && _validDelay(r0) != null) {
+    return recommended;
   }
 
   await repo.urlTest(groupTag).run();
 
   List<OutboundInfo> latest = real;
-  for (var i = 0; i < 11; i++) {
+  for (var i = 0; i < 9; i++) {
     await Future<void>.delayed(const Duration(milliseconds: 700));
     try {
       final either = await repo.watchProxies().first;
@@ -99,13 +112,25 @@ Future<String?> _pickFastestReal(
       final items = g.items.where((o) => realTags.contains(o.tag)).toList();
       if (items.isEmpty) continue;
       latest = items;
-      if (items.every((o) => _validDelay(o) != null)) {
-        return _fastestTag(items) ?? real.first.tag;
+
+      final rec = _byTag(items, recommended);
+      if (rec != null && _validDelay(rec) != null) {
+        return recommended;
+      }
+      final othersDone = items
+          .where((o) => o.tag != recommended)
+          .every((o) => _validDelay(o) != null);
+      if (othersDone && items.length > 1) {
+        return _fastestTag(items) ?? recommended;
       }
     } catch (_) {
       // 内核状态流暂时读不到，下一轮再试
     }
   }
 
-  return _fastestTag(latest) ?? real.first.tag;
+  final recFinal = _byTag(latest, recommended);
+  if (recFinal != null && _validDelay(recFinal) != null) {
+    return recommended;
+  }
+  return _fastestTag(latest) ?? recommended;
 }
