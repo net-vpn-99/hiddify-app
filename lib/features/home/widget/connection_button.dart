@@ -4,17 +4,17 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
-import 'package:hiddify/core/model/failures.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
-import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
-import 'package:hiddify/core/router/dialog/widgets/custom_alert_dialog.dart';
 import 'package:hiddify/core/theme/theme_extensions.dart';
 import 'package:hiddify/core/widget/animated_text.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
@@ -133,8 +133,28 @@ class ConnectionButton extends HookConsumerWidget {
               context.go('/login');
               return;
             }
-            await ref.read(dialogNotifierProvider.notifier).showNoActiveProfile();
-            ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile();
+            // 登录了却没有可用订阅：多半是试用 / 会员到期或流量用完。补一次账号再判断，
+            // 别再给用户看「还没有 VPN 服务器？免费设置一个」那种误导文案。
+            try {
+              await ref.read(panelAuthProvider.notifier).syncAccountQuietly();
+            } catch (_) {}
+            final acc = ref.read(panelAuthProvider).account;
+            if (acc != null && (acc.exhausted || acc.stateSlug == 'no_plan')) {
+              await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc);
+              return;
+            }
+            // 账号正常却没订阅 —— 订阅同步掉了，重新拉一次地址并导入（跟登录时同一条路，
+            // addManual 自己会弹成功 / 失败提示）。
+            final url = await ref.read(panelAuthProvider.notifier).refreshSubscribeUrl();
+            if (url != null && url.isNotEmpty) {
+              await ref
+                  .read(addProfileNotifierProvider.notifier)
+                  .addManual(url: url, userOverride: const UserOverride(name: '光速'));
+              if (ref.read(addProfileNotifierProvider) is! AsyncError) return;
+            }
+            ref
+                .read(inAppNotificationControllerProvider)
+                .showErrorToast('订阅同步失败，请稍后重试，或在「我的」页联系客服');
             return;
           }
           if (await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
@@ -171,10 +191,6 @@ class ConnectionButton extends HookConsumerWidget {
       },
       image: switch (connectionStatus) {
         AsyncData(value: Connected()) when requiresReconnect == true => Assets.images.disconnectNorouz,
-        AsyncData(value: Connected()) => Assets.images.connectNorouz,
-        AsyncData(value: _) => Assets.images.disconnectNorouz,
-        _ => Assets.images.disconnectNorouz,
-        AsyncData(value: Disconnected()) || AsyncError() => Assets.images.disconnectNorouz,
         AsyncData(value: Connected()) => Assets.images.connectNorouz,
         _ => Assets.images.disconnectNorouz,
       },

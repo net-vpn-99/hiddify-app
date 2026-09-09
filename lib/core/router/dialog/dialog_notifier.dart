@@ -249,17 +249,31 @@ class DialogNotifier extends _$DialogNotifier {
     return await _show<void>(CustomAlertDialog.fromErr(err));
   }
 
-  /// 流量用完 / 会员到期时弹这个（连不上其实是账号原因，不是节点问题）。
-  /// 点「去续费」跳购买页。
+  /// 流量用完 / 会员（试用）到期 / 没有套餐时弹这个 —— 连不上其实是账号原因，
+  /// 不是节点问题。点「去续费 / 选择套餐」跳购买页。
   Future<void> showQuotaExhausted(PanelAccount account) async {
-    final traffic = account.stateSlug == 'traffic_exhausted';
+    final (title, message, btn) = switch (account.stateSlug) {
+      'traffic_exhausted' => (
+        '本期流量已用完',
+        '当前套餐的流量已经用完，续费或升级套餐后即可继续连接。',
+        '去续费',
+      ),
+      'expired' => (
+        '会员已到期',
+        '你的套餐（含体验套餐）已到期，续费后立即恢复连接。',
+        '去续费',
+      ),
+      _ => (
+        '还没有可用套餐',
+        '选择一个套餐后即可开始使用。',
+        '选择套餐',
+      ),
+    };
     final ok = await showConfirmation(
-      title: traffic ? '流量已用完' : '会员已到期',
-      message: traffic
-          ? '当前套餐流量已用完，续费或升级套餐后即可继续连接。'
-          : '会员已到期，续费后即可继续连接。',
+      title: title,
+      message: message,
       icon: Icons.data_usage_outlined,
-      positiveBtnTxt: '去续费',
+      positiveBtnTxt: btn,
     );
     if (!ok) return;
     final context = rootNavKey.currentContext;

@@ -11,6 +11,7 @@ import 'package:hiddify/features/app_update/data/apk_installer.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_state.dart';
 import 'package:hiddify/features/connection/widget/stability_indicator.dart';
+import 'package:hiddify/features/home/widget/account_state_card.dart';
 import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/widget/profile_tile.dart';
@@ -152,6 +153,8 @@ class HomePage extends HookConsumerWidget {
                     MultiSliver(
                       children: [
                         // const Gap(100),
+                        // OneRay: 试用 / 会员到期、流量用完时首页直接说明 +「去续费」
+                        const AccountStateCard(),
                         switch (activeProfile) {
                           AsyncData(value: final profile?) => ProfileTile(
                             profile: profile,

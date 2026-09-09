@@ -178,6 +178,17 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     final activeProfile = await ref.read(activeProfileProvider.future);
     if (activeProfile == null) {
       loggy.info("no active profile, not connecting");
+      // 没订阅最常见的原因是试用 / 会员到期或流量用完（到期后订阅接口返回空、
+      // 本地订阅被清掉）。复核一次账号，是账号原因就引导续费，别只报「无节点」。
+      try {
+        await ref.read(panelAuthProvider.notifier).syncAccountQuietly();
+      } catch (_) {}
+      final acc = ref.read(panelAuthProvider).account;
+      if (acc != null && (acc.exhausted || acc.stateSlug == 'no_plan')) {
+        await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc);
+        await ref.read(Preferences.startedByUser.notifier).update(false);
+        return;
+      }
       // Pressed connect with a plan but no profile: the subscription fetch is
       // why. reportNoRoute() reads runtime/sub-fetch.json for the reason.
       unawaited(reporter.reportNoRoute());
