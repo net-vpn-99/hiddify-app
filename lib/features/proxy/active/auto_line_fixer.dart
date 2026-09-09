@@ -49,10 +49,7 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
     // 2) 没有偏好：只有当前选中的是被藏掉的均衡组时才纠正
     if (real.any((o) => o.tag == group.selected)) return;
 
-    final picked = await _pickServerRecommended(repo, group.tag, real);
-    if (picked != null && picked != group.selected) {
-      await repo.selectProxy(group.tag, picked).run();
-    }
+    await _applyServerRecommended(repo, group.tag, real);
     return;
   }
 });
@@ -81,13 +78,11 @@ OutboundInfo? _byTag(Iterable<OutboundInfo> items, String tag) {
   return null;
 }
 
-/// 服务端推荐 = 订阅第一条（real.first）。策略：
-///  - 推荐节点现成 urltest 就有效 → 直接用；
-///  - 否则催一轮 urltest，最多等 ~6s：
-///      · 推荐节点测出有效延迟 → 用推荐（服务端有全局负载视野，它说了算）；
-///      · 推荐节点超时、但其它节点都测完了 → 说明推荐这条大概率连不上，回退最快；
-///  - 到点了：推荐节点有效就用，否则用已知最快，再不行兜底还是推荐。
-Future<String?> _pickServerRecommended(
+/// 服务端推荐 = 订阅第一条（real.first，GslInviteBonus 负载均衡钩子按用户排在最前）。
+/// 策略：**先立刻切过去**，不等 urltest —— 否则连上后十几秒内核还在走它自己默认挑的
+/// 「最快」节点（国内经常是美国 CN2 GIA），负载均衡白排。切完再后台催一轮 urltest 核实：
+/// 推荐节点明确超时 / 无路由、且别的节点是通的，才回退到最快那条。
+Future<void> _applyServerRecommended(
   ProxyRepository repo,
   String groupTag,
   List<OutboundInfo> real,
@@ -95,14 +90,15 @@ Future<String?> _pickServerRecommended(
   final recommended = real.first.tag;
   final realTags = real.map((o) => o.tag).toSet();
 
+  // 先切到推荐，不等测速。
+  await repo.selectProxy(groupTag, recommended).run();
+
+  // 推荐节点已经有有效延迟 → 就它了，不用再核实。
   final r0 = _byTag(real, recommended);
-  if (r0 != null && _validDelay(r0) != null) {
-    return recommended;
-  }
+  if (r0 != null && _validDelay(r0) != null) return;
 
+  // 后台核实：最多等 ~6s。推荐明确连不上 + 其它节点都测通 → 回退最快。
   await repo.urlTest(groupTag).run();
-
-  List<OutboundInfo> latest = real;
   for (var i = 0; i < 9; i++) {
     await Future<void>.delayed(const Duration(milliseconds: 700));
     try {
@@ -111,26 +107,22 @@ Future<String?> _pickServerRecommended(
       if (g == null) continue;
       final items = g.items.where((o) => realTags.contains(o.tag)).toList();
       if (items.isEmpty) continue;
-      latest = items;
 
       final rec = _byTag(items, recommended);
-      if (rec != null && _validDelay(rec) != null) {
-        return recommended;
-      }
-      final othersDone = items
-          .where((o) => o.tag != recommended)
-          .every((o) => _validDelay(o) != null);
-      if (othersDone && items.length > 1) {
-        return _fastestTag(items) ?? recommended;
+      if (rec != null && _validDelay(rec) != null) return; // 推荐测通了，保持
+
+      final others = items.where((o) => o.tag != recommended).toList();
+      final othersDone = others.isNotEmpty && others.every((o) => _validDelay(o) != null);
+      final recFailed = rec != null && rec.urlTestDelay > 60000;
+      if (recFailed && othersDone) {
+        final fastest = _fastestTag(items);
+        if (fastest != null && fastest != recommended) {
+          await repo.selectProxy(groupTag, fastest).run();
+        }
+        return;
       }
     } catch (_) {
       // 内核状态流暂时读不到，下一轮再试
     }
   }
-
-  final recFinal = _byTag(latest, recommended);
-  if (recFinal != null && _validDelay(recFinal) != null) {
-    return recommended;
-  }
-  return _fastestTag(latest) ?? recommended;
 }
