@@ -126,7 +126,7 @@ jobs:
               "prerelease": false,
               "mandatory": false,
               "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-              "html_url": "https://www.guangsuleida.com/dengta/android/",
+              "html_url": "https://www.guangsuleida.com/android/",
               "body": "见更新说明",
               "assets": [
                 {

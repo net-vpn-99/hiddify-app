@@ -19,8 +19,12 @@ class ApkInstaller {
     return d;
   }
 
-  /// [apkUrls] 主 + 备，逐个尝试，直到某个下载并校验通过。
+  /// [apkUrls] 主 + 备，逐个源、每个源最多 3 次，直到某个下载并校验通过。
   /// [onProgress] 传 0.0~1.0；总大小未知时传 -1。[sha256Hex] 非空则校验。
+  ///
+  /// 119MB 的包走移动网络 / 连着 VPN 时经常被截断，dio 不一定报错 —— 所以下完
+  /// 要三重把关：字节数 == Content-Length、开头是 ZIP 魔数、sha256 对得上。
+  /// 任一不过就当这次失败，重试 / 换源。
   static Future<void> downloadAndInstall(
     List<String> apkUrls, {
     String? sha256Hex,
@@ -34,39 +38,50 @@ class ApkInstaller {
     final f = File(path);
 
     Object? lastErr;
+    outer:
     for (final url in apkUrls) {
-      try {
-        await Dio().download(
-          url,
-          path,
-          cancelToken: cancelToken,
-          onReceiveProgress: (rec, total) => onProgress?.call(total > 0 ? rec / total : -1),
-        );
+      for (var attempt = 1; attempt <= 3; attempt++) {
+        try {
+          var expectedTotal = -1;
+          await Dio().download(
+            url,
+            path,
+            cancelToken: cancelToken,
+            options: Options(receiveTimeout: const Duration(seconds: 60)),
+            onReceiveProgress: (rec, total) {
+              if (total > 0) expectedTotal = total;
+              onProgress?.call(total > 0 ? rec / total : -1);
+            },
+          );
 
-        final len = await f.length();
-        if (len < 1024 * 1024) {
-          throw Exception('下载的文件太小（${len ~/ 1024} KB），换源重试');
-        }
-        final head = await f.openRead(0, 4).first;
-        if (head.length < 4 || head[0] != 0x50 || head[1] != 0x4B || head[2] != 0x03 || head[3] != 0x04) {
-          throw Exception('下载的不是有效安装包，换源重试');
-        }
-        if (sha256Hex != null && sha256Hex.isNotEmpty) {
-          final digest = await sha256.bind(f.openRead()).first;
-          if (digest.toString().toLowerCase() != sha256Hex.toLowerCase()) {
-            throw Exception('安装包校验不通过（下载被损坏），换源重试');
+          final len = await f.length();
+          if (len < 1024 * 1024) {
+            throw Exception('下载的文件太小（${len ~/ 1024} KB）');
           }
+          if (expectedTotal > 0 && len != expectedTotal) {
+            throw Exception('下载不完整（$len / $expectedTotal 字节），网络中断');
+          }
+          final head = await f.openRead(0, 4).first;
+          if (head.length < 4 || head[0] != 0x50 || head[1] != 0x4B || head[2] != 0x03 || head[3] != 0x04) {
+            throw Exception('下载的不是有效安装包');
+          }
+          if (sha256Hex != null && sha256Hex.isNotEmpty) {
+            final digest = await sha256.bind(f.openRead()).first;
+            if (digest.toString().toLowerCase() != sha256Hex.toLowerCase()) {
+              throw Exception('安装包校验不通过（下载被损坏）');
+            }
+          }
+          lastErr = null;
+          break outer; // 这一次成功了
+        } catch (e) {
+          if (e is DioException && CancelToken.isCancel(e)) rethrow;
+          lastErr = e;
+          if (attempt < 3) await Future<void>.delayed(const Duration(seconds: 1));
         }
-        lastErr = null;
-        break; // 这一个源成功了
-      } catch (e) {
-        if (e is DioException && CancelToken.isCancel(e)) rethrow;
-        lastErr = e;
-        // 换下一个源
       }
     }
     if (lastErr != null) {
-      throw Exception('所有下载源都失败了，请稍后重试或到官网手动下载（$lastErr）');
+      throw Exception('下载没成功（$lastErr）。可以在「更新」弹窗点「打开官网下载」，用浏览器下。');
     }
 
     final res = await OpenFilex.open(path, type: 'application/vnd.android.package-archive');

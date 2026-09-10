@@ -47,7 +47,7 @@ class NewVersionDialog extends HookConsumerWidget with PresLogger {
         if (context.mounted) context.pop(); // 安装器已拉起
       } catch (e) {
         if (e is DioException && CancelToken.isCancel(e)) return;
-        error.value = '下载失败，可改用官网下载';
+        error.value = e is Exception ? e.toString().replaceFirst('Exception: ', '') : '下载失败，可改用官网下载';
         downloading.value = false;
       }
     }
@@ -115,6 +115,8 @@ class NewVersionDialog extends HookConsumerWidget with PresLogger {
             if (error.value != null) ...[
               const Gap(8),
               Text(error.value!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
+              const Gap(4),
+              const Text('网络不稳时 App 内下载容易失败，用浏览器下最稳。', style: TextStyle(fontSize: 12)),
             ],
           ],
         ),
@@ -129,16 +131,17 @@ class NewVersionDialog extends HookConsumerWidget with PresLogger {
               child: const Text('以后再说'),
             ),
           ],
-          TextButton(
-            onPressed: () async {
-              if (canInApp) {
-                await startInAppUpdate();
-              } else {
-                await UriUtils.tryLaunch(Uri.parse(newVersion.url));
-              }
-            },
-            child: Text(t.dialogs.newVersion.updateNow),
-          ),
+          // 官网下载页 —— App 内下载失败过、或用户不想走 App 内下载时用
+          if (!canInApp || error.value != null)
+            TextButton(
+              onPressed: () => UriUtils.tryLaunch(Uri.parse(newVersion.url)),
+              child: const Text('打开官网下载'),
+            ),
+          if (canInApp)
+            TextButton(
+              onPressed: startInAppUpdate,
+              child: Text(error.value != null ? '重试' : t.dialogs.newVersion.updateNow),
+            ),
         ],
       ),
     );
