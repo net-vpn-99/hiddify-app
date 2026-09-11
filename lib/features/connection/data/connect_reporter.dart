@@ -68,6 +68,7 @@ class ConnectReporter {
   DateTime _startedAt = DateTime.now();
   Map<String, dynamic> _sub = {};
   Map<String, dynamic>? _tcp;
+  Map<String, dynamic>? _tunnel;
 
   // "", "sent", "queued", "failed" -- read by the diagnostics screen.
   String state = '';
@@ -89,6 +90,15 @@ class ConnectReporter {
   String _primaryApiBase() => Constants.panelApiBase;
 
   String _host(String url) => Uri.tryParse(url)?.host ?? url;
+
+  /// 按 Unicode 码位截断，不按 UTF-16 code unit（`String.substring` 那样）——线路名
+  /// 里如果带旗帜 emoji 之类的代理对（surrogate pair），`substring` 在半路切开会产生
+  /// 悬空代理位，编码/显示时炸成乱码或问号（"适?" 那种）。
+  static String _truncateRunes(String s, int maxChars) {
+    if (s.length <= maxChars) return s; // UTF-16 长度已经 <= 上限，码位数只会更少，直接放行
+    final runes = s.runes.toList();
+    return runes.length <= maxChars ? s : String.fromCharCodes(runes.take(maxChars));
+  }
 
   Directory? _workingDirSync() {
     try {
@@ -134,16 +144,17 @@ class ConnectReporter {
   /// which host:port) this attempt will actually dial.
   Future<void> beginAttempt(String subName, {String? preferredLine}) async {
     _attemptId = _mintId();
-    _subName = subName.length > 64 ? subName.substring(0, 64) : subName;
+    _subName = _truncateRunes(subName, 64);
     _startedAt = DateTime.now();
     _done = false;
     _snapDone = false;
     _tcp = null;
+    _tunnel = null;
     state = '';
     code = '';
 
     final node = await _resolveSelectedNode(preferredLine);
-    _nodeTag = node.tag.length > 64 ? node.tag.substring(0, 64) : node.tag;
+    _nodeTag = _truncateRunes(node.tag, 64);
     _nodeHost = node.host;
     _nodePort = node.port;
 
@@ -165,14 +176,24 @@ class ConnectReporter {
 
   /// Synchronous, cheap, idempotent. Call the instant a failure is observed --
   /// before any retry `start()` truncates box.log.
+  ///
+  /// 1.1.11：以前 box.log 为空/还不存在时直接放弃、不建 snap —— 于是 `_buildBundle()`
+  /// 后来（异步，可能已经是几秒/几次重试之后）去读 live box.log，读到的是那之后又被
+  /// 覆盖的内容，包里显示 `source: live` + 内容对不上失败那一刻。现在无论 box.log
+  /// 当下是空是满，都立刻落一份快照（没有源文件就写个空快照），保证 `_buildBundle()`
+  /// 一定读快照、不读 live，快照内容对应失败那一刻的真实状态（哪怕是"当时确实是空的"）。
   void captureCoreLogSync() {
     if (_snapDone) return;
     try {
       final dir = _workingDirSync();
       if (dir == null) return;
       final src = File(p.join(dir.path, 'box.log'));
-      if (!src.existsSync() || src.lengthSync() == 0) return;
-      src.copySync(p.join(dir.path, 'box.log.snap'));
+      final dst = File(p.join(dir.path, 'box.log.snap'));
+      if (src.existsSync()) {
+        src.copySync(dst.path);
+      } else {
+        dst.writeAsStringSync('');
+      }
       _snapDone = true;
     } catch (_) {}
   }
@@ -190,13 +211,27 @@ class ConnectReporter {
     await _send(payload, null);
   }
 
-  Future<void> reportFailure(String engineError) async {
+  /// [forcedStage] skips the guesswork (`_mapFailStage`) for call sites that
+  /// already know exactly which stage this is -- e.g. the 15s-no-traffic-after-
+  /// Connected timeout is `proxy_request` by definition, not a guess from an
+  /// error string that never mentions "timeout".
+  ///
+  /// [tunnelVpnPermission] / [tunnelNote] let the caller (which has the typed
+  /// `ConnectionFailure`, not just its stringified message) tell us precisely
+  /// what happened when the stage turns out to be `tunnel` -- see
+  /// ConnectionNotifier's error handler.
+  Future<void> reportFailure(
+    String engineError, {
+    String? forcedStage,
+    String? tunnelVpnPermission,
+    String? tunnelNote,
+  }) async {
     if (!attemptOpen) return;
     _done = true;
 
     captureCoreLogSync();
 
-    final failStage = _mapFailStage(engineError, _reached);
+    var failStage = forcedStage ?? _mapFailStage(engineError, _reached);
 
     // Active TCP probe: whenever we got at least as far as tunnel takeover, or
     // the mapped stage is node-level, probe the node ourselves so we record the
@@ -209,6 +244,15 @@ class ConnectReporter {
             failStage == 'node_tls' ||
             failStage == 'proxy_request')) {
       _tcp = await _probeTcp(_nodeHost!, _nodePort!);
+    }
+    // 探测已经证明裸 TCP 是通的，就不能再标 node_tcp（那是"没通"的意思）——大概率是
+    // 后面 TLS/urltest 那一步的超时被落到了这个格子里，改成 proxy_request 更贴近事实。
+    if (failStage == 'node_tcp' && _tcp?['ok'] == true) {
+      failStage = 'proxy_request';
+    }
+
+    if (failStage == 'tunnel') {
+      _tunnel = await _buildTunnelDiag(tunnelVpnPermission ?? 'unknown', tunnelNote ?? engineError);
     }
 
     final payload = _basePayload('fail')
@@ -223,6 +267,37 @@ class ConnectReporter {
       bundle = await _buildBundle(failStage);
     }
     await _send(payload, bundle);
+  }
+
+  /// tunnel 阶段的诊断：VPN 授权状态 / 是否疑似被别的 VPN 占用 / 路由是否起来 / 一句话原因。
+  /// 只在诊断包（bundle）里带，不进轻量上报行——不改 attempts 表结构。
+  Future<Map<String, dynamic>> _buildTunnelDiag(String vpnPermission, String note) async {
+    return {
+      'mode': 'tun',
+      'vpn_permission': vpnPermission,
+      'other_vpn': await _detectOtherVpn(),
+      // Connected 事件（markStage(tunnelReady)）证明 TUN + 路由已经起来；没到那一步就是没起来。
+      'route_ok': _reached >= stageTunnelReady,
+      'note': note.length > 200 ? note.substring(0, 200) : note,
+    };
+  }
+
+  /// 粗略探测：这次失败时，本机是不是已经有一个别的 VPN/隧道接口在跑。只在我们自己的
+  /// TUN 肯定还没起来时（tunnel 阶段失败，_reached < tunnelReady）这个信号才可信——
+  /// 探测不了 / 拿不到网络接口列表就报 unknown，不瞎猜。
+  Future<String> _detectOtherVpn() async {
+    try {
+      final ifaces = await NetworkInterface.list();
+      for (final i in ifaces) {
+        final n = i.name.toLowerCase();
+        if (n.startsWith('tun') || n.startsWith('ppp') || n.startsWith('utun') || n.contains('vpn')) {
+          return 'yes';
+        }
+      }
+      return 'no';
+    } catch (_) {
+      return 'unknown';
+    }
   }
 
   /// Connect was pressed but there is no profile and a resync did not fix it.
@@ -308,7 +383,12 @@ class ConnectReporter {
         has('grpc') ||
         has('unavailable') ||
         has('code: 14')) {
-      return 'core_start';
+      // `_reached` already proves core_started fired (Connecting() event) -- a
+      // core-flavored error string after that point can't still be "core never
+      // started", it's the next stage (tunnel) misbehaving. Self-contradictory
+      // otherwise: trace shows "core_started: ok" immediately followed by
+      // "core_start: fail".
+      return reached >= stageCoreStarted ? 'tunnel' : 'core_start';
     }
     if (has('invalidconfig') ||
         has('parse') ||
@@ -469,8 +549,14 @@ class ConnectReporter {
   // -------------------------------------------------------------- sub-fetch.json
 
   /// Written by ProfileParser._downloadProfile after a subscription pull.
-  /// {ts, host, stage, ok, status, bytes, cache, ms}. Ignored if > 10 min old.
+  /// {ts, host, stage, ok, status, bytes, cache, ms}.
   /// Returns the "sub" object plus internal "_stage"/"_fail_stage" hints.
+  ///
+  /// 1.1.11：以前超过 10 分钟就整段丢掉 —— 这次连接压根没再拉一次订阅时（常见：按
+  /// 现成的本地 profile 直接连），`sub.*` 就全是 null，运营看不出订阅那一步到底正不正常。
+  /// 现在只要文件存在就带上（附 `age_s` 说明多久之前拉的），只有「拿它去推断这次连接
+  /// 卡在订阅哪一步」（`_stage`/`_fail_stage`）才继续收紧到 120 秒内，避免把几分钟前
+  /// 那次不相关的订阅结果误当成这次连接失败的原因。
   Future<Map<String, dynamic>> _readSubFetch() async {
     try {
       final dir = await _workingDir();
@@ -480,25 +566,27 @@ class ConnectReporter {
       final o = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
       final ts = (o['ts'] as num?)?.toInt() ?? 0;
       final ageSecs = DateTime.now().millisecondsSinceEpoch ~/ 1000 - ts;
-      if (ageSecs < 0 || ageSecs > 600) return {};
+      if (ageSecs < 0) return {};
 
       final stage = o['stage'] as String? ?? '';
       final ok = o['ok'] as bool? ?? true;
-      final sub = <String, dynamic>{};
+      final sub = <String, dynamic>{'age_s': ageSecs};
       if (o['status'] != null) sub['status'] = o['status'];
       if (o['bytes'] != null) sub['bytes'] = o['bytes'];
       if ((o['cache'] as String?)?.isNotEmpty ?? false) sub['cache'] = o['cache'];
       if (o['ttfb_ms'] != null) sub['ttfb_ms'] = o['ttfb_ms'];
       if (o['ms'] != null) sub['ms'] = o['ms'];
 
-      sub['_stage'] = switch (stage) {
-        'sub_download' => stageSubRequested,
-        'sub_parse' => stageSubDownloaded,
-        'nodes_parsed' => stageNodesParsed,
-        _ => 0,
-      };
-      if (!ok) {
-        sub['_fail_stage'] = stage == 'sub_parse' ? 'sub_parse' : 'sub_download';
+      if (ageSecs <= 120) {
+        sub['_stage'] = switch (stage) {
+          'sub_download' => stageSubRequested,
+          'sub_parse' => stageSubDownloaded,
+          'nodes_parsed' => stageNodesParsed,
+          _ => 0,
+        };
+        if (!ok) {
+          sub['_fail_stage'] = stage == 'sub_parse' ? 'sub_parse' : 'sub_download';
+        }
       }
       return sub;
     } catch (_) {
@@ -545,6 +633,7 @@ class ConnectReporter {
       }
       final failStep = <String, dynamic>{'stage': failStage, 'ok': false};
       if (_tcp != null) failStep['tcp'] = _tcp;
+      if (_tunnel != null) failStep['tunnel'] = _tunnel;
       trace.add(failStep);
 
       // box.log: prefer the failure-time snapshot (a reconnect truncates the
@@ -563,6 +652,9 @@ class ConnectReporter {
       if (_tcp != null) {
         text.writeln('tcp_probe: ${jsonEncode(_tcp)}');
       }
+      if (_tunnel != null) {
+        text.writeln('tunnel: ${jsonEncode(_tunnel)}');
+      }
       text
         ..writeln('box.log source: ${snap.existsSync() ? "snapshot" : "live"}')
         ..writeln()
@@ -580,6 +672,7 @@ class ConnectReporter {
         'node_tag': _nodeTag,
         'sub_name': _subName,
         if (_tcp != null) 'tcp': _tcp,
+        if (_tunnel != null) 'tunnel': _tunnel,
         'trace': trace,
         'log_tail': text.toString(),
       };

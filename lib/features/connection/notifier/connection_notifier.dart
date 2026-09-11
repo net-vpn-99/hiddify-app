@@ -78,7 +78,14 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
             reporter.captureCoreLogSync();
             // 连上了但 15 秒没有一次成功的隧道请求 —— 先看是不是这段时间流量用完了。
             if (await _accountExhaustedAfterFailure(reporter)) return;
-            await reporter.reportFailure("连接后 15 秒内没有一次通过隧道的请求成功（proxy_request）");
+            // 这就是 proxy_request 阶段失败的定义本身（隧道已建好，只是没有一次请求
+            // 成功穿过去），不用再让 _mapFailStage 去猜字符串——这条消息本来就不含任何
+            // 关键词，猜的话会落进「reached>=tunnelReady 就默认 node_tcp」的兜底，
+            // 明明 TCP 大概率是通的，却被标成"没通"。
+            await reporter.reportFailure(
+              "连接后 15 秒内没有一次通过隧道的请求成功（proxy_request）",
+              forcedStage: 'proxy_request',
+            );
           });
         case Disconnected() || Disconnecting():
           reporter.abandon();
@@ -231,7 +238,21 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           state = AsyncError(err, StackTrace.current);
           return;
         }
-        unawaited(reporter.reportFailure(err.toString()));
+        // 用 typed ConnectionFailure 判断，别只在字符串里猜关键词——拒绝 VPN 授权这种
+        // 有专门的类型（MissingVpnPermission），直接给出准确的 vpn_permission/note，
+        // 不用等服务端/人工再去猜「vivo 所以是权限问题」。
+        final (vpnPerm, tunnelNote) = switch (err) {
+          MissingVpnPermission() => ('denied', '用户拒绝了 VPN 连接授权弹窗'),
+          MissingPrivilege() => ('unknown', '系统权限不足（不是 VPN 授权弹窗，是别的系统限制）'),
+          MissingNotificationPermission() => ('granted', '缺通知权限，前台服务起不来（VPN 授权本身没问题）'),
+          BackgroundCoreNotAvailable() => ('granted', '后台核心服务没能启动（可能被系统省电策略杀了）'),
+          _ => ('granted', 'start() 失败：${_truncate(err.toString(), 160)}'),
+        };
+        unawaited(reporter.reportFailure(
+          err.toString(),
+          tunnelVpnPermission: vpnPerm,
+          tunnelNote: tunnelNote,
+        ));
       }
       await ref
           .read(dialogNotifierProvider.notifier)
@@ -263,6 +284,13 @@ Future<bool> serviceRunning(Ref ref) async {
   return await ref
       .watch(connectionNotifierProvider.selectAsync((data) => data.isConnected))
       .onError((error, stackTrace) => false);
+}
+
+/// Rune-safe truncate (see ConnectReporter._truncateRunes for why not `.substring`).
+String _truncate(String s, int maxChars) {
+  if (s.length <= maxChars) return s;
+  final runes = s.runes.toList();
+  return runes.length <= maxChars ? s : String.fromCharCodes(runes.take(maxChars));
 }
 
 class SingleCall {
