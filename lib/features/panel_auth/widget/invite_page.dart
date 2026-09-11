@@ -57,7 +57,6 @@ class InvitePage extends HookConsumerWidget {
               : ListView(
                   padding: const EdgeInsets.all(20),
                   children: [
-                    // 奖励说明
                     Card(
                       color: theme.colorScheme.secondaryContainer,
                       child: Padding(
@@ -69,11 +68,13 @@ class InvitePage extends HookConsumerWidget {
                               children: [
                                 Icon(Icons.card_giftcard, size: 20, color: theme.colorScheme.onSecondaryContainer),
                                 const SizedBox(width: 8),
-                                Text(
-                                  bonus != null ? '邀请好友，双方各得 $bonus' : '邀请好友，双方都有奖励',
-                                  style: theme.textTheme.titleSmall?.copyWith(
-                                    color: theme.colorScheme.onSecondaryContainer,
-                                    fontWeight: FontWeight.bold,
+                                Expanded(
+                                  child: Text(
+                                    bonus != null ? '邀请好友，双方各得 $bonus' : '邀请好友，双方都有奖励',
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      color: theme.colorScheme.onSecondaryContainer,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -87,63 +88,95 @@ class InvitePage extends HookConsumerWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-
-                    // 二维码 + 邀请码
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                        child: QrImageView(data: d.link, size: 190, backgroundColor: Colors.white),
+                    const SizedBox(height: 16),
+                    Text('发给好友', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text(
+                      '复制下面这段话，粘贴到微信或 QQ。好友点开就能注册，邀请码会自动带上。',
+                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 10),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: SelectableText(shareText, style: theme.textTheme.bodyMedium?.copyWith(height: 1.45)),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Center(
-                      child: Column(
-                        children: [
-                          Text('你的邀请码', style: theme.textTheme.bodySmall),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SelectableText(
-                                d.code,
-                                style: theme.textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 2,
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.copy, size: 18),
-                                onPressed: () {
-                                  Clipboard.setData(ClipboardData(text: d.code));
-                                  _toast(context, '邀请码已复制');
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     FilledButton.icon(
-                      icon: const Icon(Icons.share),
-                      label: const Text('分享邀请链接与文案'),
-                      onPressed: () => Share.share(shareText),
+                      icon: const Icon(Icons.copy_all_outlined),
+                      label: const Text('复制发给好友'),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: shareText));
+                        _toast(context, '文案已复制，发给微信或 QQ 好友即可');
+                      },
                     ),
                     const SizedBox(height: 8),
                     OutlinedButton.icon(
-                      icon: const Icon(Icons.link),
-                      label: const Text('复制邀请链接'),
+                      icon: const Icon(Icons.share),
+                      label: const Text('系统分享'),
+                      onPressed: () => Share.share(shareText),
+                    ),
+                    const SizedBox(height: 4),
+                    TextButton.icon(
+                      icon: const Icon(Icons.link, size: 18),
+                      label: const Text('只复制链接'),
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: d.link));
                         _toast(context, '邀请链接已复制');
                       },
                     ),
-
-                    const SizedBox(height: 28),
-
-                    // 邀请记录
+                    Theme(
+                      data: theme.copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: Text('当面扫码 / 邀请码', style: theme.textTheme.titleSmall),
+                        subtitle: Text(
+                          '面对面时再展开。一般不用单独发邀请码，链接里已经带上。',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        children: [
+                          const SizedBox(height: 8),
+                          Center(
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                              child: QrImageView(data: d.link, size: 180, backgroundColor: Colors.white),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Center(
+                            child: Column(
+                              children: [
+                                Text('你的邀请码', style: theme.textTheme.bodySmall),
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SelectableText(
+                                      d.code,
+                                      style: theme.textTheme.headlineSmall?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 2,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.copy, size: 18),
+                                      onPressed: () {
+                                        Clipboard.setData(ClipboardData(text: d.code));
+                                        _toast(context, '邀请码已复制');
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
                     Text(
                       total.value > 0 ? '邀请记录（${total.value} 人）' : '邀请记录',
                       style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
@@ -153,12 +186,21 @@ class InvitePage extends HookConsumerWidget {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         child: Text(
-                          '还没有人通过你的链接注册。把链接发到群里试试～',
+                          '还没有人通过你的链接注册。把上面的话发给还没用过光速雷达的朋友～',
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                         ),
                       )
-                    else
+                    else ...[
+                      if (referrals.value.any((r) => !r.paid))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            '有好友还没开通套餐。可以把上面的话再发一次，提醒他们体验。',
+                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ),
                       ...referrals.value.map((r) => _ReferralRow(r)),
+                    ],
                     if (referrals.value.length < total.value)
                       TextButton(
                         onPressed: loadingMore.value

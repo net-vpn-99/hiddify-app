@@ -15,9 +15,14 @@ class InviteRewardTile extends ConsumerWidget {
     if (!loggedIn) return const SizedBox.shrink();
 
     final bonus = ref.watch(inviteTextsProvider).valueOrNull?.bonus;
-    final subtitle = (bonus != null && bonus.isNotEmpty)
-        ? '邀请好友注册，双方各得 $bonus'
-        : '查看邀请奖励';
+    final exhausted = ref.watch(panelAuthProvider.select((s) => s.account?.exhausted ?? false));
+    final subtitle = exhausted
+        ? (bonus != null && bonus.isNotEmpty
+            ? '邀请好友，双方再得 $bonus'
+            : '邀请好友，双方都能再获得体验')
+        : (bonus != null && bonus.isNotEmpty
+            ? '邀请好友注册，双方各得 $bonus'
+            : '查看邀请奖励');
 
     return Material(
       child: ListTile(

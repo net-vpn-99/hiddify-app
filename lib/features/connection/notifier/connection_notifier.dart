@@ -49,6 +49,22 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
     });
 
+    // 流量用完 / 会员到期：立刻拆隧道，别让主按钮停在「连接中」。
+    // 从「还能用」变成「用尽」时自动弹一次；用户点按钮再弹走 force。
+    ref.listen(panelAuthProvider.select((s) => s.account?.exhausted ?? false), (previous, next) {
+      if (next != true) {
+        ref.read(dialogNotifierProvider.notifier).clearQuotaNotice();
+        return;
+      }
+      Future(() async {
+        await abortConnection();
+        if (previous == true) return;
+        final acc = ref.read(panelAuthProvider).account;
+        if (acc == null || !acc.exhausted) return;
+        await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc);
+      });
+    });
+
     ref.listen(activeProfileProvider.select((value) => value.asData?.value), (previous, next) async {
       if (previous == null) return;
       final shouldReconnect = next == null || previous.id != next.id;
@@ -57,6 +73,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
     });
     ref.watch(coreRestartSignalProvider);
+    ref.onDispose(_stopQuotaPoll);
 
     yield* _connectionRepo.watchConnectionStatus().doOnData((event) {
       if (event case Disconnected(connectionFailure: final _?) when PlatformUtils.isDesktop) {
@@ -73,10 +90,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           reporter.markStage(ConnectReporter.stageCoreStarted);
         case Connected():
           reporter.markStage(ConnectReporter.stageTunnelReady);
+          _startQuotaPoll();
           Future<void>.delayed(const Duration(seconds: 15), () async {
             if (!reporter.attemptOpen) return;
             reporter.captureCoreLogSync();
             // 连上了但 15 秒没有一次成功的隧道请求 —— 先看是不是这段时间流量用完了。
+            // 是账号原因：sync 会触发上面的 listen，拆隧道并弹窗，这里不要记成节点失败。
             if (await _accountExhaustedAfterFailure(reporter)) return;
             // 这就是 proxy_request 阶段失败的定义本身（隧道已建好，只是没有一次请求
             // 成功穿过去），不用再让 _mapFailStage 去猜字符串——这条消息本来就不含任何
@@ -88,6 +107,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
             );
           });
         case Disconnected() || Disconnecting():
+          _stopQuotaPoll();
           reporter.abandon();
       }
       loggy.info("connection status: ${event.format()}");
@@ -95,6 +115,20 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   ConnectionRepository get _connectionRepo => ref.read(connectionRepositoryProvider);
+
+  Timer? _quotaPoll;
+
+  void _startQuotaPoll() {
+    if (_quotaPoll != null) return;
+    _quotaPoll = Timer.periodic(const Duration(seconds: 45), (_) {
+      unawaited(ref.read(panelAuthProvider.notifier).syncAccountQuietly());
+    });
+  }
+
+  void _stopQuotaPoll() {
+    _quotaPoll?.cancel();
+    _quotaPoll = null;
+  }
 
   Future<void> mayConnect() async {
     if (state case AsyncData(:final value)) {
@@ -192,7 +226,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       } catch (_) {}
       final acc = ref.read(panelAuthProvider).account;
       if (acc != null && (acc.exhausted || acc.stateSlug == 'no_plan')) {
-        await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc);
+        await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc, force: true);
         await ref.read(Preferences.startedByUser.notifier).update(false);
         return;
       }
@@ -206,7 +240,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     // 把节点失败率带脏，用户看到的还是「连接失败」于是一直重试）。直接引导续费。
     final acc = ref.read(panelAuthProvider).account;
     if (acc != null && acc.exhausted) {
-      await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc);
+      await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc, force: true);
       await ref.read(Preferences.startedByUser.notifier).update(false);
       return;
     }
@@ -231,11 +265,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         // 失败也可能只是这次连接期间流量用完了：复核账号，是账号原因就别记成节点失败，
         // 直接弹「流量用完 · 去续费」而不是笼统的连接错误。
         if (await _accountExhaustedAfterFailure(reporter)) {
-          await ref
-              .read(dialogNotifierProvider.notifier)
-              .showQuotaExhausted(ref.read(panelAuthProvider).account!);
           await ref.read(Preferences.startedByUser.notifier).update(false);
-          state = AsyncError(err, StackTrace.current);
+          await abortConnection();
           return;
         }
         // 用 typed ConnectionFailure 判断，别只在字符串里猜关键词——拒绝 VPN 授权这种

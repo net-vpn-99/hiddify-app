@@ -86,17 +86,31 @@ class AccountPage extends HookConsumerWidget {
                 ),
               ),
             const SizedBox(height: 20),
-            FilledButton.icon(
-              icon: const Icon(Icons.card_membership),
-              label: const Text('续费 / 升级套餐'),
-              onPressed: () => context.pushNamed('purchase'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.group_add_outlined),
-              label: const Text('邀请好友'),
-              onPressed: () => context.pushNamed('invite'),
-            ),
+            if (a?.exhausted == true) ...[
+              FilledButton.icon(
+                icon: const Icon(Icons.group_add_outlined),
+                label: const Text('邀请好友试用'),
+                onPressed: () => context.pushNamed('invite'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.card_membership),
+                label: const Text('续费 / 升级套餐'),
+                onPressed: () => context.pushNamed('purchase'),
+              ),
+            ] else ...[
+              FilledButton.icon(
+                icon: const Icon(Icons.card_membership),
+                label: const Text('续费 / 升级套餐'),
+                onPressed: () => context.pushNamed('purchase'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.group_add_outlined),
+                label: const Text('邀请好友'),
+                onPressed: () => context.pushNamed('invite'),
+              ),
+            ],
             const SizedBox(height: 8),
             OutlinedButton.icon(
               icon: const Icon(Icons.password_outlined),

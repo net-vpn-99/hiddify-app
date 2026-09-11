@@ -66,58 +66,35 @@ class ConnectionButton extends HookConsumerWidget {
     //   // );
 
     const buttonTheme = ConnectionButtonTheme.light;
+    final account = ref.watch(panelAuthProvider.select((s) => s.account));
+    final quotaEnded = account?.exhausted == true;
 
-    //   // return CircleDesignWidget(
-    //   //   onTap: switch (connectionStatus) {
-    //   //     // AsyncData(value: Disconnected()) || AsyncError() => () async {
-    //   //     //     if (await showExperimentalNotice()) {
-    //   //     //       return await ref.read(connectionNotifierProvider.notifier).toggleConnection();
-    //   //     //     }
-    //   //     //   },
-    //   //     // AsyncData(value: Connected()) => () async {
-    //   //     //     if (requiresReconnect == true && await showExperimentalNotice()) {
-    //   //     //       return await ref.read(connectionNotifierProvider.notifier).reconnect(await ref.read(activeProfileProvider.future));
-    //   //     //     }
-    //   //     //     return await ref.read(connectionNotifierProvider.notifier).toggleConnection();
-    //   //     //   },
-    //   //     _ => () {},
-    //   //   },
-    //   //   // enabled: switch (connectionStatus) {
-    //   //   //   AsyncData(value: Connected()) || AsyncData(value: Disconnected()) || AsyncError() => true,
-    //   //   //   _ => false,
-    //   //   // },
-    //   //   // label: switch (connectionStatus) {
-    //   //   //   AsyncData(value: Connected()) when requiresReconnect == true => t.connection.reconnect,
-    //   //   //   AsyncData(value: Connected()) when delay <= 0 || delay >= 65000 => t.connection.connecting,
-    //   //   //   AsyncData(value: final status) => status.present(t),
-    //   //   //   _ => "",
-    //   //   // },
-    //   //   color: switch (connectionStatus) {
-    //   //     AsyncData(value: Connected()) when requiresReconnect == true => Colors.teal,
-    //   //     AsyncData(value: Connected()) when delay <= 0 || delay >= 65000 => Color.fromARGB(255, 157, 139, 1),
-    //   //     AsyncData(value: Connected()) => Colors.green.shade900,
-    //   //     AsyncData(value: _) => Colors.indigo.shade700, // Color(0xFF3446A5), //buttonTheme.idleColor!,
-    //   //     _ => Colors.red,
-    //   //   },
-
-    //   //   animated: true ||
-    //   //       switch (connectionStatus) {
-    //   //         AsyncData(value: Connected()) when requiresReconnect == true => false,
-    //   //         AsyncData(value: Connected()) when delay <= 0 || delay >= 65000 => false,
-    //   //         AsyncData(value: Connected()) => true,
-    //   //         AsyncData(value: _) => true,
-    //   //         _ => false,
-    //   //       },
-    //   //   animationValue: animationValue,
-    //   // );
-    // }
     var secureLabel =
         (ref.watch(ConfigOptions.enableWarp) && ref.watch(ConfigOptions.warpDetourMode) == WarpDetourMode.warpOverProxy)
         ? t.connection.secure
         : "";
-    if (delay <= 0 || delay > 65000 || connectionStatus.value != const Connected()) {
+    if (quotaEnded || delay <= 0 || delay > 65000 || connectionStatus.value != const Connected()) {
       secureLabel = "";
     }
+
+    if (quotaEnded) {
+      return _ConnectionButton(
+        onTap: () async {
+          await ref.read(connectionNotifierProvider.notifier).abortConnection();
+          await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(account!, force: true);
+        },
+        enabled: true,
+        label: account?.stateSlug == 'expired' ? '会员已到期' : '流量已用完',
+        hint: '点按钮邀请好友或续费',
+        buttonColor: buttonTheme.idleColor!,
+        image: Assets.images.disconnectNorouz,
+        newButtonColor: buttonTheme.idleColor!,
+        animated: false,
+        useImage: today.day >= 19 && today.day <= 23 && today.month == 3,
+        secureLabel: '',
+      );
+    }
+
     return _ConnectionButton(
       onTap: switch (connectionStatus) {
         AsyncData(value: Connected()) when requiresReconnect == true => () async {
@@ -140,7 +117,7 @@ class ConnectionButton extends HookConsumerWidget {
             } catch (_) {}
             final acc = ref.read(panelAuthProvider).account;
             if (acc != null && (acc.exhausted || acc.stateSlug == 'no_plan')) {
-              await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc);
+              await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc, force: true);
               return;
             }
             // 账号正常却没订阅 —— 订阅同步掉了，重新拉一次地址并导入（跟登录时同一条路，
@@ -225,11 +202,13 @@ class _ConnectionButton extends StatelessWidget {
     required this.newButtonColor,
     required this.animated,
     required this.secureLabel,
+    this.hint,
   });
 
   final VoidCallback onTap;
   final bool enabled;
   final String label;
+  final String? hint;
   final Color buttonColor;
   final AssetGenImage image;
   final bool useImage;
@@ -288,6 +267,15 @@ class _ConnectionButton extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               AnimatedText(label, style: Theme.of(context).textTheme.titleMedium),
+              if (hint != null && hint!.isNotEmpty) ...[
+                const Gap(4),
+                Text(
+                  hint!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
               if (secureLabel.isNotEmpty) ...[
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,

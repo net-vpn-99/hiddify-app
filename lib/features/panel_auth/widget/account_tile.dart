@@ -29,7 +29,12 @@ class AccountTile extends ConsumerWidget {
       child: ListTile(
         leading: const Icon(Icons.account_circle),
         title: Text(auth.email ?? '已登录'),
-        subtitle: const Text('光速会员 · 点击查看套餐 / 续费'),
+        subtitle: Text(switch (auth.account?.stateSlug) {
+          'traffic_exhausted' => '本期流量已用完 · 点击处理',
+          'expired' => '会员已到期 · 点击处理',
+          'no_plan' => '还没有套餐 · 点击开通',
+          _ => '光速会员 · 点击查看套餐 / 续费',
+        }),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => context.pushNamed('account'),
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 首页「连接稳定性」小指标。只在已连接时显示。
@@ -11,7 +12,8 @@ class StabilityIndicator extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final connected =
         ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
-    if (!connected) return const SizedBox.shrink();
+    final exhausted = ref.watch(panelAuthProvider.select((s) => s.account?.exhausted ?? false));
+    if (!connected || exhausted) return const SizedBox.shrink();
 
     final s = ref.watch(stabilityProvider);
     final theme = Theme.of(context);
