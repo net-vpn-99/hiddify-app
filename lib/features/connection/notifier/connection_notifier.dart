@@ -91,6 +91,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         case Connected():
           reporter.markStage(ConnectReporter.stageTunnelReady);
           _startQuotaPoll();
+          _startDeviceKeepWarm();
           Future<void>.delayed(const Duration(seconds: 15), () async {
             if (!reporter.attemptOpen) return;
             reporter.captureCoreLogSync();
@@ -108,6 +109,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           });
         case Disconnected() || Disconnecting():
           _stopQuotaPoll();
+          _stopDeviceKeepWarm();
           reporter.abandon();
       }
       loggy.info("connection status: ${event.format()}");
@@ -128,6 +130,30 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   void _stopQuotaPoll() {
     _quotaPoll?.cancel();
     _quotaPoll = null;
+  }
+
+  Timer? _deviceKeepWarm;
+
+  // 设备闸：隧道连着时每 4 分钟 claim 一次（connected=true），跟 Windows
+  // keep-warm 同一个道理——只 claim 一次的话，设备闸自己不知道隧道后来又
+  // 断了，「在连」会一直卡在上次的值。
+  void _startDeviceKeepWarm() {
+    if (!Platform.isAndroid || _deviceKeepWarm != null) return;
+    _deviceKeepWarm = Timer.periodic(const Duration(minutes: 4), (_) {
+      unawaited(ref.read(panelAuthProvider.notifier).claimDevice(connected: true));
+    });
+  }
+
+  // 断开（用户主动 / 失败 / 账号原因）一律补发一次 connected=false——失败
+  // 忽略，不影响断开流程。哪怕从没进入过 Connected（keep-warm 没起来过）
+  // 也要发，防止 connectionRepo.connect 之前的那次 connected=true claim
+  // 因为随后连接失败而永远卡在「在连」。
+  void _stopDeviceKeepWarm() {
+    _deviceKeepWarm?.cancel();
+    _deviceKeepWarm = null;
+    if (Platform.isAndroid) {
+      unawaited(ref.read(panelAuthProvider.notifier).claimDevice(connected: false));
+    }
   }
 
   Future<void> mayConnect() async {
@@ -246,6 +272,20 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     }
     // 流量用量本地可能已过时——连接前静默补一次（不阻塞本次；真超额了下次点击会拦）。
     unawaited(ref.read(panelAuthProvider.notifier).syncAccountQuietly());
+
+    // 设备闸：真正拨号前 claim 一次（connected=true）。401/403 是网关的决定性
+    // 拒绝——不要连；网络问题/404/5xx 已经在 claimDevice 内部 fail-open 成
+    // allowed=true，不会走到这里拦人。
+    if (Platform.isAndroid) {
+      final claim = await ref.read(panelAuthProvider.notifier).claimDevice(connected: true);
+      if (!claim.allowed) {
+        await ref
+            .read(dialogNotifierProvider.notifier)
+            .showCustomAlert(message: claim.blockMessage ?? '设备校验失败，请稍后重试');
+        await ref.read(Preferences.startedByUser.notifier).update(false);
+        return;
+      }
+    }
 
     await reporter.beginAttempt(
       activeProfile.name,

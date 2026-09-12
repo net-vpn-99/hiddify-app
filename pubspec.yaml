@@ -1,7 +1,7 @@
 name: hiddify
 description: Cross Platform Multi Protocol Proxy Frontend.
 publish_to: "none"
-version: 1.1.12+10113
+version: 1.1.13+10114
 
 environment:
   sdk: ^3.10.4
@@ -67,6 +67,7 @@ dependencies:
   meta: ^1.15.0
   dartx: ^1.2.0
   uuid: ^4.3.3
+  android_id: ^0.5.2 # OneRay: 设备闸稳定 ID（Settings.Secure.ANDROID_ID），仅 Android
   tint: ^2.0.1
   accessibility_tools: ^2.2.3
   neat_periodic_task: ^2.0.1

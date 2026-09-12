@@ -1,5 +1,6 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/core/utils/device_id.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
@@ -216,6 +217,32 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       return null;
     } catch (_) {
       return null;
+    }
+  }
+
+  /// 设备闸：连接前 / 连着的时候周期性 claim 一次。未登录（没存令牌，比如手动
+  /// 导入订阅的用户）不占用设备位，直接放行。
+  ///
+  /// `allowed=false` 时调用方不应该发起 / 应该中止本次连接，`blockMessage`
+  /// 是给用户看的中文提示（登录已过期 / 设备数已满）。网络问题、闸暂时联系
+  /// 不上、404（这套 www 还没配闸）都算 `allowed=true`——闸是 fail-open，
+  /// 不能因为登记服务的问题把正常连接也拦住。
+  Future<({bool allowed, String? blockMessage})> claimDevice({required bool connected}) async {
+    final token = await currentToken();
+    if (token == null || token.isEmpty) return (allowed: true, blockMessage: null);
+    final deviceId = await DeviceId.read();
+    if (deviceId == null) {
+      // 拿不到可用的设备 ID：宁可不让连，也不能拿坏 ID 占座位。
+      return (allowed: false, blockMessage: '无法识别这台设备，请重启 App 后重试');
+    }
+    try {
+      await _api.claimDevice(token, deviceId, connected: connected);
+      return (allowed: true, blockMessage: null);
+    } on PanelApiException catch (e) {
+      if (e.unauthorized) await logout(wipe: false);
+      return (allowed: false, blockMessage: e.message);
+    } catch (_) {
+      return (allowed: true, blockMessage: null);
     }
   }
 

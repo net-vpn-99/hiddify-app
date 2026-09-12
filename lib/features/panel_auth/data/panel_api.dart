@@ -256,6 +256,61 @@ class PanelApi {
     return (items: items, total: total);
   }
 
+  /// 设备闸：连接前 / 连接中 claim 一次稳定设备 ID（见 VPN 仓库
+  /// `tools/device-gate/gate.py`）。
+  ///
+  /// 返回 null = 闸联系不上（网络问题 / 404 / 5xx）——闸是 fail-open，调用方
+  /// 应该照常放行连接，只是这次不计入设备数。
+  /// 抛 [PanelApiException]：`unauthorized=true`（401）= 登录已过期，不要连；
+  /// 否则（403）= 设备数已满，[PanelApiException.message] 是闸给用户看的原话，
+  /// 同样不要连。
+  Future<({int used, int limit})?> claimDevice(
+    String token,
+    String deviceId, {
+    required bool connected,
+  }) async {
+    final base = _deviceGateBase();
+    if (base == null) return null;
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '$base/claim',
+        data: {'device_id': deviceId, 'platform': 'android', 'connected': connected},
+        options: Options(headers: {'auth_data': token, 'Authorization': token}),
+      );
+    } on DioException catch (_) {
+      return null;
+    }
+    if (res.statusCode == 200) {
+      final data = res.data;
+      final used = data is Map ? (num.tryParse('${data['used']}') ?? 0).toInt() : 0;
+      final limit = data is Map ? (num.tryParse('${data['limit']}') ?? 0).toInt() : 0;
+      return (used: used, limit: limit);
+    }
+    if (res.statusCode == 401) {
+      throw PanelApiException(_messageOf(res.data) ?? '登录已过期，请重新登录', unauthorized: true);
+    }
+    if (res.statusCode == 403) {
+      throw PanelApiException(_messageOf(res.data) ?? '设备数已满（按电脑/手机计，不是按宽带）');
+    }
+    // 400（缺字段，理论上不会发生）/ 404（这套 www 还没配闸）/ 5xx：不是网关的
+    // 决定性拒绝，fail-open，别拦用户连接。
+    return null;
+  }
+
+  /// 设备闸地址跟着「当前正在用的 API 域名」走：取登记域（eTLD+1，只取最后
+  /// 两截——所以买新域名别选 `.com.cn` / `.co.uk` 这类复合后缀），拼
+  /// `https://www.{登记域}/dengta/device`。换域只用改 [Constants.panelApiBase]，
+  /// 这里不用跟着发版。和 Windows `XboardControlPlane::RegistrableDomain` /
+  /// `applyDerivedSiblings` 是同一条算法，两边对得上。
+  String? _deviceGateBase() {
+    final host = Uri.tryParse(_dio.options.baseUrl)?.host;
+    if (host == null || host.isEmpty) return null;
+    final labels = host.split('.');
+    final sld = labels.length >= 2 ? labels.sublist(labels.length - 2).join('.') : host;
+    return 'https://www.$sld/dengta/device';
+  }
+
   // --- helpers ---
 
   String? _extractToken(dynamic body) {
