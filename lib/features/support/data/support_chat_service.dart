@@ -4,7 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:hiddify/features/support/model/support_message.dart';
 
 /// 在线客服：直接调 Chatwoot 官网小组件用的那套公开接口（/api/v1/widget/*），
-/// 后台是同一个 Chatwoot（kf.guangsuleida.com）—— 客服在网页后台 / 手机 App 看到的
+/// 后台是同一个 Chatwoot（kf.gsldone.com）—— 客服在网页后台 / 手机 App 看到的
 /// 是同一条会话，跟官网气泡、chat.html 完全等价，只是这边用原生界面画出来。
 ///
 /// 认证：从 GET /widget?website_token=... 这张网页里嵌的 <script> 解析出 authToken
@@ -25,7 +25,7 @@ class SupportChatService {
 
   // 官网「在线客服」用的同一串（website/assets/site.js、website/chat.html 里那个），
   // 本来就写在网页源码里公开可见，不是密钥。
-  static const _base = 'https://kf.guangsuleida.com';
+  static const _base = 'https://kf.gsldone.com';
   static const _websiteToken = '6EDJYPA8bcduF3GjoFTCEvdZ';
 
   final Dio _dio;
