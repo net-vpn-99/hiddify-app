@@ -5,11 +5,25 @@ abstract class Constants {
   static const appName = "光速";
   // OneRay: 会员系统 API（登录 / 拉订阅），对接 Xboard，与桌面版同一套接口
   static const panelApiBase = "https://api.guangsuleida.com";
-  static const panelRegisterUrl = "https://panel.guangsuleida.com/#/register";
-  static const panelForgotUrl = "https://panel.guangsuleida.com/#/forget";
-  static const panelPlanUrl = "https://panel.guangsuleida.com/#/plan"; // 续费/购买
-  static const panelProfileUrl = "https://panel.guangsuleida.com/#/profile"; // 改密码
-  static const panelInviteUrl = "https://panel.guangsuleida.com/#/invite"; // 邀请好友
+  // 渠道 OSS 下发活 API；灰云 / 源站同名 txt 防 OSS 挂掉。跟 Windows panel.json ossPointerUrls 同一份。
+  static const ossPointerUrls = [
+    "https://surrr.oss-cn-hangzhou.aliyuncs.com/f20025155414474.txt",
+    "https://api-hk.inkspindle.com/rules/d9b21c47e0a8f315.txt",
+    "https://www.gsldone.com/dengta/d9b21c47e0a8f315.txt",
+  ];
+  static const panelApiFallbacks = [
+    "https://api-hk.inkspindle.com",
+    "https://api.gsldone.com",
+    "https://api.inkspindle.com",
+    "https://api.guangsuleida.com",
+  ];
+  // Xboard 会员前台已全部 404，浏览器入口走官网会员中心。
+  static const panelRegisterUrl = "https://www.guangsuleida.com/account/";
+  static const panelForgotUrl = "https://www.guangsuleida.com/account/";
+  static const panelPlanUrl = "https://www.guangsuleida.com/account/"; // 续费/购买
+  static const panelProfileUrl = "https://www.guangsuleida.com/account/"; // 改密码
+  static const panelInviteUrl = "https://www.guangsuleida.com/i/"; // 邀请好友
+
   static const githubUrl = "https://www.guangsuleida.com/help.html";
   static const licenseUrl = "https://www.guangsuleida.com/help.html";
   // OneRay: 「我的 → 帮助与客服 → 常见问题」跳这里（官网帮助页）。
@@ -17,6 +31,7 @@ abstract class Constants {
   // OneRay: 更新清单。主 = 搬瓦工中转直连（快、抗封），备 = 香港源站（CF）。逐个试。
   static const releasesJsonUrls = [
     "https://dl2.meadowfoundry.com/android/releases.json",
+    "https://www.gsldone.com/dengta/android/releases.json",
     "https://www.guangsuleida.com/dengta/android/releases.json",
   ];
   // 兼容旧字段名（仍被 app_update_repository 读；实际用上面的列表）

@@ -1,5 +1,5 @@
 import 'package:dio/dio.dart';
-import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/purchase/model/plan_offer.dart';
 
 /// App 内购买 —— 对接 Xboard 订单接口，跟桌面版 OneRay 同一套
@@ -9,16 +9,7 @@ import 'package:hiddify/features/purchase/model/plan_offer.dart';
 /// getPaymentMethod → order/checkout 拿收银台地址 → 系统浏览器付款 →
 /// 回 App 后 order/check 查状态（0 待支付 / 1 开通中 / 3 已完成 / 2 已取消）。
 class PurchaseService {
-  PurchaseService()
-      : _dio = Dio(
-          BaseOptions(
-            baseUrl: Constants.panelApiBase,
-            connectTimeout: const Duration(seconds: 15),
-            receiveTimeout: const Duration(seconds: 20),
-            validateStatus: (_) => true,
-            headers: {'User-Agent': 'OneRay-Android'},
-          ),
-        );
+  PurchaseService() : _dio = PanelApiBase.dio();
 
   final Dio _dio;
 

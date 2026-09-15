@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.14] - 2026-09-16
+
+- 启动时从渠道 OSS 指针（及灰云 / 源站备份）拉活 API；品牌域被墙不用再发版
+- Xboard 会员前台已隐藏，浏览器注册 / 忘记密码入口改官网 `/account/`
+
 ## [0.16.0.dev] - 2024-2-18
 
 ### New Features and Improvements

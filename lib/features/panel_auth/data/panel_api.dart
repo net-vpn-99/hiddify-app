@@ -1,22 +1,11 @@
 import 'package:dio/dio.dart';
-import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
 
 /// 对接 Xboard 会员系统。接口与桌面版 OneRay 保持一致
 /// （见 VPN 仓库 src/control/XboardControlPlane.cpp）。
 class PanelApi {
-  PanelApi({Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                baseUrl: Constants.panelApiBase,
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 20),
-                // 任何状态码都不抛，交给调用方按 body 判断
-                validateStatus: (_) => true,
-                headers: {'User-Agent': 'OneRay-Android'},
-              ),
-            );
+  PanelApi({Dio? dio}) : _dio = dio ?? PanelApiBase.dio();
 
   final Dio _dio;
 
@@ -60,7 +49,7 @@ class PanelApi {
     var url = (data['subscribe_url'] as String?)?.trim() ?? '';
     final subToken = (data['token'] as String?)?.trim() ?? '';
     if (url.isEmpty && subToken.isNotEmpty) {
-      url = '${Constants.panelApiBase}/api/v1/client/subscribe?token=$subToken';
+      url = '${PanelApiBase.current}/api/v1/client/subscribe?token=$subToken';
     }
     if (url.isEmpty) {
       throw PanelApiException('该账号还没有可用套餐，请先在会员中心购买');
@@ -300,8 +289,8 @@ class PanelApi {
 
   /// 设备闸地址跟着「当前正在用的 API 域名」走：取登记域（eTLD+1，只取最后
   /// 两截——所以买新域名别选 `.com.cn` / `.co.uk` 这类复合后缀），拼
-  /// `https://www.{登记域}/dengta/device`。换域只用改 [Constants.panelApiBase]，
-  /// 这里不用跟着发版。和 Windows `XboardControlPlane::RegistrableDomain` /
+  /// `https://www.{登记域}/dengta/device`。OSS 换了活 API 之后闸跟着走，
+  /// 不用跟着发版。和 Windows `XboardControlPlane::RegistrableDomain` /
   /// `applyDerivedSiblings` 是同一条算法，两边对得上。
   String? _deviceGateBase() {
     final host = Uri.tryParse(_dio.options.baseUrl)?.host;

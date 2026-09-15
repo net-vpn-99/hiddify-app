@@ -6,7 +6,7 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
-import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
@@ -51,7 +51,7 @@ class ConnectReporter {
   static const int stageNodeTls = 7;
   static const int stageProxyRequest = 8;
 
-  static const String _fallbackApiBase = 'https://api-hk.meadowfoundry.com';
+  static const String _fallbackApiBase = 'https://api-hk.inkspindle.com';
   static const String _reportPath = '/api/v1/guest/gsl_connect/report';
   static const int _queueMax = 10;
   static const int _queueTtlSecs = 3 * 24 * 3600;
@@ -87,7 +87,7 @@ class ConnectReporter {
         ),
       );
 
-  String _primaryApiBase() => Constants.panelApiBase;
+  String _primaryApiBase() => PanelApiBase.current;
 
   String _host(String url) => Uri.tryParse(url)?.host ?? url;
 
@@ -727,6 +727,7 @@ class ConnectReporter {
   Future<void> _send(Map<String, dynamic> payload, String? bundleGzB64) async {
     if (bundleGzB64 != null) payload['bundle_gz'] = bundleGzB64;
     final token = await _panelToken();
+    await PanelApiBase.resolve();
 
     final r1 = await _post(_primaryApiBase(), payload, token);
     if (r1 == _PostResult.ok) {
@@ -802,6 +803,7 @@ class ConnectReporter {
       if (queue.isEmpty) return;
 
       final token = await _panelToken();
+      await PanelApiBase.resolve();
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
       final remaining = <dynamic>[];
       for (final entry in queue) {

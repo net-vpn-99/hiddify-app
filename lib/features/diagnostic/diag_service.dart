@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
-import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -26,13 +26,7 @@ Future<DiagResult> uploadDiagnostics(WidgetRef ref) async {
     final email = ref.read(panelAuthProvider).email ?? '';
     final state = _stateLabel(ref);
 
-    final dio = Dio(BaseOptions(
-      baseUrl: Constants.panelApiBase,
-      connectTimeout: const Duration(seconds: 15),
-      receiveTimeout: const Duration(seconds: 20),
-      validateStatus: (_) => true,
-      headers: {'User-Agent': 'OneRay-Android-Diag'},
-    ));
+    final dio = PanelApiBase.dio(userAgent: 'OneRay-Android-Diag');
     final res = await dio.post<dynamic>(
       '/api/v1/guest/gsl_diag/upload',
       data: FormData.fromMap({
