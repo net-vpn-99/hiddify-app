@@ -46,7 +46,7 @@ class InvitePage extends HookConsumerWidget {
     final d = invite.value;
     final shareText = d == null
         ? ''
-        : _buildShareText(texts?.share, bonus, d.link);
+        : _buildShareText(texts?.share, bonus, d.link, d.code);
 
     return Scaffold(
       appBar: AppBar(title: const Text('邀请好友')),
@@ -217,12 +217,12 @@ class InvitePage extends HookConsumerWidget {
     );
   }
 
-  static String _buildShareText(String? template, String? bonus, String link) {
+  static String _buildShareText(String? template, String? bonus, String link, String code) {
     if (template != null && template.isNotEmpty) {
-      return template.replaceAll('{bonus}', bonus ?? '奖励').replaceAll('{link}', link);
+      return template.replaceAll('{bonus}', bonus ?? '奖励').replaceAll('{link}', link).replaceAll('{code}', code);
     }
     final b = bonus != null ? '各得 $bonus' : '都有奖励';
-    return '我在用「光速」，速度快、YouTube 4K 不卡。\n用我的链接注册，咱俩$b：\n$link';
+    return '我在用「光速」，速度快、YouTube 4K 不卡。\n用我的链接注册，咱俩$b：\n$link\n官网打不开时：https://gsl-status.guangsu-970.workers.dev/';
   }
 
   static void _toast(BuildContext context, String msg) {

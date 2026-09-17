@@ -131,7 +131,7 @@ jobs:
               "assets": [
                 {
                   "name": "oneray.apk",
-                  "browser_download_url": "https://dl2.meadowfoundry.com/android/oneray.apk",
+                  "browser_download_url": "https://dl.inkspindle.com/dengta/android/oneray.apk",
                   "mirrors": [
                     "https://www.gsldone.com/dengta/android/oneray.apk",
                     "https://www.guangsuleida.com/dengta/android/oneray.apk"
@@ -143,7 +143,7 @@ jobs:
           ]
           EOF
           echo "SHA256(arm64) = $SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "artifact 里有 oneray.apk + releases.json —— 按 docs/客户端-下载源.md 传到搬瓦工中转 + 香港源站的 android/ 目录" >> "$GITHUB_STEP_SUMMARY"
+          echo "artifact 里有 oneray.apk + releases.json —— 按 docs/客户端-下载源.md 传到东京源站 /var/www/dengtago/dengta/android/（dl.inkspindle.com 和 www.gsldone.com 共用同一份文件）" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:

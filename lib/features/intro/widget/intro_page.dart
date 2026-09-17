@@ -12,6 +12,7 @@ import 'package:hiddify/core/localization/locale_preferences.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/region.dart';
+import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/common/general_pref_tiles.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
@@ -121,7 +122,10 @@ class IntroPage extends HookConsumerWidget with PresLogger {
                           ),
                           recognizer: TapGestureRecognizer()
                             ..onTap = () async {
-                              await UriUtils.tryLaunch(Uri.parse(Constants.termsAndConditionsUrl));
+                              await RemoteSiteConfig.ensureLoaded();
+                              await UriUtils.tryLaunch(
+                                Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.termsAndConditionsUrl)),
+                              );
                             },
                         ),
                       ),
@@ -141,7 +145,10 @@ class IntroPage extends HookConsumerWidget with PresLogger {
                           ),
                           recognizer: TapGestureRecognizer()
                             ..onTap = () async {
-                              await UriUtils.tryLaunch(Uri.parse(Constants.githubUrl));
+                              await RemoteSiteConfig.ensureLoaded();
+                              await UriUtils.tryLaunch(
+                                Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.githubUrl)),
+                              );
                             },
                         ),
                         tap_license: (text) => TextSpan(
@@ -151,7 +158,10 @@ class IntroPage extends HookConsumerWidget with PresLogger {
                           ),
                           recognizer: TapGestureRecognizer()
                             ..onTap = () async {
-                              await UriUtils.tryLaunch(Uri.parse(Constants.licenseUrl));
+                              await RemoteSiteConfig.ensureLoaded();
+                              await UriUtils.tryLaunch(
+                                Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.licenseUrl)),
+                              );
                             },
                         ),
                       ),

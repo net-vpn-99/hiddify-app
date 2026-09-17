@@ -29,6 +29,16 @@ abstract interface class ProfileRepository {
     SortMode sortMode = SortMode.ascending,
   });
   TaskEither<ProfileFailure, Unit> upsertRemote(String url, {UserOverride? userOverride, CancelToken? cancelToken});
+
+  /// `upsertRemote` 是按 **URL** 查找已有记录的——URL 真的变了（账号技术域换了）
+  /// 就找不到旧记录，会新建一条，新记录的 `userOverride` 是 null，"这是账号自己
+  /// 那份订阅"这个标记就丢了。第一次换域勉强能用（旧记录还在，只是多一条），
+  /// 第二次换域就彻底失效——新记录不再被认成账号订阅，不会再主动去问新地址。
+  ///
+  /// 这个方法按 **ID** 更新：保留原记录的 id/userOverride/用户设置，只把 URL
+  /// 换成新的，重新拉取解析内容。给"账号自己的订阅"这一种场景专用，不要给
+  /// 用户自己导入的第三方订阅用。
+  TaskEither<ProfileFailure, Unit> updateRemoteUrl(String id, String newUrl, {CancelToken? cancelToken});
   TaskEither<ProfileFailure, Unit> addLocal(String content, {UserOverride? userOverride});
   TaskEither<ProfileFailure, Unit> offlineUpdate(ProfileEntity nProfile, String nContent);
   TaskEither<ProfileFailure, Unit> validateConfig(String path, String tempPath, String? profileOverride, bool debug);
@@ -170,6 +180,37 @@ class ProfileRepositoryImpl with ExceptionHandler, InfraLogger implements Profil
                       ),
                 );
           }
+        } finally {
+          if (tempFile.existsSync()) tempFile.deleteSync();
+        }
+      });
+
+  @override
+  TaskEither<ProfileFailure, Unit> updateRemoteUrl(String id, String newUrl, {CancelToken? cancelToken}) =>
+      TaskEither.tryCatch(
+        () async => await _profileDataSource.getById(id).then((profEntry) => profEntry?.toEntity()),
+        ProfileFailure.unexpected,
+      ).flatMap((profEntity) {
+        if (profEntity == null || profEntity is! RemoteProfileEntity) {
+          return TaskEither.left(const ProfileFailure.notFound());
+        }
+        final file = _profilePathResolver.file(id);
+        final tempFile = _profilePathResolver.tempFile(id);
+        // copyWith 保留 id/userOverride/options 等所有其它字段，只换 url——这是
+        // 跟 upsertRemote 的"Update"分支唯一的区别：那边是按 URL 找到这个实体的，
+        // 这里是按 ID 找到、且 URL 本身就是要换的那个字段。
+        final target = profEntity.copyWith(url: newUrl);
+        try {
+          return _profileParser
+              .updateRemote(rp: target, tempFilePath: tempFile.path, cancelToken: cancelToken)
+              .flatMap(
+                (parsed) => validateConfig(file.path, tempFile.path, parsed.profileOverride.value, false).flatMap(
+                  (unit) => TaskEither.tryCatch(() async {
+                    await _profileDataSource.edit(id, parsed);
+                    return unit;
+                  }, ProfileFailure.unexpected),
+                ),
+              );
         } finally {
           if (tempFile.existsSync()) tempFile.deleteSync();
         }

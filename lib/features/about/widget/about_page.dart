@@ -7,6 +7,7 @@ import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/failures.dart';
+import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/widget/adaptive_icon.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
@@ -110,10 +111,21 @@ class AboutPage extends HookConsumerWidget {
               ...conditionalTiles,
               if (conditionalTiles.isNotEmpty) const Divider(),
               ListTile(
+                title: const Text('备用入口'),
+                subtitle: const Text('官网打不开时，到这里找新地址和下载'),
+                trailing: const Icon(FluentIcons.open_24_regular),
+                onTap: () async {
+                  await UriUtils.tryLaunch(Uri.parse(Constants.statusPageUrl));
+                },
+              ),
+              ListTile(
                 title: Text(t.pages.about.sourceCode),
                 trailing: const Icon(FluentIcons.open_24_regular),
                 onTap: () async {
-                  await UriUtils.tryLaunch(Uri.parse(Constants.githubUrl));
+                  await RemoteSiteConfig.ensureLoaded();
+                  await UriUtils.tryLaunch(
+                    Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.githubUrl)),
+                  );
                 },
               ),
               ListTile(
@@ -127,14 +139,20 @@ class AboutPage extends HookConsumerWidget {
                 title: Text(t.pages.about.termsAndConditions),
                 trailing: const Icon(FluentIcons.open_24_regular),
                 onTap: () async {
-                  await UriUtils.tryLaunch(Uri.parse(Constants.termsAndConditionsUrl));
+                  await RemoteSiteConfig.ensureLoaded();
+                  await UriUtils.tryLaunch(
+                    Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.termsAndConditionsUrl)),
+                  );
                 },
               ),
               ListTile(
                 title: Text(t.pages.about.privacyPolicy),
                 trailing: const Icon(FluentIcons.open_24_regular),
                 onTap: () async {
-                  await UriUtils.tryLaunch(Uri.parse(Constants.privacyPolicyUrl));
+                  await RemoteSiteConfig.ensureLoaded();
+                  await UriUtils.tryLaunch(
+                    Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.privacyPolicyUrl)),
+                  );
                 },
               ),
             ]),

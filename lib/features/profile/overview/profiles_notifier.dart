@@ -6,6 +6,7 @@ import 'package:hiddify/core/haptic/haptic_service.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/data/profile_repository.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
@@ -66,6 +67,7 @@ class ProfilesNotifier extends _$ProfilesNotifier with AppLogger {
           },
         )
         .run();
+    await unbindAccountProfileIdIf(profile.id);
   }
 
   Future<void> exportConfigToClipboard(ProfileEntity profile) async {

@@ -571,6 +571,7 @@ class ConnectReporter {
       final stage = o['stage'] as String? ?? '';
       final ok = o['ok'] as bool? ?? true;
       final sub = <String, dynamic>{'age_s': ageSecs};
+      if ((o['host'] as String?)?.isNotEmpty ?? false) sub['host'] = o['host'];
       if (o['status'] != null) sub['status'] = o['status'];
       if (o['bytes'] != null) sub['bytes'] = o['bytes'];
       if ((o['cache'] as String?)?.isNotEmpty ?? false) sub['cache'] = o['cache'];

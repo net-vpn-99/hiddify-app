@@ -3,6 +3,7 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
@@ -142,7 +143,10 @@ class SettingsPage extends HookConsumerWidget {
               leading: const Icon(Icons.help_outline_rounded),
               title: const Text('常见问题'),
               trailing: const Icon(Icons.open_in_new_rounded),
-              onTap: () => UriUtils.tryLaunch(Uri.parse(Constants.faqUrl)),
+              onTap: () async {
+                await RemoteSiteConfig.ensureLoaded();
+                await UriUtils.tryLaunch(Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.faqUrl)));
+              },
             ),
           ),
           const DiagTile(),

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
-import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -42,10 +41,7 @@ class LoginPage extends HookConsumerWidget {
         return;
       }
       // 固定名字「光速」—— 别用订阅 URL 的最后一段（那是 token，敏感）
-      await ref.read(addProfileNotifierProvider.notifier).addManual(
-            url: url,
-            userOverride: const UserOverride(name: '光速'),
-          );
+      await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
       if (!context.mounted) return;
       busy.value = false;
       context.go('/home');

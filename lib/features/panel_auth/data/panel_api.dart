@@ -1,4 +1,7 @@
 import 'package:dio/dio.dart';
+import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/core/model/remote_site_config.dart';
+import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
 
@@ -48,8 +51,12 @@ class PanelApi {
     }
     var url = (data['subscribe_url'] as String?)?.trim() ?? '';
     final subToken = (data['token'] as String?)?.trim() ?? '';
-    if (url.isEmpty && subToken.isNotEmpty) {
-      url = '${PanelApiBase.current}/api/v1/client/subscribe?token=$subToken';
+    if (subToken.isNotEmpty || looksLikeOwnPanelSubscribe(url)) {
+      url = buildOwnSubscribeUrl(
+        apiBase: PanelApiBase.current,
+        token: subToken,
+        originalUrl: url,
+      );
     }
     if (url.isEmpty) {
       throw PanelApiException('该账号还没有可用套餐，请先在会员中心购买');
@@ -193,7 +200,9 @@ class PanelApi {
         code = readCode(res.data);
       }
       if (code == null) throw PanelApiException('面板没有返回邀请码');
-      return (code: code, link: 'https://www.guangsuleida.com/i/?c=$code');
+      final texts = await getInviteTexts();
+      final link = _inviteLinkFromTemplate(texts.linkTemplate, code);
+      return (code: code, link: link);
     } on DioException catch (e) {
       throw PanelApiException(_networkMessage(e));
     }
@@ -202,11 +211,11 @@ class PanelApi {
   /// 拉服务器下发的邀请文案（GslInviteBonus 插件，走 guest/comm/config，免登录）。
   /// 改文案不用发客户端版本。`bonus` = 奖励额度（如「2 天 2G」），`share` = 分享文案
   /// 模板（含 {bonus} / {link} 占位符）。拿不到对应项为 null。
-  Future<({String? bonus, String? share})> getInviteTexts() async {
+  Future<({String? bonus, String? share, String? linkTemplate})> getInviteTexts() async {
     try {
       final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
       final data = _dataOf(res.data);
-      if (data == null) return (bonus: null, share: null);
+      if (data == null) return (bonus: null, share: null, linkTemplate: null);
       final gsl = data['gsl_invite'];
       final Map<String, dynamic>? obj = gsl is Map ? gsl.cast<String, dynamic>() : null;
       String? pick(String k) {
@@ -214,10 +223,19 @@ class PanelApi {
         return (raw is String && raw.trim().isNotEmpty) ? raw.trim() : null;
       }
 
-      return (bonus: pick('bonus_text'), share: pick('share_text'));
+      return (bonus: pick('bonus_text'), share: pick('share_text'), linkTemplate: pick('invite_link_template'));
     } catch (_) {
-      return (bonus: null, share: null);
+      return (bonus: null, share: null, linkTemplate: null);
     }
+  }
+
+  static String _inviteLinkFromTemplate(String? template, String code) {
+    if (template != null && template.contains('{code}')) {
+      final origin = Constants.panelInviteUrl.replaceAll(RegExp(r'/i/?$'), '').replaceAll(RegExp(r'/+$'), '');
+      return template.replaceAll('{app_url}', origin).replaceAll('{code}', code);
+    }
+    final base = Constants.panelInviteUrl.replaceAll(RegExp(r'/+$'), '');
+    return '$base/?c=$code';
   }
 
   /// 「我邀请的人」列表（邮箱打码）。需要登录令牌。
@@ -258,7 +276,7 @@ class PanelApi {
     String deviceId, {
     required bool connected,
   }) async {
-    final base = _deviceGateBase();
+    final base = await _deviceGateBase();
     if (base == null) return null;
     Response<dynamic> res;
     try {
@@ -287,13 +305,22 @@ class PanelApi {
     return null;
   }
 
-  /// 设备闸地址跟着「当前正在用的 API 域名」走：取登记域（eTLD+1，只取最后
-  /// 两截——所以买新域名别选 `.com.cn` / `.co.uk` 这类复合后缀），拼
-  /// `https://www.{登记域}/dengta/device`。OSS 换了活 API 之后闸跟着走，
-  /// 不用跟着发版。和 Windows `XboardControlPlane::RegistrableDomain` /
-  /// `applyDerivedSiblings` 是同一条算法，两边对得上。
-  String? _deviceGateBase() {
-    final host = Uri.tryParse(_dio.options.baseUrl)?.host;
+  /// 设备闸地址。优先用后台 `comm/config` 下发的显式 `device_api`（不用猜，
+  /// 不用假设技术域也部署了闸）；没配置就退回旧算法：取当前 API 域名的登记域
+  /// （eTLD+1，只取最后两截——买新域名别选 `.com.cn` / `.co.uk` 这类复合后缀），
+  /// 拼 `https://www.{登记域}/dengta/device`。和 Windows
+  /// `XboardControlPlane::RegistrableDomain` / `applyDerivedSiblings` 是同一条
+  /// 兜底算法，两边对得上。
+  ///
+  /// 用 `PanelApiBase.resolve()` 而不是 `_dio.options.baseUrl`：后者是这个
+  /// `PanelApi` 实例构造那一刻的快照——如果 `PanelApi()` 在探活完成之前就
+  /// 建好了（拦截器只改每次请求的 `RequestOptions`，不会回写 `_dio.options`），
+  /// 快照就可能还是打包默认域名，闸请求会打去一个过期地址。`resolve()` 拿的
+  /// 是当前真正生效的地址，必要时会顺带触发一次探活。
+  Future<String?> _deviceGateBase() async {
+    await RemoteSiteConfig.ensureLoaded();
+    if (RemoteSiteConfig.deviceApi != null) return RemoteSiteConfig.deviceApi;
+    final host = Uri.tryParse(await PanelApiBase.resolve())?.host;
     if (host == null || host.isEmpty) return null;
     final labels = host.split('.');
     final sld = labels.length >= 2 ? labels.sublist(labels.length - 2).join('.') : host;

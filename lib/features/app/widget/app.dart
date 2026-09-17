@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:accessibility_tools/accessibility_tools.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,7 @@ import 'package:hiddify/core/theme/app_theme.dart';
 import 'package:hiddify/core/theme/theme_preferences.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
 import 'package:hiddify/features/connection/widget/connection_wrapper.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/per_app_proxy/overview/per_app_proxy_service_notifier.dart';
 import 'package:hiddify/features/profile/notifier/profiles_update_notifier.dart';
@@ -53,6 +55,7 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
     ref.read(supportChatNotifierProvider.notifier).setAppActive(true);
     // 回前台顺手刷一次账号：用户可能在别处充了值 / 或流量刚用完，连接前的拦截要用到。
     ref.read(panelAuthProvider.notifier).syncAccountQuietly();
+    unawaited(PanelApiBase.onForeground());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (isOnPauseCalled && PlatformUtils.isAndroid) ref.invalidate(perAppProxyServiceProvider);

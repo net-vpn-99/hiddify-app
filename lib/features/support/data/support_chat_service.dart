@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/support/model/support_message.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 在线客服：直接调 Chatwoot 官网小组件用的那套公开接口（/api/v1/widget/*），
 /// 后台是同一个 Chatwoot（kf.gsldone.com）—— 客服在网页后台 / 手机 App 看到的
@@ -14,21 +17,94 @@ class SupportChatService {
   SupportChatService()
       : _dio = Dio(
           BaseOptions(
-            baseUrl: _base,
+            baseUrl: _defaultBase,
             connectTimeout: const Duration(seconds: 15),
             receiveTimeout: const Duration(seconds: 20),
             sendTimeout: const Duration(seconds: 30),
             validateStatus: (_) => true,
             headers: {'User-Agent': 'OneRay-Android'},
           ),
-        );
+        ) {
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          options.baseUrl = await _resolveBase();
+          handler.next(options);
+        },
+      ),
+    );
+  }
 
   // 官网「在线客服」用的同一串（website/assets/site.js、website/chat.html 里那个），
-  // 本来就写在网页源码里公开可见，不是密钥。
-  static const _base = 'https://kf.gsldone.com';
+  // 本来就写在网页源码里公开可见，不是密钥。这个字面量只是内置默认值——kf. 不跟着
+  // 品牌/技术域走（应急手册校正第 5 条），真正生效的地址走 _resolveBase()，从插件
+  // 在 guest/comm/config 里下发的 gsl_invite.kf 字段拿，改后台配置不用发版。
+  static const _defaultBase = 'https://kf.gsldone.com';
   static const _websiteToken = '6EDJYPA8bcduF3GjoFTCEvdZ';
+  static const _prefKey = 'oneray_support_chat_base';
+
+  static String? _cachedBase;
+  static Future<String>? _inflight;
+  // 内存缓存和本地持久化都没有过期时间的话，客服域名换第二次时——哪怕
+  // 用户重装 App、SharedPreferences 里已经是最新值——也永远学不到新地址，
+  // 因为 _resolveFromPrefsOrServer 一读到持久化值就直接返回，再也不去问
+  // 服务器。加个 TTL：缓存没过期就直接用（不阻塞客服窗口打开），过期了
+  // 就"先用旧的应急、后台顺手刷新"，不是每次都硬等网络。
+  static DateTime? _cachedAt;
+  static const _ttl = Duration(hours: 6);
 
   final Dio _dio;
+
+  static bool get _fresh =>
+      _cachedBase != null && _cachedAt != null && DateTime.now().difference(_cachedAt!) < _ttl;
+
+  static Future<String> _resolveBase() {
+    if (_fresh) return Future.value(_cachedBase!);
+    return _inflight ??= _resolveFromPrefsOrServer().whenComplete(() => _inflight = null);
+  }
+
+  static Future<String> _resolveFromPrefsOrServer() async {
+    SharedPreferences? prefs;
+    String? persisted;
+    try {
+      prefs = await SharedPreferences.getInstance();
+      persisted = prefs.getString(_prefKey)?.trim();
+    } catch (_) {
+      // 读本地缓存失败，直接去问服务器
+    }
+    if (persisted != null && persisted.isNotEmpty) {
+      _cachedBase = persisted;
+      _cachedAt = DateTime.now();
+      // 有缓存先用着，不阻塞客服窗口打开；后台顺手问一次服务器，真换了
+      // 客服域名的话，下一次调用（不用等 TTL 到期，也不用重装 App）就是新地址。
+      unawaited(_refreshFromServer());
+      return persisted;
+    }
+    return _refreshFromServer();
+  }
+
+  static Future<String> _refreshFromServer() async {
+    try {
+      final res = await PanelApiBase.dio().get<dynamic>('/api/v1/guest/comm/config');
+      final body = res.data;
+      final data = (body is Map && body['data'] is Map) ? body['data'] as Map : null;
+      final gsl = data != null ? data['gsl_invite'] : null;
+      final raw = gsl is Map ? gsl['kf'] : null;
+      if (raw is String && raw.trim().isNotEmpty) {
+        final base = raw.trim();
+        _cachedBase = base;
+        _cachedAt = DateTime.now();
+        unawaited(
+          SharedPreferences.getInstance().then((prefs) => prefs.setString(_prefKey, base)),
+        );
+        return base;
+      }
+    } catch (_) {
+      // 拿不到就用已有缓存 / 内置默认值，不影响客服窗口打开
+    }
+    _cachedAt ??= DateTime.now();
+    return _cachedBase ??= _defaultBase;
+  }
 
   Map<String, dynamic> get _q => {'website_token': _websiteToken};
 

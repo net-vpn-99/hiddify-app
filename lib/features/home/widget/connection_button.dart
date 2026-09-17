@@ -121,12 +121,10 @@ class ConnectionButton extends HookConsumerWidget {
               return;
             }
             // 账号正常却没订阅 —— 订阅同步掉了，重新拉一次地址并导入（跟登录时同一条路，
-            // addManual 自己会弹成功 / 失败提示）。
+            // addAccountSubscription 自己会弹成功 / 失败提示）。
             final url = await ref.read(panelAuthProvider.notifier).refreshSubscribeUrl();
             if (url != null && url.isNotEmpty) {
-              await ref
-                  .read(addProfileNotifierProvider.notifier)
-                  .addManual(url: url, userOverride: const UserOverride(name: '光速'));
+              await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
               if (ref.read(addProfileNotifierProvider) is! AsyncError) return;
             }
             ref

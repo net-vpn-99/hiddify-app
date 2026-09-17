@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:hiddify/core/haptic/haptic_service.dart';
 import 'package:hiddify/core/localization/translations.dart';
+import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
@@ -13,6 +15,7 @@ import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/profile/notifier/profiles_update_notifier.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -73,7 +76,11 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
     });
     ref.watch(coreRestartSignalProvider);
-    ref.onDispose(_stopQuotaPoll);
+    ref.onDispose(() {
+      _stopQuotaPoll();
+      _deviceKeepWarm?.cancel();
+      _deviceKeepWarm = null;
+    });
 
     yield* _connectionRepo.watchConnectionStatus().doOnData((event) {
       if (event case Disconnected(connectionFailure: final _?) when PlatformUtils.isDesktop) {
@@ -119,29 +126,80 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   ConnectionRepository get _connectionRepo => ref.read(connectionRepositoryProvider);
 
   Timer? _quotaPoll;
+  bool _quotaInflight = false;
+  int _quotaFailStreak = 0;
 
   void _startQuotaPoll() {
     if (_quotaPoll != null) return;
-    _quotaPoll = Timer.periodic(const Duration(seconds: 45), (_) {
-      unawaited(ref.read(panelAuthProvider.notifier).syncAccountQuietly());
+    unawaited(RemoteSiteConfig.ensureLoaded());
+    _scheduleQuotaPoll();
+  }
+
+  void _scheduleQuotaPoll() {
+    _quotaPoll?.cancel();
+    final delay = _jittered(RemoteSiteConfig.quotaPoll, _quotaFailStreak, cap: const Duration(minutes: 3));
+    _quotaPoll = Timer(delay, () async {
+      if (_quotaInflight) {
+        if (_quotaPoll != null) _scheduleQuotaPoll();
+        return;
+      }
+      _quotaInflight = true;
+      try {
+        final acc = await ref.read(panelAuthProvider.notifier).fetchAccount();
+        _quotaFailStreak = acc != null ? 0 : (_quotaFailStreak + 1).clamp(0, 5);
+      } catch (_) {
+        _quotaFailStreak = (_quotaFailStreak + 1).clamp(0, 5);
+      } finally {
+        _quotaInflight = false;
+        if (_quotaPoll != null) _scheduleQuotaPoll();
+      }
     });
   }
 
   void _stopQuotaPoll() {
     _quotaPoll?.cancel();
     _quotaPoll = null;
+    _quotaFailStreak = 0;
   }
 
   Timer? _deviceKeepWarm;
+  bool _deviceInflight = false;
 
-  // 设备闸：隧道连着时每 4 分钟 claim 一次（connected=true），跟 Windows
+  // 设备闸：隧道连着时约每 4 分钟 claim 一次（connected=true），跟 Windows
   // keep-warm 同一个道理——只 claim 一次的话，设备闸自己不知道隧道后来又
   // 断了，「在连」会一直卡在上次的值。
   void _startDeviceKeepWarm() {
     if (!Platform.isAndroid || _deviceKeepWarm != null) return;
-    _deviceKeepWarm = Timer.periodic(const Duration(minutes: 4), (_) {
-      unawaited(ref.read(panelAuthProvider.notifier).claimDevice(connected: true));
+    _scheduleDeviceKeepWarm();
+  }
+
+  void _scheduleDeviceKeepWarm() {
+    _deviceKeepWarm?.cancel();
+    final delay = _jittered(const Duration(minutes: 4), 0, cap: const Duration(minutes: 6));
+    _deviceKeepWarm = Timer(delay, () async {
+      if (_deviceInflight) {
+        if (_deviceKeepWarm != null) _scheduleDeviceKeepWarm();
+        return;
+      }
+      _deviceInflight = true;
+      try {
+        await ref.read(panelAuthProvider.notifier).claimDevice(connected: true);
+      } catch (_) {
+      } finally {
+        _deviceInflight = false;
+        if (_deviceKeepWarm != null) _scheduleDeviceKeepWarm();
+      }
     });
+  }
+
+  Duration _jittered(Duration base, int failStreak, {required Duration cap}) {
+    var ms = base.inMilliseconds;
+    for (var i = 0; i < failStreak.clamp(0, 4); i++) {
+      ms = min(ms * 2, cap.inMilliseconds);
+    }
+    final span = max(250, ms ~/ 5);
+    final delta = Random().nextInt(span * 2 + 1) - span;
+    return Duration(milliseconds: max(1000, ms + delta));
   }
 
   // 断开（用户主动 / 失败 / 账号原因）一律补发一次 connected=false——失败
@@ -309,6 +367,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           await abortConnection();
           return;
         }
+        unawaited(ref.read(foregroundProfilesUpdateNotifierProvider.notifier).trigger());
         // 用 typed ConnectionFailure 判断，别只在字符串里猜关键词——拒绝 VPN 授权这种
         // 有专门的类型（MissingVpnPermission），直接给出准确的 vpn_permission/note，
         // 不用等服务端/人工再去猜「vivo 所以是权限问题」。

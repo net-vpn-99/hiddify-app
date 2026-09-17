@@ -10,6 +10,8 @@ import 'package:hiddify/core/model/failures.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/add/model/free_profiles_model.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/data/profile_repository.dart';
@@ -97,8 +99,8 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
     if (state.isLoading) return;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final task = _profilesRepo.upsertRemote(url, userOverride: userOverride);
-      return await task
+      return await _profilesRepo
+          .upsertRemote(url, userOverride: userOverride)
           .match(
             (err) {
               loggy.warning("failed to add profile", err);
@@ -110,6 +112,63 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
             },
           )
           .run();
+    });
+  }
+
+  /// 登录 / 注册 / 账号补订阅。不看显示名称，先确认 URL 来源再按绑定 ID 更新。
+  Future<void> addAccountSubscription(String url) async {
+    if (state.isLoading) return;
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      const userOverride = UserOverride(name: '光速');
+      return await (await _accountSubscribeTask(url, userOverride))
+          .match(
+            (err) {
+              loggy.warning("failed to add account subscription", err);
+              throw err;
+            },
+            (r) {
+              loggy.info("successfully added account subscription");
+              return r;
+            },
+          )
+          .run();
+    });
+  }
+
+  Future<TaskEither<ProfileFailure, Unit>> _accountSubscribeTask(String url, UserOverride userOverride) async {
+    if (!isOwnAccountSubscribeSource(url)) {
+      return TaskEither.left(ProfileFailure.invalidUrl());
+    }
+    final bound = await boundAccountProfileId();
+    if (bound != null && bound.isNotEmpty) {
+      return _profilesRepo.updateRemoteUrl(bound, url).orElse(
+            (err) => err is ProfileNotFoundFailure
+                ? _upsertAndBind(url, userOverride)
+                : TaskEither.left(err),
+          );
+    }
+    return _upsertAndBind(url, userOverride);
+  }
+
+  TaskEither<ProfileFailure, Unit> _upsertAndBind(String url, UserOverride userOverride) {
+    return _profilesRepo.upsertRemote(url, userOverride: userOverride).flatMap((unit) {
+      return TaskEither.tryCatch(() async {
+        try {
+          final existing = await _profilesRepo
+              .watchAll()
+              .map((e) => e.getOrElse((_) => const <ProfileEntity>[]))
+              .first
+              .timeout(const Duration(seconds: 3));
+          for (final p in existing) {
+            if (p is RemoteProfileEntity && p.url == url) {
+              await bindAccountProfileId(p.id);
+              break;
+            }
+          }
+        } catch (_) {}
+        return unit;
+      }, ProfileFailure.unexpected);
     });
   }
 }
@@ -136,13 +195,25 @@ class UpdateProfileNotifier extends _$UpdateProfileNotifier with AppLogger {
 
   ProfileRepository get _profilesRepo => ref.read(profileRepositoryProvider).requireValue;
 
-  Future<void> updateProfile(RemoteProfileEntity profile) async {
-    if (state.isLoading) return;
+  /// 返回这次更新是不是真的成功——`state` 只是给 UI 看的 toast/loading 状态，
+  /// `AsyncValue.guard` 会把异常转成 `AsyncError` 正常返回，调用方 await 这个
+  /// 方法本身看不出失败。购买后要判断"节点真的刷新成功了没有"，得看这个返回值，
+  /// 不能只看方法有没有抛出去。
+  Future<bool> updateProfile(RemoteProfileEntity profile) async {
+    if (state.isLoading) return false;
     state = const AsyncLoading();
     await ref.read(hapticServiceProvider.notifier).lightImpact();
     state = await AsyncValue.guard(() async {
-      return await _profilesRepo
-          .upsertRemote(profile.url)
+      final freshUrl = await freshAccountSubscribeUrlIfChanged(ref, profile);
+      // 有新地址：按原 ID 更新（保留 userOverride/id/用户设置），不走 upsertRemote
+      // 的按 URL 查找——那样会把这条记录的"账号订阅"身份标记弄丢，下次再换域
+      // 就再也不会主动刷新了。没有新地址（没变/拿不到/不是账号自己那份）就走
+      // 原来的路径，跟用户自己导入的第三方订阅完全一样对待。
+      final target = freshUrl != null ? profile.copyWith(url: freshUrl) : profile;
+      final call = freshUrl != null
+          ? _profilesRepo.updateRemoteUrl(profile.id, freshUrl)
+          : _profilesRepo.upsertRemote(profile.url);
+      return await call
           .match(
             (err) {
               loggy.warning("failed to update profile", err);
@@ -152,8 +223,8 @@ class UpdateProfileNotifier extends _$UpdateProfileNotifier with AppLogger {
               loggy.info('successfully updated profile');
 
               await ref.read(activeProfileProvider.future).then((active) async {
-                if (active != null && active.id == profile.id) {
-                  await ref.read(connectionNotifierProvider.notifier).reconnect(profile);
+                if (active != null && active.id == target.id) {
+                  await ref.read(connectionNotifierProvider.notifier).reconnect(target);
                 }
               });
               return unit;
@@ -161,7 +232,30 @@ class UpdateProfileNotifier extends _$UpdateProfileNotifier with AppLogger {
           )
           .run();
     });
+    return state is AsyncData;
   }
+}
+
+/// 这份订阅是不是账号自己那份（登录/注册走 `addAccountSubscription` 绑定 ID）。
+/// 不是的话返回 null，绝不去碰用户自己导入的第三方订阅。
+///
+/// 是的话，先问一次面板拿当前真正生效的订阅地址：`profile.url` 只在上次成功
+/// 更新时写入过，技术域换了之后就是死的。跟旧地址一样就返回 null（没有变化，
+/// 调用方走原来的 `upsertRemote` 路径即可，不用多此一举按 ID 更新）；拿不到
+/// 新地址（没登录/网络问题）也返回 null，不阻塞这次更新。
+///
+/// 公开（不带下划线）是因为 `profiles_update_notifier.dart`（自动更新的那条
+/// 独立路径，走的是 repository 直调不是这个 notifier）也要用同一条判断逻辑。
+Future<String?> freshAccountSubscribeUrlIfChanged(Ref ref, RemoteProfileEntity profile) async {
+  final bound = await boundAccountProfileId();
+  if (!isOwnAccountProfile(profile, boundId: bound)) return null;
+  try {
+    final fresh = await ref.read(panelAuthProvider.notifier).refreshSubscribeUrl();
+    if (fresh != null && fresh.trim().isNotEmpty && fresh.trim() != profile.url) {
+      return fresh.trim();
+    }
+  } catch (_) {}
+  return null;
 }
 
 @riverpod

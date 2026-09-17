@@ -7,6 +7,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/db/db.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/http_client/dio_http_client.dart';
+import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/profile/data/profile_data_mapper.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/model/profile_failure.dart';
@@ -165,7 +167,15 @@ class ProfileParser {
           if (CancelToken.isCancel(err as DioException)) {
             throw const ProfileFailure.cancelByUser('HTTP request for getting profile content canceled by user.');
           }
-          _writeSubFetch(stage: 'sub_download', ok: false, ms: swProfile.elapsedMilliseconds);
+          _writeSubFetch(
+            stage: 'sub_download',
+            ok: false,
+            ms: swProfile.elapsedMilliseconds,
+            host: Uri.tryParse(url.trim())?.host,
+          );
+          if (err is DioException && looksLikeOwnPanelSubscribe(url) && isKnownPanelHost(url)) {
+            PanelApiBase.noteFailure(originOf(url), status: err.response?.statusCode, type: err.type);
+          }
           throw err;
         });
     await expandRemoteLinesInParallel(

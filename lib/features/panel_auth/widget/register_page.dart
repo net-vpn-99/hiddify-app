@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
-import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
 import 'package:hiddify/utils/uri_utils.dart';
@@ -77,10 +77,7 @@ class RegisterPage extends HookConsumerWidget {
       }
       final url = result.subscribeUrl;
       if (url != null && url.isNotEmpty) {
-        await ref.read(addProfileNotifierProvider.notifier).addManual(
-              url: url,
-              userOverride: const UserOverride(name: '光速'),
-            );
+        await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
       }
       if (!context.mounted) return;
       busy.value = false;
@@ -209,7 +206,10 @@ class RegisterPage extends HookConsumerWidget {
         FilledButton.icon(
           icon: const Icon(Icons.open_in_new),
           label: const Text('在浏览器注册'),
-          onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.panelRegisterUrl)),
+          onPressed: () async {
+            await RemoteSiteConfig.ensureLoaded();
+            await UriUtils.tryLaunch(Uri.parse(RemoteSiteConfig.accountUrlOr(Constants.panelRegisterUrl)));
+          },
         ),
         const SizedBox(height: 8),
         TextButton(

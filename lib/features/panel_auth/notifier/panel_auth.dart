@@ -51,10 +51,11 @@ final panelAuthProvider =
 /// 邀请文案（服务器下发，改文案不用发版）：`bonus` = 奖励额度，`share` = 分享文案模板。
 /// 拿不到对应项为 null，UI 兜底（入口显示「查看邀请奖励」，分享用客户端内置文案）。
 final inviteTextsProvider =
-    FutureProvider.autoDispose<({String? bonus, String? share})>((ref) => PanelApi().getInviteTexts());
+    FutureProvider.autoDispose<({String? bonus, String? share, String? linkTemplate})>((ref) => PanelApi().getInviteTexts());
 
 class PanelAuthNotifier extends Notifier<PanelAuthState> {
   final PanelApi _api = PanelApi();
+  Future<PanelAccount?>? _accountInflight;
 
   @override
   PanelAuthState build() {
@@ -149,17 +150,28 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
 
   /// 会员页拉最新账号信息。未登录 / 失败返回 null。顺带更新缓存（连接流程会读）。
   Future<PanelAccount?> fetchAccount() async {
+    if (_accountInflight != null) return _accountInflight;
     final token = await currentToken();
     if (token == null || token.isEmpty) return null;
+    final pending = () async {
+      try {
+        final acc = await _api.getAccount(token);
+        state = state.copyWith(account: acc);
+        return acc;
+      } on PanelApiException catch (e) {
+        if (e.unauthorized) await logout(wipe: false);
+        return null;
+      } catch (_) {
+        return null;
+      }
+    }();
+    _accountInflight = pending;
     try {
-      final acc = await _api.getAccount(token);
-      state = state.copyWith(account: acc);
-      return acc;
-    } on PanelApiException catch (e) {
-      if (e.unauthorized) await logout(wipe: false);
-      return null;
-    } catch (_) {
-      return null;
+      return await pending;
+    } finally {
+      if (identical(_accountInflight, pending)) {
+        _accountInflight = null;
+      }
     }
   }
 
