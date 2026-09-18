@@ -121,6 +121,15 @@ android {
         aidl true
     }
 
+    // OneRay: .so 压缩进 APK（默认是原样不压缩存放，为了免解压直接映射）。
+    // 核心 libhiddify-core.so 78MB 压缩后约 25MB，下载包 119MB -> 约 40MB；
+    // 代价只是安装时解压到手机多占一些存储。
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
 }
 
 android.applicationVariants.all { variant ->
