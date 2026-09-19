@@ -8,6 +8,7 @@ import 'package:hiddify/core/http_client/http_client_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/failures.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
@@ -62,24 +63,29 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
   ProfileRepository get _profilesRepo => ref.read(profileRepositoryProvider).requireValue;
   CancelToken? _cancelToken;
 
+  /// OneRay：只收自家账号订阅（路径 + 已知面板域名）。别家机场订阅、手贴的节点 / 配置
+  /// 内容一律不收——免得客户拿别家订阅用我们的 App，出了问题来找我们（2026-09-20 定）。
+  /// 所有导入入口（一键导入深链、粘贴、手动填写、快捷键粘贴）最后都走 addClipboard /
+  /// addManual，在这里拦一处就够。
+  bool _rejectForeign(String? url) {
+    if (url != null && isOwnAccountSubscribeSource(url)) return false;
+    loggy.info("rejected non-account subscription");
+    ref.read(inAppNotificationControllerProvider).showErrorToast('只能导入光速账号的订阅，登录光速账号后会自动导入');
+    return true;
+  }
+
   Future<void> addClipboard(String rawInput) async {
     if (state.isLoading) return;
+    final rs = LinkParser.parse(rawInput);
+    if (_rejectForeign(rs?.url)) return;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      // final activeProfile = await ref.read(activeProfileProvider.future);
-      // final markAsActive = activeProfile == null || ref.read(Preferences.markNewProfileActive);
-      final TaskEither<ProfileFailure, Unit> task;
-      if (LinkParser.parse(rawInput) case (final rs)?) {
-        loggy.debug("adding profile, url: [${rs.url}]");
-        task = _profilesRepo.upsertRemote(
-          rs.url,
-          userOverride: rs.name.isNotEmpty ? UserOverride(name: rs.name) : null,
-          cancelToken: _cancelToken = CancelToken(),
-        );
-      } else {
-        loggy.debug("adding profile, content");
-        task = _profilesRepo.addLocal(safeDecodeBase64(rawInput));
-      }
+      loggy.debug("adding profile, url: [${rs!.url}]");
+      final TaskEither<ProfileFailure, Unit> task = _profilesRepo.upsertRemote(
+        rs.url,
+        userOverride: rs.name.isNotEmpty ? UserOverride(name: rs.name) : null,
+        cancelToken: _cancelToken = CancelToken(),
+      );
       return await task
           .match(
             (err) {
@@ -97,6 +103,7 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
 
   Future<void> addManual({required String url, required UserOverride userOverride}) async {
     if (state.isLoading) return;
+    if (_rejectForeign(url)) return;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       return await _profilesRepo
@@ -149,6 +156,52 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
           );
     }
     return _upsertAndBind(url, userOverride);
+  }
+
+  /// OneRay：已登录时保证当前选中的是账号自己那份订阅（2026-09-20 定）。
+  /// 选中的是别家订阅 → 切回自家；自家那份被删了 → 重新拉地址导入再切过去。
+  /// 没登录直接返回 true（没登录的连接入口本来就会先引导登录）。
+  /// 返回 false = 登录了但没能切到自家订阅（通常是网络问题），调用方别再连。
+  Future<bool> ensureAccountProfileActive() async {
+    if (!ref.read(Preferences.panelLoggedIn)) return true;
+    final bound = await boundAccountProfileId();
+    bool isOwn(ProfileEntity? p) => p is RemoteProfileEntity && isOwnAccountProfile(p, boundId: bound);
+
+    final active = await ref.read(activeProfileProvider.future);
+    if (isOwn(active)) return true;
+
+    Future<ProfileEntity?> findOwn() async {
+      try {
+        final all = await _profilesRepo
+            .watchAll()
+            .map((e) => e.getOrElse((_) => const <ProfileEntity>[]))
+            .first
+            .timeout(const Duration(seconds: 3));
+        final b = await boundAccountProfileId();
+        for (final p in all) {
+          if (p is RemoteProfileEntity && isOwnAccountProfile(p, boundId: b)) return p;
+        }
+      } catch (_) {}
+      return null;
+    }
+
+    var own = await findOwn();
+    if (own == null) {
+      final url = await ref.read(panelAuthProvider.notifier).refreshSubscribeUrl();
+      if (url == null || url.isEmpty) return false;
+      await addAccountSubscription(url);
+      own = await findOwn();
+      if (own == null) return false;
+    }
+    loggy.info("active profile is not the account's, switching back to [${own.id}]");
+    final ok = await _profilesRepo.setAsActive(own.id).match((_) => false, (_) => true).run();
+    if (!ok) return false;
+    // 等 activeProfileProvider（DB watch）跟上，否则紧接着的连接可能还拿到旧的那份。
+    for (var i = 0; i < 30; i++) {
+      if ((await ref.read(activeProfileProvider.future))?.id == own.id) return true;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+    return true;
   }
 
   TaskEither<ProfileFailure, Unit> _upsertAndBind(String url, UserOverride userOverride) {

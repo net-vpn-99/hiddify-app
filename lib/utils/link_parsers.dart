@@ -21,7 +21,10 @@ abstract class LinkParser {
   }
 
   // protocols schemas
-  static const protocols = ['hiddify', 'oneray', 'v2ray', 'v2rayn', 'v2rayng', 'clash', 'clashmeta', 'sing-box'];
+  // OneRay：只认自家 oneray://（官网会员中心「一键导入」用它）。别家机场网站的
+  // hiddify:// clash:// sing-box:// v2ray:// 一键导入不再跳到我们的 App（2026-09-20 定）。
+  // 改这里要同步 AndroidManifest.xml 的 <data android:scheme>。
+  static const protocols = ['oneray'];
 
   static ProfileLink? parse(String link) {
     return simple(link) ?? deep(link);
@@ -38,14 +41,12 @@ abstract class LinkParser {
     if (uri == null || !uri.hasScheme || !uri.hasAuthority) return null;
     final queryParams = uri.queryParameters;
     switch (uri.scheme) {
-      case 'hiddify' || 'oneray':
+      case 'oneray':
         if (queryParams.containsKey('url')) {
           return (url: queryParams['url']!, name: queryParams['name'] ?? '');
         } else {
           return (url: uri.path.substring(1) + (uri.hasQuery ? "?${uri.query}" : ""), name: uri.fragment);
         }
-      case 'v2ray' || 'v2rayn' || 'v2rayng' || 'clash' || 'clashmeta' || 'sing-box':
-        return queryParams.containsKey('url') ? (url: queryParams['url']!, name: queryParams['name'] ?? '') : null;
       default:
         return null;
     }

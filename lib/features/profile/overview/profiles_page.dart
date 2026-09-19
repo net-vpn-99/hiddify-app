@@ -3,6 +3,7 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/failures.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/profile/notifier/profiles_update_notifier.dart';
@@ -41,11 +42,14 @@ class ProfilesPage extends HookConsumerWidget {
           const Gap(8),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async => await ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(),
-        label: Text(t.pages.profiles.add),
-        icon: const Icon(Icons.add_rounded),
-      ),
+      // OneRay：登录后订阅由账号自动导入，不给「添加」入口（只收自家订阅，见 AddProfileNotifier）。
+      floatingActionButton: ref.watch(Preferences.panelLoggedIn)
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () async => await ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(),
+              label: Text(t.pages.profiles.add),
+              icon: const Icon(Icons.add_rounded),
+            ),
       body: asyncProfiles.when(
         data: (data) => ListView.separated(
           padding: const EdgeInsets.all(12).copyWith(bottom: 84),

@@ -129,6 +129,13 @@ class ConnectionButton extends HookConsumerWidget {
                 .showErrorToast('订阅同步失败，请稍后重试，或在「我的」页联系客服');
             return;
           }
+          // OneRay：选中的是别家订阅（旧版能导入别家的）→ 连之前切回自家那份。
+          if (!await ref.read(addProfileNotifierProvider.notifier).ensureAccountProfileActive()) {
+            ref
+                .read(inAppNotificationControllerProvider)
+                .showErrorToast('订阅同步失败，请稍后重试，或在「我的」页联系客服');
+            return;
+          }
           if (await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
             return await ref.read(connectionNotifierProvider.notifier).toggleConnection();
           }

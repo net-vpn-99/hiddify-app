@@ -77,15 +77,7 @@
 
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-
-                <data android:scheme="hiddify" />
                 <data android:scheme="oneray" />
-                <data android:scheme="v2ray" />
-                <data android:scheme="v2rayn" />
-                <data android:scheme="v2rayng" />
-                <data android:scheme="clash" />
-                <data android:scheme="clashmeta" />
-                <data android:scheme="sing-box" />
 
                 <!-- <data android:host="import" />
                 <data android:host="install-config" />
