@@ -74,7 +74,7 @@ class AccountPage extends HookConsumerWidget {
                     const Divider(height: 1),
                     _row(
                       '剩余流量',
-                      a.transferEnable > 0
+                      !a.unlimitedQuota
                           ? '还剩 ${_gb(a.remainingBytes)}（共 ${_gb(a.transferEnable)}）'
                           : '不限',
                     ),

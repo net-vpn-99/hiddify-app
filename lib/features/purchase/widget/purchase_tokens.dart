@@ -90,7 +90,7 @@ String formatAccountBytes(int bytes) {
 
 QuotaState quotaStateOf(PanelAccount? a) {
   if (a == null) return QuotaState.unknown;
-  if (a.transferEnable <= 0) return QuotaState.unlimited;
+  if (a.unlimitedQuota) return QuotaState.unlimited;
   final left = a.transferEnable - a.used;
   if (left <= 0) return QuotaState.empty;
   if (left * 5 <= a.transferEnable) return QuotaState.low; // 剩余 ≤ 20%
@@ -99,7 +99,7 @@ QuotaState quotaStateOf(PanelAccount? a) {
 
 /// 剩余占比 0..1；null = 不限 / 未知（不画条）。
 double? quotaRatioOf(PanelAccount? a) {
-  if (a == null || a.transferEnable <= 0) return null;
+  if (a == null || a.unlimitedQuota) return null;
   final left = (a.transferEnable - a.used).clamp(0, a.transferEnable);
   return left / a.transferEnable;
 }

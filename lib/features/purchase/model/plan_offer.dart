@@ -9,7 +9,7 @@
 /// [kRecommendedPeriod]：推荐位固定放这一档（运营决定，无销量数据，不做「最受欢迎」推导）。
 const int kShortTermPlanId = 1;
 const int kShortTermDays = 7;
-const int kShortTermTrafficGb = 20;
+const int kShortTermTrafficGb = 0; // 0 = 不限流量（插件 short_term_traffic_gb=0，2026-09-19）
 const String kRecommendedPeriod = 'quarter_price';
 
 /// 一个「套餐 × 周期」的可购买选项。对应 Xboard `plan/fetch` 里一条套餐的一个价格档。
@@ -139,9 +139,10 @@ class PlanOffer {
     return out;
   }
 
-  /// 套餐额度格式化：入参是 **GB 整数**（不是字节）。0 / 负 = 不限流量。
+  /// 套餐额度格式化：入参是 **GB 整数**（不是字节）。0 / 负 / ≥1000G = 不限流量
+  /// （2026-09-19 起全部套餐不限流量，后台用大额度代替）。
   static String _formatPlanTraffic(int gb) {
-    if (gb <= 0) return '不限流量';
+    if (gb <= 0 || gb >= 1000) return '不限流量';
     if (gb >= 1024 && gb % 1024 == 0) return '${gb ~/ 1024} TB';
     return '$gb GB';
   }

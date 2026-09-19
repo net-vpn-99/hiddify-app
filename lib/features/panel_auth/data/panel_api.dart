@@ -393,6 +393,11 @@ class PanelAccount {
   bool get lifetime => expiredAt == null || expiredAt == 0;
   int get remainingBytes => (transferEnable - used).clamp(0, transferEnable);
 
+  /// 2026-09-19 起全部套餐不限流量：Xboard 没有真正的不限（0 = 没流量），后台用
+  /// ≥1000G 的大额度代替。≥ 这个数一律按不限显示、不画条、不提醒。
+  static const int unlimitedBytes = 1000 * 1024 * 1024 * 1024;
+  bool get unlimitedQuota => transferEnable <= 0 || transferEnable >= unlimitedBytes;
+
   /// 连接轨迹「账号原因」归类用的状态标记（跟 Windows 客户端 accountStateSlug 一致）：
   /// ok / traffic_exhausted / expired / no_plan。
   String get stateSlug {
