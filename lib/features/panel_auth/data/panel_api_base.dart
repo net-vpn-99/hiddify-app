@@ -406,6 +406,7 @@ class PanelApiBase {
   static bool _isOwnPointer(String url) =>
       url.contains('inkspindle.com/rules/') ||
       url.contains('gsldone.com/dengta/') ||
+      url.contains('quarrybell.com/dengta/') ||
       url.contains('guangsuleida.com/dengta/');
 
   static Future<({List<String> own, List<String> rescue})> _fetchPointers() async {

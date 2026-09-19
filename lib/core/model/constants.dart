@@ -4,18 +4,19 @@ import 'package:flutter/services.dart';
 abstract class Constants {
   static const appName = "光速";
   // OneRay: 会员系统 API（登录 / 拉订阅），对接 Xboard，与桌面版同一套接口
-  static const panelApiBase = "https://api-hk.inkspindle.com";
+  static const panelApiBase = "https://api.quarrybell.com"; // 香港中转（主入口，2026-09-19）
   // 自有指针在前，第三方阿里 OSS 只当救援。跟 Windows panel.json ossPointerUrls 同一份。
   static const ossPointerUrls = [
+    "https://api.quarrybell.com/dengta/d9b21c47e0a8f315.txt",
     "https://api-hk.inkspindle.com/rules/d9b21c47e0a8f315.txt",
     "https://www.gsldone.com/dengta/d9b21c47e0a8f315.txt",
     "https://surrr.oss-cn-hangzhou.aliyuncs.com/f20025155414474.txt",
   ];
   static const panelApiFallbacks = [
+    "https://api.quarrybell.com",
     "https://api-hk.inkspindle.com",
     "https://api.gsldone.com",
     "https://api.inkspindle.com",
-    "https://api.guangsuleida.com",
   ];
   // Xboard 会员前台已全部 404，浏览器入口走官网会员中心。
   static const panelRegisterUrl = "https://www.gsldone.com/account/";
@@ -34,9 +35,7 @@ abstract class Constants {
     // 留着当过渡期候选。**这个域名下所有路径都要带 /dengta/ 前缀**——它跟旧 dl2 不是
     // 同一套 Caddy 配置，没有 dl2 那种 strip_prefix，第一版少写了这个前缀，实测 404。
     "https://dl.inkspindle.com/dengta/android/releases.json",
-    "https://dl2.meadowfoundry.com/android/releases.json",
     "https://www.gsldone.com/dengta/android/releases.json",
-    "https://www.guangsuleida.com/dengta/android/releases.json",
   ];
   // 兼容旧字段名，代码里没人读了（搜过 app_update_repository 没有引用），留着不删只是保险。
   static const githubReleasesApiUrl = "https://dl.inkspindle.com/android/releases.json";
