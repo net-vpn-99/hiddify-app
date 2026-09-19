@@ -12,6 +12,8 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/add/model/free_profiles_model.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
@@ -63,27 +65,40 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
   ProfileRepository get _profilesRepo => ref.read(profileRepositoryProvider).requireValue;
   CancelToken? _cancelToken;
 
-  /// OneRay：只收自家账号订阅（路径 + 已知面板域名）。别家机场订阅、手贴的节点 / 配置
-  /// 内容一律不收——免得客户拿别家订阅用我们的 App，出了问题来找我们（2026-09-20 定）。
-  /// 所有导入入口（一键导入深链、粘贴、手动填写、快捷键粘贴）最后都走 addClipboard /
-  /// addManual，在这里拦一处就够。
-  bool _rejectForeign(String? url) {
-    if (url != null && isOwnAccountSubscribeSource(url)) return false;
+  /// OneRay：只收自家账号订阅。别家机场订阅、手贴的节点 / 配置内容一律不收——免得客户
+  /// 拿别家订阅用我们的 App，出了问题来找我们（2026-09-20 定）。所有导入入口（一键导入
+  /// 深链、粘贴、手动填写、快捷键粘贴）最后都走 addClipboard / addManual，在这里拦一处。
+  ///
+  /// 判断**不靠域名名单**（换域走 feed 不发版）：域名已知直接收；域名不认识但长得像
+  /// Xboard 订阅，就拿令牌去问当前可用的 API，面板认这个令牌才收，并把域名换成当前
+  /// API。返回要导入的 URL，不收返回 null（已弹提示）。
+  Future<String?> _ownUrlOrReject(String? url) async {
+    if (url != null) {
+      if (isOwnAccountSubscribeSource(url)) return url;
+      final token = looksLikeOwnPanelSubscribe(url) ? subscribeTokenOf(url) : null;
+      if (token != null && await PanelApi().isOwnSubscribeToken(token)) {
+        return buildOwnSubscribeUrl(apiBase: PanelApiBase.current, token: token, originalUrl: url);
+      }
+    }
     loggy.info("rejected non-account subscription");
     ref.read(inAppNotificationControllerProvider).showErrorToast('只能导入光速账号的订阅，登录光速账号后会自动导入');
-    return true;
+    return null;
   }
 
   Future<void> addClipboard(String rawInput) async {
     if (state.isLoading) return;
     final rs = LinkParser.parse(rawInput);
-    if (_rejectForeign(rs?.url)) return;
     state = const AsyncLoading();
+    final url = await _ownUrlOrReject(rs?.url);
+    if (url == null) {
+      state = const AsyncData(null);
+      return;
+    }
     state = await AsyncValue.guard(() async {
-      loggy.debug("adding profile, url: [${rs!.url}]");
+      loggy.debug("adding profile, url: [$url]");
       final TaskEither<ProfileFailure, Unit> task = _profilesRepo.upsertRemote(
-        rs.url,
-        userOverride: rs.name.isNotEmpty ? UserOverride(name: rs.name) : null,
+        url,
+        userOverride: rs!.name.isNotEmpty ? UserOverride(name: rs.name) : null,
         cancelToken: _cancelToken = CancelToken(),
       );
       return await task
@@ -103,11 +118,15 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
 
   Future<void> addManual({required String url, required UserOverride userOverride}) async {
     if (state.isLoading) return;
-    if (_rejectForeign(url)) return;
     state = const AsyncLoading();
+    final ownUrl = await _ownUrlOrReject(url);
+    if (ownUrl == null) {
+      state = const AsyncData(null);
+      return;
+    }
     state = await AsyncValue.guard(() async {
       return await _profilesRepo
-          .upsertRemote(url, userOverride: userOverride)
+          .upsertRemote(ownUrl, userOverride: userOverride)
           .match(
             (err) {
               loggy.warning("failed to add profile", err);
