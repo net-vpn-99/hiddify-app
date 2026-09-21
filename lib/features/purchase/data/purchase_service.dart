@@ -28,7 +28,7 @@ class PurchaseService {
 
   int? _int(dynamic v) => v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
 
-  /// 拉可购买的套餐（已展开成「套餐 × 周期」，推荐位在 expand 里按运营常量标好）。
+  /// 拉可购买的套餐（已展开成「套餐 × 周期」，推荐位按服务端 gsl_shop 标好）。
   Future<List<PlanOffer>> fetchPlans(String token) async {
     final res = await _dio.get<dynamic>('/api/v1/user/plan/fetch', options: _opt(token));
     if (res.statusCode == 401 || res.statusCode == 403) {
@@ -40,7 +40,28 @@ class PurchaseService {
     for (final p in list) {
       if (p is Map) offers.addAll(PlanOffer.expand(p.cast<String, dynamic>()));
     }
-    return offers;
+    final (recPeriod, recBadge) = await _recommended();
+    if (recPeriod.isEmpty) return offers;
+    return [
+      for (final o in offers) o.period == recPeriod ? o.copyWith(recommended: true, badge: recBadge) : o,
+    ];
+  }
+
+  /// 推荐档：GslShop 插件经 guest/comm/config 的 gsl_shop 下发。period 空串 = 后台设了不推荐。
+  /// 插件没装 / 拉不到 → 回退内置默认（季付 +「推荐选择」）。
+  Future<(String, String)> _recommended() async {
+    try {
+      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
+      final body = res.data;
+      final data = body is Map ? body['data'] : null;
+      final shop = data is Map ? data['gsl_shop'] : null;
+      if (shop is Map) {
+        final period = (shop['recommended_period'] as String?)?.trim() ?? '';
+        final badge = (shop['badge'] as String?)?.trim() ?? '';
+        return (period, badge.isEmpty ? kDefaultRecommendedBadge : badge);
+      }
+    } catch (_) {}
+    return (kDefaultRecommendedPeriod, kDefaultRecommendedBadge);
   }
 
   /// 找出本账号「还没完成」的订单（status 0 待支付 / 1 开通中），返回最近一笔。

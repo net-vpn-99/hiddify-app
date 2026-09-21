@@ -6,11 +6,13 @@
 /// Xboard 原生的一次性永久。改了插件配置这里也要改。
 /// [kShortTermDays] / [kShortTermTrafficGb]：插件 `short_term_days` / `short_term_traffic_gb`。
 ///
-/// [kRecommendedPeriod]：推荐位固定放这一档（运营决定，无销量数据，不做「最受欢迎」推导）。
+/// [kDefaultRecommendedPeriod] / [kDefaultRecommendedBadge]：推荐档由服务端 GslShop 插件经
+/// comm/config 的 gsl_shop 下发（改了不用发版），这两个只是拉不到时的兜底，和插件默认值一致。
 const int kShortTermPlanId = 1;
 const int kShortTermDays = 7;
 const int kShortTermTrafficGb = 0; // 0 = 不限流量（插件 short_term_traffic_gb=0，2026-09-19）
-const String kRecommendedPeriod = 'quarter_price';
+const String kDefaultRecommendedPeriod = 'quarter_price';
+const String kDefaultRecommendedBadge = '推荐选择';
 
 /// 一个「套餐 × 周期」的可购买选项。对应 Xboard `plan/fetch` 里一条套餐的一个价格档。
 class PlanOffer {
@@ -51,7 +53,7 @@ class PlanOffer {
   /// 参考天数，只用于算日均价 / 比较。<= 0 = 不算日均价（一次性永久档）。
   final int periodDays;
 
-  /// 推荐位（运营固定放 [kRecommendedPeriod]）。
+  /// 推荐位（服务端 gsl_shop 下发，见 PurchaseService.fetchPlans）。
   final bool recommended;
 
   /// 运营徽标文案，可空。当前只有推荐位会填「推荐选择」。
@@ -131,8 +133,6 @@ class PlanOffer {
           priceCents: cents,
           periodDays: days,
           deviceLimit: deviceLimit,
-          recommended: key == kRecommendedPeriod,
-          badge: key == kRecommendedPeriod ? '推荐选择' : null,
         ),
       );
     }
