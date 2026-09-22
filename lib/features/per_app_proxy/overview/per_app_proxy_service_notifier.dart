@@ -18,6 +18,9 @@ class PerAppProxyService extends _$PerAppProxyService {
   Timer? _timer;
   @override
   Future<void> build() async {
+    // OneRay: 没开「分应用代理」就不读已装应用列表 —— 启动就读会让 ColorOS/MIUI 等
+    // 弹「读取应用列表」授权。用户去高级设置里打开时会重新 build，那时再读。
+    if (!ref.watch(Preferences.perAppProxyMode).enabled) return;
     final phonePkgs = (await InstalledApps.getInstalledApps(false)).map((e) => e.packageName).toSet();
     _includeSubscription = ref
         .read(appProxyDataSourceProvider)
