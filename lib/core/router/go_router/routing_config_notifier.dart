@@ -8,7 +8,6 @@ import 'package:hiddify/core/router/go_router/helper/custom_transition.dart';
 import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
 import 'package:hiddify/features/about/widget/about_page.dart';
 import 'package:hiddify/features/home/widget/home_page.dart';
-import 'package:hiddify/features/intro/widget/intro_page.dart';
 import 'package:hiddify/features/log/overview/logs_page.dart';
 import 'package:hiddify/features/panel_auth/widget/account_page.dart';
 import 'package:hiddify/features/panel_auth/widget/invite_page.dart';
@@ -71,7 +70,6 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
     return RoutingConfig(
       redirect: (context, state) {
         final introCompleted = ref.read(Preferences.introCompleted);
-        final isIntro = state.matchedLocation == '/intro';
         // fix path-parameters for deep link
         String? url;
         if (LinkParser.protocols.contains(state.uri.scheme)) {
@@ -84,19 +82,18 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         }
 
         if (!introCompleted) {
-          return url != null ? '/intro?url=$url' : '/intro';
-        } else if (isIntro) {
-          if (url != null) {
-            WidgetsBinding.instance.addPostFrameCallback(
-              (_) => ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(url: url),
-            );
-            return '/home';
+          // OneRay: 不要 Hiddify 的首次引导页（语言/地区/分析）。第一次启动直接记为已完成，
+          // 既没登录也没订阅 → 先进登录页
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => ref.read(Preferences.introCompleted.notifier).update(true),
+          );
+          if (url == null) {
+            final loggedIn = ref.read(Preferences.panelLoggedIn);
+            final hasProfile = ref.read(hasAnyProfileProvider).value ?? false;
+            return (!loggedIn && !hasProfile) ? '/login' : null;
           }
-          // OneRay: 引导结束后，既没登录也没订阅 → 先进登录页
-          final loggedIn = ref.read(Preferences.panelLoggedIn);
-          final hasProfile = ref.read(hasAnyProfileProvider).value ?? false;
-          return (!loggedIn && !hasProfile) ? '/login' : '/home';
-        } else if (url != null) {
+        }
+        if (url != null) {
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(url: url),
           );
@@ -258,7 +255,6 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
             ],
           ],
         ),
-        GoRoute(name: 'intro', path: '/intro', builder: (_, _) => const IntroPage()),
         GoRoute(name: 'login', path: '/login', builder: (_, _) => const LoginPage()),
         GoRoute(name: 'register', path: '/register', builder: (_, _) => const RegisterPage()),
         // 游客绑定邮箱（GslGuest），push 后 pop(true) = 绑定成功

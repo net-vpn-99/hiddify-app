@@ -7,7 +7,6 @@ import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/failures.dart';
-import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/widget/adaptive_icon.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
@@ -119,40 +118,10 @@ class AboutPage extends HookConsumerWidget {
                 },
               ),
               ListTile(
-                title: Text(t.pages.about.sourceCode),
-                trailing: const Icon(FluentIcons.open_24_regular),
-                onTap: () async {
-                  await RemoteSiteConfig.ensureLoaded();
-                  await UriUtils.tryLaunch(
-                    Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.githubUrl)),
-                  );
-                },
-              ),
-              ListTile(
                 title: Text(t.pages.about.telegramChannel),
                 trailing: const Icon(FluentIcons.open_24_regular),
                 onTap: () async {
                   await UriUtils.tryLaunch(Uri.parse(Constants.telegramChannelUrl));
-                },
-              ),
-              ListTile(
-                title: Text(t.pages.about.termsAndConditions),
-                trailing: const Icon(FluentIcons.open_24_regular),
-                onTap: () async {
-                  await RemoteSiteConfig.ensureLoaded();
-                  await UriUtils.tryLaunch(
-                    Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.termsAndConditionsUrl)),
-                  );
-                },
-              ),
-              ListTile(
-                title: Text(t.pages.about.privacyPolicy),
-                trailing: const Icon(FluentIcons.open_24_regular),
-                onTap: () async {
-                  await RemoteSiteConfig.ensureLoaded();
-                  await UriUtils.tryLaunch(
-                    Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.privacyPolicyUrl)),
-                  );
                 },
               ),
             ]),
