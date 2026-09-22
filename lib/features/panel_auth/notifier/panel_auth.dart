@@ -28,6 +28,9 @@ class PanelAuthState {
 
   bool get loggedIn => email != null;
 
+  /// 游客（GslGuest 插件免注册开的号）：邮箱是占位的 g-xxx@guest.invalid。
+  bool get isGuest => email != null && email!.toLowerCase().endsWith(PanelApi.guestEmailSuffix);
+
   PanelAuthState copyWith({
     bool? loading,
     String? email,
@@ -131,6 +134,65 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
 
   Future<({bool emailVerify, bool inviteForce, bool recaptcha})> registerOptions() =>
       _api.getRegisterOptions();
+
+  Future<({bool enabled, String suffix, String? bindBonusText})> guestOptions() => _api.getGuestOptions();
+
+  /// 免注册试用：按本机 ANDROID_ID 开 / 取回游客号，成功返回订阅地址。
+  /// 这台设备登过正式账号时返回 hasAccountMask（让用户直接登录），不开游客。
+  Future<({String? subscribeUrl, String? error, String? hasAccountMask})> guestLogin() async {
+    if (state.loading) return (subscribeUrl: null, error: null, hasAccountMask: null);
+    final deviceId = await DeviceId.read();
+    if (deviceId == null) {
+      return (subscribeUrl: null, error: '读不到本机设备信息，请注册账号使用', hasAccountMask: null);
+    }
+    state = state.copyWith(loading: true);
+    try {
+      final r = await _api.guestLogin(deviceId);
+      final token = r.token;
+      if (token == null) {
+        state = state.copyWith(loading: false);
+        return (subscribeUrl: null, error: null, hasAccountMask: r.hasAccountMask ?? '');
+      }
+      final sub = await _api.getSubscribe(token);
+      final email = sub.email ?? '';
+      await _secureStorage.write(key: _kTokenKey, value: token);
+      await _secureStorage.write(key: _kEmailKey, value: email);
+      await ref.read(Preferences.panelLoggedIn.notifier).update(true);
+      await ref.read(Preferences.guestOptOut.notifier).update(false);
+      state = state.copyWith(loading: false, email: email, account: sub.account);
+      return (subscribeUrl: sub.subscribeUrl, error: null, hasAccountMask: null);
+    } on PanelApiException catch (e) {
+      state = state.copyWith(loading: false);
+      return (subscribeUrl: null, error: e.message, hasAccountMask: null);
+    } catch (e) {
+      state = state.copyWith(loading: false);
+      return (subscribeUrl: null, error: '免注册试用出错：$e', hasAccountMask: null);
+    }
+  }
+
+  /// 游客绑定邮箱（买套餐前必须）。成功返回 null，失败返回中文提示。
+  /// 账号 / token / 订阅都不变，只是邮箱换成真的。
+  Future<String?> bindGuest(String email, String password, {String? code, String? inviteCode}) async {
+    final token = await currentToken();
+    if (token == null || token.isEmpty) return '登录已过期，请重新打开 App';
+    if (state.loading) return null;
+    state = state.copyWith(loading: true);
+    try {
+      final bound = await _api.bindGuest(token, email, password, code: code, inviteCode: inviteCode);
+      await _secureStorage.write(key: _kEmailKey, value: bound);
+      state = state.copyWith(loading: false, email: bound);
+      // 到期时间变了（绑定赠送），刷一下缓存
+      await fetchAccount();
+      return null;
+    } on PanelApiException catch (e) {
+      state = state.copyWith(loading: false);
+      if (e.unauthorized) await logout(wipe: false);
+      return e.message;
+    } catch (e) {
+      state = state.copyWith(loading: false);
+      return '绑定出错：$e';
+    }
+  }
 
   /// 用已保存的令牌重新拉一次订阅地址（启动时刷新用）。失败返回 null。
   Future<String?> refreshSubscribeUrl() async {
@@ -262,6 +324,8 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
   /// [wipe] = true（用户手动点「退出登录」）：断开连接 + 删掉导入的订阅 + 清掉记住的线路。
   /// [wipe] = false（令牌失效等内部调用）：只清令牌，保留已导入的订阅，避免误删。
   Future<void> logout({bool wipe = true}) async {
+    // 手动退出过就不再自动开游客（令牌失效那种内部退出不算）。
+    if (wipe) await ref.read(Preferences.guestOptOut.notifier).update(true);
     await _secureStorage.delete(key: _kTokenKey);
     await _secureStorage.delete(key: _kEmailKey);
     await ref.read(Preferences.panelLoggedIn.notifier).update(false);

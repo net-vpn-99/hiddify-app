@@ -12,8 +12,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 typedef _Opts = ({bool emailVerify, bool inviteForce, bool recaptcha});
 
 /// 注册光速账号（App 内完成）。站点开了人机验证时退回浏览器。
+///
+/// [bind] = true：游客绑定邮箱（GslGuest）。字段和注册一样，提交后原账号换成这个邮箱，
+/// 订阅不变；成功时 pop(true)，调用方（比如购买页）据此接着往下走。
 class RegisterPage extends HookConsumerWidget {
-  const RegisterPage({super.key});
+  const RegisterPage({super.key, this.bind = false});
+
+  final bool bind;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -29,10 +34,15 @@ class RegisterPage extends HookConsumerWidget {
     final busy = useState(false);
     final cooldown = useState(0);
     final opts = useState<_Opts?>(null);
+    final bonusText = useState<String?>(null);
 
     useEffect(() {
       () async {
         opts.value = await ref.read(panelAuthProvider.notifier).registerOptions();
+        if (bind) {
+          final g = await ref.read(panelAuthProvider.notifier).guestOptions();
+          if (context.mounted) bonusText.value = g.bindBonusText;
+        }
       }();
       return null;
     }, const []);
@@ -63,6 +73,29 @@ class RegisterPage extends HookConsumerWidget {
       error.value = null;
       if (!formKey.currentState!.validate()) return;
       busy.value = true;
+      if (bind) {
+        final err = await ref.read(panelAuthProvider.notifier).bindGuest(
+              emailCtrl.text.trim(),
+              passCtrl.text,
+              code: codeCtrl.text.trim(),
+              inviteCode: inviteCtrl.text.trim(),
+            );
+        if (!context.mounted) return;
+        busy.value = false;
+        if (err != null) {
+          error.value = err;
+          return;
+        }
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(content: Text('邮箱已绑定，以后用 ${emailCtrl.text.trim()} 登录')),
+        );
+        if (context.canPop()) {
+          context.pop(true);
+        } else {
+          context.go('/home');
+        }
+        return;
+      }
       final result = await ref.read(panelAuthProvider.notifier).register(
             emailCtrl.text.trim(),
             passCtrl.text,
@@ -87,7 +120,7 @@ class RegisterPage extends HookConsumerWidget {
     final o = opts.value;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('注册光速账号')),
+      appBar: AppBar(title: Text(bind ? '绑定邮箱' : '注册光速账号')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
@@ -99,7 +132,10 @@ class RegisterPage extends HookConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        '注册成功即自动开通试用，登录后自动导入订阅。',
+                        bind
+                            ? '购买前需要绑定邮箱，换手机也能用它登录，已开的试用和订阅都不变。'
+                                '${bonusText.value != null ? '\n${bonusText.value}' : ''}'
+                            : '注册成功即自动开通试用，登录后自动导入订阅。',
                         style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                       ),
                       const SizedBox(height: 20),
@@ -178,12 +214,12 @@ class RegisterPage extends HookConsumerWidget {
                         onPressed: busy.value ? null : submit,
                         child: busy.value
                             ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('注册并登录'),
+                            : Text(bind ? '绑定' : '注册并登录'),
                       ),
                       const SizedBox(height: 8),
                       TextButton(
-                        onPressed: () => context.canPop() ? context.pop() : context.go('/login'),
-                        child: const Text('已有账号？去登录'),
+                        onPressed: () => context.canPop() ? context.pop() : context.go(bind ? '/home' : '/login'),
+                        child: Text(bind ? '暂不绑定' : '已有账号？去登录'),
                       ),
                     ],
                   ),

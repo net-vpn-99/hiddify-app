@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/purchase/data/purchase_service.dart';
 import 'package:hiddify/features/purchase/model/plan_offer.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
@@ -206,6 +207,12 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
   }
 
   Future<void> _confirm(PurchaseTokens t, PlanOffer offer) async {
+    // 游客（GslGuest）：钱不能挂在找不回的号上，先绑定邮箱，绑完接着付（服务端也会拦）。
+    if (ref.read(panelAuthProvider).isGuest) {
+      final bound = await context.pushNamed<bool>('bindEmail');
+      if (bound != true || !mounted) return;
+    }
+    if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

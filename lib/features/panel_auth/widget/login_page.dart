@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
@@ -20,6 +21,48 @@ class LoginPage extends HookConsumerWidget {
     final obscure = useState(true);
     final errorText = useState<String?>(null);
     final busy = useState(false);
+    // 免注册试用（GslGuest）：服务端开着才显示；guestBusy = 正在开号。
+    final guestEnabled = useState(false);
+    final guestBusy = useState(false);
+    final notice = useState<String?>(null);
+
+    Future<void> startGuest() async {
+      errorText.value = null;
+      notice.value = null;
+      guestBusy.value = true;
+      final r = await ref.read(panelAuthProvider.notifier).guestLogin();
+      if (!context.mounted) return;
+      if (r.hasAccountMask != null) {
+        guestBusy.value = false;
+        notice.value = r.hasAccountMask!.isEmpty
+            ? '这台手机登录过账号，请直接登录'
+            : '这台手机登录过 ${r.hasAccountMask}，请直接登录';
+        return;
+      }
+      final url = r.subscribeUrl;
+      if (r.error != null || url == null || url.isEmpty) {
+        guestBusy.value = false;
+        errorText.value = r.error ?? '免注册试用暂时不可用，请注册账号';
+        return;
+      }
+      await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
+      if (!context.mounted) return;
+      guestBusy.value = false;
+      context.go('/home');
+    }
+
+    // 第一次打开、没主动退出过：不用填任何东西，直接开游客。
+    useEffect(() {
+      Future(() async {
+        final opts = await ref.read(panelAuthProvider.notifier).guestOptions();
+        if (!context.mounted) return;
+        guestEnabled.value = opts.enabled;
+        if (opts.enabled && !ref.read(Preferences.guestOptOut) && !ref.read(panelAuthProvider).loggedIn) {
+          await startGuest();
+        }
+      });
+      return null;
+    }, const []);
 
     Future<void> submit() async {
       errorText.value = null;
@@ -47,7 +90,7 @@ class LoginPage extends HookConsumerWidget {
       context.go('/home');
     }
 
-    final loading = busy.value || auth.loading;
+    final loading = busy.value || auth.loading || guestBusy.value;
 
     return Scaffold(
       appBar: AppBar(title: const Text('登录光速账号')),
@@ -64,6 +107,32 @@ class LoginPage extends HookConsumerWidget {
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
+                if (guestEnabled.value) ...[
+                  const SizedBox(height: 20),
+                  FilledButton.tonal(
+                    onPressed: loading ? null : startGuest,
+                    child: guestBusy.value
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                              SizedBox(width: 10),
+                              Text('正在开通免费试用…'),
+                            ],
+                          )
+                        : const Text('免注册，直接试用'),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '不用填邮箱，打开就能用。买套餐时再绑定邮箱。',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ],
+                if (notice.value != null) ...[
+                  const SizedBox(height: 12),
+                  Text(notice.value!, style: theme.textTheme.bodyMedium),
+                ],
                 const SizedBox(height: 24),
                 CustomTextFormField(
                   controller: emailCtrl,

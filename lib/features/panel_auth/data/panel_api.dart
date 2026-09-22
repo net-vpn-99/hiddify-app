@@ -174,6 +174,84 @@ class PanelApi {
     throw PanelApiException(_messageOf(res.data) ?? '注册失败，请检查信息后重试');
   }
 
+  /// 游客试用开关 / 文案（GslGuest 插件，走 guest/comm/config）。拿不到 gsl_guest 对象
+  /// = 服务端没装插件，enabled=false（不走游客，照旧登录页）。
+  Future<({bool enabled, String suffix, String? bindBonusText})> getGuestOptions() async {
+    try {
+      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
+      final data = _dataOf(res.data);
+      final g = data?['gsl_guest'];
+      if (g is! Map) return (enabled: false, suffix: guestEmailSuffix, bindBonusText: null);
+      final enabled = g['enabled'] == true || g['enabled'] == 1 || g['enabled'] == '1';
+      final suffix = g['email_suffix'] is String && (g['email_suffix'] as String).isNotEmpty
+          ? g['email_suffix'] as String
+          : guestEmailSuffix;
+      final bonus = g['bind_bonus_text'];
+      return (
+        enabled: enabled,
+        suffix: suffix,
+        bindBonusText: bonus is String && bonus.trim().isNotEmpty ? bonus.trim() : null,
+      );
+    } catch (_) {
+      return (enabled: false, suffix: guestEmailSuffix, bindBonusText: null);
+    }
+  }
+
+  /// 游客占位邮箱后缀（跟服务端 GslGuest 的 Guest::EMAIL_SUFFIX 一致）。
+  static const guestEmailSuffix = '@guest.invalid';
+
+  /// 按设备号开通 / 取回游客号。成功返回 token；这台设备登过正式账号返回 hasAccountMask
+  /// （打码邮箱，可能是空串）。失败抛 [PanelApiException]。
+  Future<({String? token, String? hasAccountMask})> guestLogin(String deviceId) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '/api/v1/guest/gsl_guest/login',
+        data: {'device_id': deviceId, 'platform': 'android'},
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    final data = _dataOf(res.data);
+    if (data?['status'] == 'has_account') {
+      final mask = data?['email_mask'];
+      return (token: null, hasAccountMask: mask is String ? mask : '');
+    }
+    final token = _extractToken(res.data);
+    if (token != null && token.isNotEmpty) return (token: token, hasAccountMask: null);
+    throw PanelApiException(_messageOf(res.data) ?? '免注册试用暂时不可用，请注册账号');
+  }
+
+  /// 游客绑定邮箱：原账号改成这个邮箱 + 密码，token 和订阅都不变。返回绑定后的邮箱。
+  Future<String> bindGuest(
+    String token,
+    String email,
+    String password, {
+    String? code,
+    String? inviteCode,
+  }) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '/api/v1/user/gsl_guest/bind',
+        data: {
+          'email': email.trim(),
+          'password': password,
+          if (code != null && code.trim().isNotEmpty) 'email_code': code.trim(),
+          if (inviteCode != null && inviteCode.trim().isNotEmpty) 'invite_code': inviteCode.trim(),
+        },
+        options: Options(headers: {'auth_data': token, 'Authorization': token}),
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    if (res.statusCode == 401) throw PanelApiException('登录已过期，请重新打开 App', unauthorized: true);
+    final data = _dataOf(res.data);
+    final bound = data?['email'];
+    if (res.statusCode == 200 && bound is String && bound.isNotEmpty) return bound;
+    throw PanelApiException(_messageOf(res.data) ?? '绑定失败，请稍后再试');
+  }
+
   /// 用邮箱验证码重置密码。
   Future<void> resetPassword(String email, String newPassword, String code) async {
     Response<dynamic> res;

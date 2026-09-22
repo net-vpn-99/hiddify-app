@@ -28,7 +28,7 @@ class AccountTile extends ConsumerWidget {
     return Material(
       child: ListTile(
         leading: const Icon(Icons.account_circle),
-        title: Text(auth.email ?? '已登录'),
+        title: Text(auth.isGuest ? '游客（还没绑定邮箱）' : (auth.email ?? '已登录')),
         subtitle: Text(switch (auth.account?.stateSlug) {
           'traffic_exhausted' => '本期流量已用完 · 点击处理',
           'expired' => '会员已到期 · 点击处理',

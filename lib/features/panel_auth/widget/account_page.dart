@@ -45,10 +45,10 @@ class AccountPage extends HookConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        a?.email ?? auth.email ?? '已登录',
+                        auth.isGuest ? '游客' : (a?.email ?? auth.email ?? '已登录'),
                         style: theme.textTheme.titleMedium,
                       ),
-                      Text('光速会员', style: theme.textTheme.bodySmall),
+                      Text(auth.isGuest ? '还没绑定邮箱，换手机前记得绑定' : '光速会员', style: theme.textTheme.bodySmall),
                     ],
                   ),
                 ),
@@ -112,6 +112,17 @@ class AccountPage extends HookConsumerWidget {
               ),
             ],
             const SizedBox(height: 8),
+            // 游客没有密码可改：换成「绑定邮箱」（GslGuest，绑定再送时长）。
+            if (auth.isGuest)
+              FilledButton.tonalIcon(
+                icon: const Icon(Icons.mark_email_read_outlined),
+                label: const Text('绑定邮箱，换手机也能登录'),
+                onPressed: () async {
+                  final bound = await context.pushNamed<bool>('bindEmail');
+                  if (bound == true) await load();
+                },
+              )
+            else
             OutlinedButton.icon(
               icon: const Icon(Icons.password_outlined),
               label: const Text('修改密码'),
@@ -127,14 +138,17 @@ class AccountPage extends HookConsumerWidget {
             TextButton(
               onPressed: () async {
                 final ok = await ref.read(dialogNotifierProvider.notifier).showConfirmation(
-                      title: '退出登录',
-                      message: '退出后会断开连接、清除已导入的订阅，需要重新登录才能继续使用。',
+                      title: auth.isGuest ? '退出游客' : '退出登录',
+                      message: auth.isGuest
+                          ? '退出后可以登录已有账号。以后在登录页点「免注册，直接试用」会回到这个游客号。'
+                          : '退出后会断开连接、清除已导入的订阅，需要重新登录才能继续使用。',
                     );
                 if (!ok) return;
                 await ref.read(panelAuthProvider.notifier).logout();
                 if (context.mounted) context.go('/login');
               },
-              child: Text('退出登录', style: TextStyle(color: theme.colorScheme.error)),
+              child: Text(auth.isGuest ? '退出游客，登录已有账号' : '退出登录',
+                  style: TextStyle(color: theme.colorScheme.error)),
             ),
           ],
         ),
