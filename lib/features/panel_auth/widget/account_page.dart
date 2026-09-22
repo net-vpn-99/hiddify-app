@@ -138,16 +138,16 @@ class AccountPage extends HookConsumerWidget {
             TextButton(
               onPressed: () async {
                 final ok = await ref.read(dialogNotifierProvider.notifier).showConfirmation(
-                      title: auth.isGuest ? '退出游客' : '退出登录',
+                      title: auth.isGuest ? '用已有账号登录' : '退出登录',
                       message: auth.isGuest
-                          ? '退出后可以登录已有账号。以后在登录页点「免注册，直接试用」会回到这个游客号。'
+                          ? '会回到登录页，用你的邮箱和密码登录。点错了也没关系，登录页点「免注册，直接试用」还能回到现在这个试用。'
                           : '退出后会断开连接、清除已导入的订阅，需要重新登录才能继续使用。',
                     );
                 if (!ok) return;
                 await ref.read(panelAuthProvider.notifier).logout();
                 if (context.mounted) context.go('/login');
               },
-              child: Text(auth.isGuest ? '退出游客，登录已有账号' : '退出登录',
+              child: Text(auth.isGuest ? '已有账号？去登录' : '退出登录',
                   style: TextStyle(color: theme.colorScheme.error)),
             ),
           ],
