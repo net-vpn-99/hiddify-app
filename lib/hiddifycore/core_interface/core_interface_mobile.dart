@@ -129,8 +129,11 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
         final res = await _status.get(timeout: const Duration(seconds: 1));
 
         switch (res) {
+          // OneRay: 原版这里的 break 只跳出 switch，不跳出 for —— 核心早就起来了也要把
+          // 20 次循环走完，每次连接白等 4~5 秒。核心起来就直接进下面的端口检查。
           case CoreStarted():
-            break;
+            loggy.info("core started after ${i + 1} polls");
+            return await _finishBackgroundSetup();
           case CoreStopped():
             if (res.alert != null) {
               return res;
@@ -146,7 +149,10 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
       }
     }
     loggy.info("Waiting for starting core finished");
+    return await _finishBackgroundSetup();
+  }
 
+  Future<CoreStatus> _finishBackgroundSetup() async {
     if (!await waitUntilPort(portBack, true, null, maxTry: 10)) {
       await stopMethodChannel();
       return const CoreStatus.stopped(alert: CoreAlert.startService, message: "starting background core...");
