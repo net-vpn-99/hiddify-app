@@ -131,9 +131,9 @@ class NewVersionDialog extends HookConsumerWidget with PresLogger {
               child: const Text('以后再说'),
             ),
           ],
-          // 官网下载页 —— App 内下载失败过、或用户不想走 App 内下载时用
-          if (!canInApp || error.value != null)
-            TextButton(
+          // 官网下载页一直给：App 内下载失败过、或者系统安装器不认新包（老版本固定文件名会被
+          // 安装器缓存，见 ApkInstaller._fileName）时，强制更新也不会把人卡死。
+          TextButton(
               onPressed: () => UriUtils.tryLaunch(Uri.parse(newVersion.url)),
               child: const Text('打开官网下载'),
             ),

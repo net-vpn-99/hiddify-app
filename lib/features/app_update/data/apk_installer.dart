@@ -9,7 +9,10 @@ import 'package:path_provider/path_provider.dart';
 /// 应用内更新：下载 APK 到外部专用目录 → 校验 sha256（有的话）→ 拉起系统安装器。
 /// 每次下载前清旧包；App 启动时清 10 分钟前的残留，装完不会残留、也不会误删进行中的。
 class ApkInstaller {
-  static const _fileName = 'oneray-update.apk';
+  // 每次下载用不同文件名。2026-09-22 实测（ColorOS）：固定叫 oneray-update.apk 时，系统安装器
+  // 按文件地址缓存了上一次的包——文件明明已换成 1.1.20、sha256 也对，安装器仍显示
+  // 「已安装相同版本 1.1.19」，强制更新弹窗和安装器来回转，App 用不了。
+  static String _fileName() => 'oneray-update-${DateTime.now().millisecondsSinceEpoch}.apk';
 
   static Future<Directory> _dir() async {
     // 优先外部专用目录（/Android/data/<pkg>/files/update），安装器读这里比 cache 可靠
@@ -34,7 +37,7 @@ class ApkInstaller {
     if (apkUrls.isEmpty) throw Exception('没有可用的下载地址');
     final dir = await _dir();
     await _wipe(dir);
-    final path = p.join(dir.path, _fileName);
+    final path = p.join(dir.path, _fileName());
     final f = File(path);
 
     Object? lastErr;
