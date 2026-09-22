@@ -34,6 +34,7 @@ class MethodHandler(private val scope: CoroutineScope) : FlutterPlugin,
             Restart("restart"),
             AddGrpcClientPublicKey("add_grpc_client_public_key"),
             GetGrpcServerPublicKey("get_grpc_server_public_key"),
+            PermissionPending("permission_pending"),
 
         }
     }
@@ -109,6 +110,8 @@ class MethodHandler(private val scope: CoroutineScope) : FlutterPlugin,
                 }
             }
 
+
+            Trigger.PermissionPending.method -> result.success(MainActivity.permissionPending)
 
             Trigger.Start.method -> {
                 scope.launch {

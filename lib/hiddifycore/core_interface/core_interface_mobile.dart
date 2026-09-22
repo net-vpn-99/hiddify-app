@@ -115,7 +115,16 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
 
     _isBgClientAvailable = true;
     loggy.info("Waiting for starting core");
+    // OneRay: 全新安装第一次连接会先弹「通知」「VPN」系统授权框，框开着时后台服务起不来。
+    // 授权框开着的时间不算超时（最多 5 分钟），点完「允许」后重新计次再等核心起来；
+    // 点了「拒绝」原生端会推 alert，下面照常返回。
+    final permissionDeadline = DateTime.now().add(const Duration(minutes: 5));
     for (var i = 0; i < 20; i++) {
+      if (DateTime.now().isBefore(permissionDeadline) && await _permissionPending()) {
+        i = -1;
+        await Future.delayed(const Duration(milliseconds: 300));
+        continue;
+      }
       try {
         final res = await _status.get(timeout: const Duration(seconds: 1));
 
@@ -154,6 +163,14 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
 
     _isBgClientAvailable = false;
     return true;
+  }
+
+  Future<bool> _permissionPending() async {
+    try {
+      return await methodChannel.invokeMethod<bool>("permission_pending") ?? false;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future stopMethodChannel() async {

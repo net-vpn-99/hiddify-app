@@ -32,6 +32,10 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
 
         const val VPN_PERMISSION_REQUEST_CODE = 1001
         const val NOTIFICATION_PERMISSION_REQUEST_CODE = 1010
+
+        // OneRay: 系统授权框（通知 / VPN）开着 = true。Dart 端等后台核心时，这段时间不算超时
+        @Volatile
+        var permissionPending = false
     }
 
     private val connection = ServiceConnection(this, this)
@@ -61,6 +65,7 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
     @SuppressLint("NewApi")
     fun startService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !ServiceNotification.checkPermission()) {
+            permissionPending = true
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             return
         }
@@ -89,6 +94,7 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         try {
             val intent = VpnService.prepare(this@MainActivity)
             if (intent != null) {
+                permissionPending = true
                 prepareLauncher.launch(intent)
                 true
             } else {
@@ -103,6 +109,7 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         registerForActivityResult(
             ActivityResultContracts.RequestPermission(),
         ) { isGranted ->
+            permissionPending = false
             if (Settings.dynamicNotification && !isGranted) {
                 onServiceAlert(Alert.RequestNotificationPermission, null)
             } else {
@@ -114,6 +121,7 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
         registerForActivityResult(
             ActivityResultContracts.StartActivityForResult(),
         ) { result ->
+            permissionPending = false
             if (result.resultCode == RESULT_OK) {
                 startService0()
             } else {
