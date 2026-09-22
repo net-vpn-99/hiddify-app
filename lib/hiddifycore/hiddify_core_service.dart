@@ -159,14 +159,29 @@ class HiddifyCoreService with InfraLogger {
       // final content = await File(path).readAsString();
       // loggy.debug("starting with content: $content");
       try {
-        final res = await core.bgClient.start(
-          StartRequest(
-            configPath: path,
-            configName: name,
-            // configContent: content,
-            disableMemoryLimit: disableMemoryLimit,
-          ),
+        final request = StartRequest(
+          configPath: path,
+          configName: name,
+          // configContent: content,
+          disableMemoryLimit: disableMemoryLimit,
         );
+        CoreInfoResponse res;
+        try {
+          res = await core.bgClient.start(request);
+        } on GrpcError catch (e) {
+          // OneRay: 全新安装刚点完系统授权框，后台服务刚起来，第一次 start 常失败，
+          // 用户手动再点一次就好。这里自动替用户再试一次（先原地重试，不行再整个重起后台服务）。
+          loggy.warning("bg core start failed once (${e.codeName}: ${e.message}), retrying");
+          await Future<void>.delayed(const Duration(milliseconds: 1500));
+          try {
+            res = await core.bgClient.start(request);
+          } on GrpcError catch (e2) {
+            loggy.warning("bg core start failed twice (${e2.codeName}: ${e2.message}), restarting background service");
+            final again = await core.setupBackground(path, name);
+            if (again != const CoreStatus.started()) rethrow;
+            res = await core.bgClient.start(request);
+          }
+        }
         ref.read(coreRestartSignalProvider.notifier).restart();
         if (res.messageType != MessageType.ALREADY_STARTED && res.messageType != MessageType.EMPTY) {
           final alert = res.message.contains("denied") ? CoreAlert.requestVPNPermission : CoreAlert.startFailed;
@@ -192,7 +207,7 @@ class HiddifyCoreService with InfraLogger {
         // throw DioException.connectionError(requestOptions: RequestOptions(), reason: e.codeName, error: e);
 
         // throw DioException(requestOptions: RequestOptions(), error: e);
-        return left(const ConnectionFailure.unexpected("failed to start background core"));
+        return left(ConnectionFailure.unexpected("failed to start background core (${e.codeName}: ${e.message})"));
       }
 
       // if (res.messageType != MessageType.EMPTY) return left(res);

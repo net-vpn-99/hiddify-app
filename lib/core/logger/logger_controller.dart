@@ -26,7 +26,8 @@ class LoggerController extends LoggyPrinter with InfraLogger {
 
   static Future<void> postInit(bool debugMode) async {
     final logLevel = debugMode && false ? LogLevel.all : LogLevel.info;
-    final logToFile = debugMode || (!Platform.isAndroid && !Platform.isIOS);
+    // OneRay: 安卓也写 app.log（每次启动清空，info 级），不然「连接诊断」上传的日志是空的
+    final logToFile = debugMode || !Platform.isIOS;
 
     if (!logToFile || kIsWeb) _instance.removePrinter("app");
 

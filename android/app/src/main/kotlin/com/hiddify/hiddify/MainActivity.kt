@@ -64,11 +64,8 @@ class MainActivity : FlutterFragmentActivity(), ServiceConnection.Callback {
 
     @SuppressLint("NewApi")
     fun startService() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !ServiceNotification.checkPermission()) {
-            permissionPending = true
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            return
-        }
+        // OneRay: 连接前不再要「通知」权限。不给也能连（只是通知栏没有常驻提示），
+        // 原版还会在用户拒绝时直接报错连不上；第一次连接只剩「允许创建 VPN 连接」一个框。
         startService0()
     }
 
