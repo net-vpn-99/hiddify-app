@@ -11,10 +11,12 @@ import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
 import 'package:hiddify/core/widget/adaptive_icon.dart';
 import 'package:hiddify/core/widget/adaptive_menu.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/features/profile/overview/profiles_notifier.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
+import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hiddify/gen/fonts.gen.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -185,8 +187,11 @@ class ProfileTile extends HookConsumerWidget {
                             ),
                           if (subInfo != null) ...[
                             const Gap(4),
-                            RemainingTrafficIndicator(subInfo.ratio),
-                            const Gap(4),
+                            // 不限流量：进度条没意义（永远接近 0），不画
+                            if (!ProfileSubscriptionInfo.isUnlimited(subInfo)) ...[
+                              RemainingTrafficIndicator(subInfo.ratio),
+                              const Gap(4),
+                            ],
                             ProfileSubscriptionInfo(subInfo),
                             const Gap(4),
                           ],
@@ -310,10 +315,13 @@ class ProfileSubscriptionInfo extends HookConsumerWidget {
 
   final SubscriptionInfo subInfo;
 
+  /// 2026-09-19 起全部套餐不限流量，后台用 ≥1000G 大额度代替（口径同 [PanelAccount.unlimitedQuota]）。
+  static bool isUnlimited(SubscriptionInfo s) => s.total <= 0 || s.total >= PanelAccount.unlimitedBytes;
+
   (String, Color?) remainingText(TranslationsEn t, ThemeData theme) {
     if (subInfo.isExpired) {
       return (t.components.subscriptionInfo.expired, theme.colorScheme.error);
-    } else if (subInfo.ratio >= 1) {
+    } else if (!isUnlimited(subInfo) && subInfo.ratio >= 1) {
       return (t.components.subscriptionInfo.noTraffic, theme.colorScheme.error);
     } else if (subInfo.remaining.inDays > 365) {
       // OneRay: 长期套餐不显示「剩余 ∞ 天」，直接说「长期有效」。
@@ -329,32 +337,25 @@ class ProfileSubscriptionInfo extends HookConsumerWidget {
     final theme = Theme.of(context);
 
     final remaining = remainingText(t, theme);
+    // OneRay: 写清「已用 / 共」；数字用短格式（140 GB 而不是 140.47GiB）。
+    // 右边「长期有效/剩余 N 天」很短，给它固定宽度，左边拿剩下的全部；
+    // 仍放不下时整行等比缩小，绝不出现「共 ...」。
+    final used = formatAccountBytes(subInfo.consumption);
+    final trafficText = isUnlimited(subInfo) ? '不限流量 · 已用 $used' : '已用 $used / 共 ${formatAccountBytes(subInfo.total)}';
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: Flexible(
-            child: Text(
-              // OneRay: 写清「已用 / 共」，别让用户猜这两个数是什么。
-              subInfo.total > 10 * 1099511627776 //10TB
-                  ? "∞ GiB"
-                  : '已用 ${subInfo.consumption.sizeGB()} / 共 ${subInfo.total.sizeGB()}',
-              semanticsLabel: t.components.subscriptionInfo.remainingTrafficSemanticLabel(
-                consumed: subInfo.consumption.sizeGB(),
-                total: subInfo.total.sizeGB(),
-              ),
-              style: theme.textTheme.bodySmall,
-              overflow: TextOverflow.ellipsis,
-            ),
+        Expanded(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(trafficText, style: theme.textTheme.bodySmall, maxLines: 1),
           ),
         ),
-        Flexible(
-          child: Text(
-            remaining.$1,
-            style: theme.textTheme.bodySmall?.copyWith(color: remaining.$2),
-            overflow: TextOverflow.ellipsis,
-          ),
+        const Gap(8),
+        Text(
+          remaining.$1,
+          style: theme.textTheme.bodySmall?.copyWith(color: remaining.$2),
+          maxLines: 1,
         ),
       ],
     );
