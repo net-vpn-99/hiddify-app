@@ -69,7 +69,6 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
     if (isMobileBreakpoint == null) return loadingConfig;
     return RoutingConfig(
       redirect: (context, state) {
-        final introCompleted = ref.read(Preferences.introCompleted);
         // fix path-parameters for deep link
         String? url;
         if (LinkParser.protocols.contains(state.uri.scheme)) {
@@ -81,18 +80,6 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
           url = state.uri.queryParameters['url'];
         }
 
-        if (!introCompleted) {
-          // OneRay: 不要 Hiddify 的首次引导页（语言/地区/分析）。第一次启动直接记为已完成，
-          // 既没登录也没订阅 → 先进登录页
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => ref.read(Preferences.introCompleted.notifier).update(true),
-          );
-          if (url == null) {
-            final loggedIn = ref.read(Preferences.panelLoggedIn);
-            final hasProfile = ref.read(hasAnyProfileProvider).value ?? false;
-            return (!loggedIn && !hasProfile) ? '/login' : null;
-          }
-        }
         if (url != null) {
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(url: url),

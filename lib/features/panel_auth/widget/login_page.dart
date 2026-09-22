@@ -7,6 +7,10 @@ import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+/// 开游客号正在进行中。登录页若被重建（路由刷新等），自动开号不能再跑一遍：
+/// 两次并发会各自导入一次订阅，用户会多出一条重复线路。
+bool _guestStartInFlight = false;
+
 /// 光速会员账号登录。登录成功后自动把订阅加成配置并回主页。
 class LoginPage extends HookConsumerWidget {
   const LoginPage({super.key});
@@ -27,28 +31,34 @@ class LoginPage extends HookConsumerWidget {
     final notice = useState<String?>(null);
 
     Future<void> startGuest() async {
+      if (_guestStartInFlight) return;
+      _guestStartInFlight = true;
       errorText.value = null;
       notice.value = null;
       guestBusy.value = true;
-      final r = await ref.read(panelAuthProvider.notifier).guestLogin();
-      if (!context.mounted) return;
-      if (r.hasAccountMask != null) {
+      try {
+        final r = await ref.read(panelAuthProvider.notifier).guestLogin();
+        if (!context.mounted) return;
+        if (r.hasAccountMask != null) {
+          guestBusy.value = false;
+          notice.value = r.hasAccountMask!.isEmpty
+              ? '这台手机登录过账号，请直接登录'
+              : '这台手机登录过 ${r.hasAccountMask}，请直接登录';
+          return;
+        }
+        final url = r.subscribeUrl;
+        if (r.error != null || url == null || url.isEmpty) {
+          guestBusy.value = false;
+          errorText.value = r.error ?? '免注册试用暂时不可用，请注册账号';
+          return;
+        }
+        await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
+        if (!context.mounted) return;
         guestBusy.value = false;
-        notice.value = r.hasAccountMask!.isEmpty
-            ? '这台手机登录过账号，请直接登录'
-            : '这台手机登录过 ${r.hasAccountMask}，请直接登录';
-        return;
+        context.go('/home');
+      } finally {
+        _guestStartInFlight = false;
       }
-      final url = r.subscribeUrl;
-      if (r.error != null || url == null || url.isEmpty) {
-        guestBusy.value = false;
-        errorText.value = r.error ?? '免注册试用暂时不可用，请注册账号';
-        return;
-      }
-      await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
-      if (!context.mounted) return;
-      guestBusy.value = false;
-      context.go('/home');
     }
 
     // 第一次打开、没主动退出过：不用填任何东西，直接开游客。

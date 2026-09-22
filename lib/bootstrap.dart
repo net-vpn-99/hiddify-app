@@ -82,6 +82,15 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
 
   Logger.bootstrap.info(appInfo.format());
 
+  // OneRay: 没有引导页了。第一次启动在这里把标记置上，并记下「这次是首启」——
+  // 不能放进 router 的 redirect 里写：写入会通知 RefreshListenable，登录页被重建，
+  // 自动开游客号会跑第二次（两次并发 → 可能导入两条重复订阅）。
+  if (!container.read(Preferences.introCompleted)) {
+    firstLaunchAfterInstall = true;
+    await container.read(Preferences.introCompleted.notifier).update(true);
+    Logger.bootstrap.info("first launch after install");
+  }
+
   await _init("profile repository", () => container.read(profileRepositoryProvider.future));
 
   await _init("translations", () => container.read(translationsProvider.future));

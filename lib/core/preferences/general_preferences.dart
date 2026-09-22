@@ -14,6 +14,10 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'general_preferences.g.dart';
 
+/// OneRay: 这次启动是「装好后的第一次」（bootstrap 里置位）。没有引导页了，首启直接进登录页，
+/// 游客试用在登录页自动开号。别改成在 router 的 redirect 里写偏好 —— 会重建登录页、开号跑两次。
+bool firstLaunchAfterInstall = false;
+
 bool _debugIntroPage = false;
 
 abstract class Preferences {

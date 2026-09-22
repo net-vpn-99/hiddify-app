@@ -57,7 +57,8 @@ class ProfileDetailsNotifier extends _$ProfileDetailsNotifier with AppLogger {
       }
       final endpoints = jsonObject['endpoints'] as List? ?? [];
       profContent = '{"outbounds": ${json.encode(outbounds)},"endpoints":${json.encode(endpoints)} }';
-      loggy.info(profContent);
+      // OneRay: 这是完整节点配置（含 uuid）。app.log 现在会随「连接诊断」上传，降到 debug 不落盘。
+      loggy.debug(profContent);
     } catch (e, st) {
       loggy.error('Error parsing profile-content JSON', e, st);
       // rethrow;
