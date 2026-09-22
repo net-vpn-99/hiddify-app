@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
@@ -88,12 +92,27 @@ class ConnectionButton extends HookConsumerWidget {
         buttonColor: buttonTheme.idleColor!,
         newButtonColor: buttonTheme.idleColor!,
         animated: false,
-          secureLabel: '',
+        secureLabel: '',
       );
     }
 
+    // OneRay: 点下去到状态变「连接中」之间要跑几步准备工作（校验订阅 / 拉账号 / 起后台服务），
+    // 慢手机上好几秒没动静，用户不知道点上没有。点下去立刻震一下 + 按钮转成「连接中…」。
+    final preparing = useState(false);
+    VoidCallback guard(Future<void> Function() action) => () async {
+      if (preparing.value) return;
+      preparing.value = true;
+      unawaited(HapticFeedback.mediumImpact());
+      try {
+        await action();
+      } finally {
+        if (context.mounted) preparing.value = false;
+      }
+    };
+    final busy = preparing.value && connectionStatus.valueOrNull is! Connected;
+
     return _ConnectionButton(
-      onTap: switch (connectionStatus) {
+      onTap: guard(switch (connectionStatus) {
         AsyncData(value: Connected()) when requiresReconnect == true => () async {
           final activeProfile = await ref.read(activeProfileProvider.future);
           return await ref.read(connectionNotifierProvider.notifier).reconnect(activeProfile);
@@ -124,16 +143,12 @@ class ConnectionButton extends HookConsumerWidget {
               await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
               if (ref.read(addProfileNotifierProvider) is! AsyncError) return;
             }
-            ref
-                .read(inAppNotificationControllerProvider)
-                .showErrorToast('订阅同步失败，请稍后重试，或在「我的」页联系客服');
+            ref.read(inAppNotificationControllerProvider).showErrorToast('订阅同步失败，请稍后重试，或在「我的」页联系客服');
             return;
           }
           // OneRay：选中的是别家订阅（旧版能导入别家的）→ 连之前切回自家那份。
           if (!await ref.read(addProfileNotifierProvider.notifier).ensureAccountProfileActive()) {
-            ref
-                .read(inAppNotificationControllerProvider)
-                .showErrorToast('订阅同步失败，请稍后重试，或在「我的」页联系客服');
+            ref.read(inAppNotificationControllerProvider).showErrorToast('订阅同步失败，请稍后重试，或在「我的」页联系客服');
             return;
           }
           if (await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
@@ -149,18 +164,22 @@ class ConnectionButton extends HookConsumerWidget {
           }
           return await ref.read(connectionNotifierProvider.notifier).toggleConnection();
         },
-        _ => () {},
-      },
-      enabled: switch (connectionStatus) {
-        AsyncData(value: Connected()) || AsyncData(value: Disconnected()) || AsyncError() => true,
-        _ => false,
-      },
-      label: switch (connectionStatus) {
-        AsyncData(value: Connected()) when requiresReconnect == true => t.connection.reconnect,
-        AsyncData(value: Connected()) when delay <= 0 || delay >= 65000 => t.connection.connecting,
-        AsyncData(value: final status) => status.present(t),
-        _ => "",
-      },
+        _ => () async {},
+      }),
+      enabled:
+          !busy &&
+          switch (connectionStatus) {
+            AsyncData(value: Connected()) || AsyncData(value: Disconnected()) || AsyncError() => true,
+            _ => false,
+          },
+      label: busy
+          ? t.connection.connecting
+          : switch (connectionStatus) {
+              AsyncData(value: Connected()) when requiresReconnect == true => t.connection.reconnect,
+              AsyncData(value: Connected()) when delay <= 0 || delay >= 65000 => t.connection.connecting,
+              AsyncData(value: final status) => status.present(t),
+              _ => "",
+            },
       buttonColor: switch (connectionStatus) {
         AsyncData(value: Connected()) when requiresReconnect == true => Colors.teal,
         AsyncData(value: Connected()) when delay <= 0 || delay >= 65000 => const Color.fromARGB(255, 185, 176, 103),
@@ -175,13 +194,15 @@ class ConnectionButton extends HookConsumerWidget {
         AsyncData(value: _) => buttonTheme.idleColor!,
         _ => Colors.red,
       },
-      animated: switch (connectionStatus) {
-        AsyncData(value: Connected()) when requiresReconnect == true => false,
-        AsyncData(value: Connected()) when delay <= 0 || delay >= 65000 => false,
-        AsyncData(value: Connected()) => true,
-        AsyncData(value: _) => true,
-        _ => false,
-      },
+      animated:
+          busy ||
+          switch (connectionStatus) {
+            AsyncData(value: Connected()) when requiresReconnect == true => false,
+            AsyncData(value: Connected()) when delay <= 0 || delay >= 65000 => false,
+            AsyncData(value: Connected()) => true,
+            AsyncData(value: _) => true,
+            _ => false,
+          },
       secureLabel: secureLabel,
     );
   }
@@ -259,9 +280,9 @@ class _ConnectionButton extends StatelessWidget {
                 const Gap(4),
                 Text(
                   hint!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],
               if (secureLabel.isNotEmpty) ...[
