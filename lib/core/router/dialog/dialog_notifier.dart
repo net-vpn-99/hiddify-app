@@ -269,6 +269,7 @@ class DialogNotifier extends _$DialogNotifier {
       context.pushNamed(switch (action) {
         QuotaEndedAction.invite => 'invite',
         QuotaEndedAction.purchase => 'purchase',
+        QuotaEndedAction.bind => 'bindEmail',
       });
     } finally {
       _quotaShowing = false;

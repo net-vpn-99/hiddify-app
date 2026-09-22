@@ -3,6 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
+import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
@@ -81,11 +82,20 @@ class RegisterPage extends HookConsumerWidget {
               inviteCode: inviteCtrl.text.trim(),
             );
         if (!context.mounted) return;
-        busy.value = false;
         if (err != null) {
+          busy.value = false;
           error.value = err;
           return;
         }
+        // 试用结束期间订阅可能已经拉成空的（没节点），绑定送了时长后重新拉一次，
+        // 不然回到首页点连接还是连不上。也清掉「已提醒过到期」，下次到期还会再弹。
+        final url = await ref.read(panelAuthProvider.notifier).refreshSubscribeUrl();
+        if (url != null && url.isNotEmpty) {
+          await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
+        }
+        ref.read(dialogNotifierProvider.notifier).clearQuotaNotice();
+        if (!context.mounted) return;
+        busy.value = false;
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           SnackBar(content: Text('邮箱已绑定，以后用 ${emailCtrl.text.trim()} 登录')),
         );
@@ -133,7 +143,7 @@ class RegisterPage extends HookConsumerWidget {
                     children: [
                       Text(
                         bind
-                            ? '购买前需要绑定邮箱，换手机也能用它登录，已开的试用和订阅都不变。'
+                            ? '绑定后换手机也能用这个邮箱登录，买套餐也需要先绑定。已开的试用和订阅都不变。'
                                 '${bonusText.value != null ? '\n${bonusText.value}' : ''}'
                             : '注册成功即自动开通试用，登录后自动导入订阅。',
                         style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),

@@ -53,6 +53,10 @@ final panelAuthProvider =
 
 /// 邀请文案（服务器下发，改文案不用发版）：`bonus` = 奖励额度，`share` = 分享文案模板。
 /// 拿不到对应项为 null，UI 兜底（入口显示「查看邀请奖励」，分享用客户端内置文案）。
+/// 游客试用开关 / 绑定赠送文案（GslGuest，走 guest/comm/config，改了不用发版）。
+final guestOptionsProvider =
+    FutureProvider.autoDispose<({bool enabled, String suffix, String? bindBonusText})>((ref) => PanelApi().getGuestOptions());
+
 final inviteTextsProvider =
     FutureProvider.autoDispose<({String? bonus, String? share, String? linkTemplate})>((ref) => PanelApi().getInviteTexts());
 
