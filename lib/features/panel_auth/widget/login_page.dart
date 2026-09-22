@@ -107,7 +107,34 @@ class LoginPage extends HookConsumerWidget {
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
-                if (guestEnabled.value) ...[
+                // 这台手机登过正式账号：不给游客（防卸载重装反复领试用），按钮收起来，
+                // 提示放显眼处——不然还摆着「免注册」按钮，点了只会再弹同一句话。
+                if (notice.value != null) ...[
+                  const SizedBox(height: 20),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primaryContainer,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          notice.value!,
+                          style: theme.textTheme.titleSmall
+                              ?.copyWith(color: theme.colorScheme.onPrimaryContainer),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '用这个账号的邮箱和密码登录就行；忘了密码点下面「忘记密码」。想换个新账号，点「注册账号」。',
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: theme.colorScheme.onPrimaryContainer),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (guestEnabled.value) ...[
                   const SizedBox(height: 20),
                   FilledButton.tonal(
                     onPressed: loading ? null : startGuest,
@@ -128,10 +155,6 @@ class LoginPage extends HookConsumerWidget {
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
-                ],
-                if (notice.value != null) ...[
-                  const SizedBox(height: 12),
-                  Text(notice.value!, style: theme.textTheme.bodyMedium),
                 ],
                 const SizedBox(height: 24),
                 CustomTextFormField(
