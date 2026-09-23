@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
-import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class AccountPage extends HookConsumerWidget {
@@ -31,7 +30,7 @@ class AccountPage extends HookConsumerWidget {
     final a = account.value;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('会员中心')),
+      appBar: AppBar(title: const Text('账号')),
       body: RefreshIndicator(
         onRefresh: load,
         child: ListView(
@@ -93,35 +92,13 @@ class AccountPage extends HookConsumerWidget {
                 ),
               ),
             const SizedBox(height: 20),
-            if (a?.exhausted == true) ...[
-              FilledButton.icon(
-                icon: const Icon(Icons.group_add_outlined),
-                label: const Text('邀请好友试用'),
-                onPressed: () => openInvite(context,
-                    isGuest: auth.isGuest,
-                    bonus: ref.read(inviteTextsProvider).valueOrNull?.bonus),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.card_membership),
-                label: const Text('续费 / 升级套餐'),
-                onPressed: () => context.pushNamed('purchase'),
-              ),
-            ] else ...[
-              FilledButton.icon(
-                icon: const Icon(Icons.card_membership),
-                label: const Text('续费 / 升级套餐'),
-                onPressed: () => context.pushNamed('purchase'),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.group_add_outlined),
-                label: const Text('邀请好友'),
-                onPressed: () => openInvite(context,
-                    isGuest: auth.isGuest,
-                    bonus: ref.read(inviteTextsProvider).valueOrNull?.bonus),
-              ),
-            ],
+            // 这页只做「账号本身」的事：看详情、绑邮箱 / 改密码、退出。买套餐和邀请在
+            // 「我的」页和首页都有入口，这里再摆一遍只会让人分不清两页各管什么。
+            FilledButton.icon(
+              icon: const Icon(Icons.card_membership),
+              label: Text(a?.exhausted == true ? '去买套餐' : '续费 / 升级套餐'),
+              onPressed: () => context.pushNamed('purchase'),
+            ),
             const SizedBox(height: 8),
             // 游客没有密码可改：换成「绑定邮箱」。1.1.28 起绑定不再送时长，卖点改成说
             // 实话的那两条 —— 换手机能找回、电脑上也能用同一个套餐。

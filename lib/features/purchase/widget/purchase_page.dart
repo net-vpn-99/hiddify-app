@@ -155,9 +155,24 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
           t: t,
           offer: selected,
           onPay: selected == null ? null : () => _confirm(t, selected),
+          expiryHint: _expiryHint(account, selected),
         ),
       ],
     );
+  }
+
+  /// 「买完用到哪天」。没到期的按现有到期日往后顺延，已到期 / 没套餐的从今天算。
+  /// 面板实际是按自然月加的，这里拿档位的参考天数估，所以写「预计」，别写死。
+  static String? _expiryHint(PanelAccount? acc, PlanOffer? offer) {
+    if (offer == null) return null;
+    if (offer.periodDays <= 0) return '买完长期有效';
+    final now = DateTime.now();
+    final cur = acc?.expiredAt;
+    final renewing = cur != null && cur > 0 && cur * 1000 > now.millisecondsSinceEpoch;
+    final base = renewing ? DateTime.fromMillisecondsSinceEpoch(cur * 1000) : now;
+    final d = base.add(Duration(days: offer.periodDays));
+    final date = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    return renewing ? '预计用到 $date（在现有到期时间上顺延）' : '预计用到 $date';
   }
 
   Widget _benefits(PurchaseTokens t, PlanOffer? offer) {
@@ -514,7 +529,9 @@ class _AccountCard extends StatelessWidget {
           if (isGuest) ...[
             const SizedBox(height: 2),
             Text(
-              '这个号还没绑邮箱，只认这台手机。付完留个邮箱，换手机和电脑上就能用同一个套餐。',
+              // 短、准、不吓人。「只能本机使用」那种说法会被读成「买了就锁死」，
+              // 而事实是绑个邮箱就能换机 —— 两件事必须放在同一句里说完。
+              '只在这台手机有效，绑邮箱后可换机',
               style: TextStyle(color: t.secondary, fontSize: 11, height: 1.3),
             ),
           ],
@@ -697,11 +714,20 @@ class _OfferCard extends StatelessWidget {
 }
 
 class _CheckoutBar extends StatelessWidget {
-  const _CheckoutBar({required this.t, required this.offer, required this.onPay});
+  const _CheckoutBar({
+    required this.t,
+    required this.offer,
+    required this.onPay,
+    required this.expiryHint,
+  });
 
   final PurchaseTokens t;
   final PlanOffer? offer;
   final VoidCallback? onPay;
+
+  /// 「买完用到哪天」。付钱之前最想知道的一件事，原来这页从头到尾没写过，
+  /// 用户得自己拿当前到期时间加上档位天数去算。
+  final String? expiryHint;
 
   @override
   Widget build(BuildContext context) {
@@ -730,6 +756,11 @@ class _CheckoutBar extends StatelessWidget {
                     Text(offer!.trafficLabel, style: TextStyle(color: t.secondary, fontSize: 11)),
                 ],
               ),
+              if (expiryHint != null) ...[
+                const SizedBox(height: 2),
+                Text(expiryHint!,
+                    style: TextStyle(color: t.text, fontSize: 12, fontWeight: FontWeight.w600)),
+              ],
               const SizedBox(height: 8),
               Row(
                 children: [

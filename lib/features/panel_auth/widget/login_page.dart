@@ -121,21 +121,14 @@ class LoginPage extends HookConsumerWidget {
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
-                // 游客点「已有账号？去登录」进来的：把代价先说清楚（行业惯例是**提交前**
-                // 讲，不是登录完才发现试用没了），并且强调现在还没换、退回去照旧能用。
+                // 游客点「已有账号？去登录」进来的：代价要在提交前讲，但一句就够。
+                // 上一版写了一整段，用户反馈「又啰嗦又没结果」。
                 if (auth.isGuest) ...[
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '你现在用的是这台手机的免注册试用。登录已有账号后，App 会切换到那个账号，这台手机上的试用记录不会带过去（它本来也只在这台手机上）。\n还没登录之前什么都不会变 —— 直接返回就还是现在这个试用。',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant, height: 1.4),
-                    ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '登录后会换成那个账号，当前试用不带过去。没登录前什么都不变。',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                 ],
                 // 这台手机登过正式账号：不给游客（防卸载重装反复领试用），按钮收起来，
@@ -165,7 +158,9 @@ class LoginPage extends HookConsumerWidget {
                       ],
                     ),
                   ),
-                ] else if (guestEnabled.value) ...[
+                  // 已经在用试用的人不该看到「免注册，直接试用」—— 他就是从那个试用点
+                  // 进来的，这颗按钮只会让他以为自己还没开通。只给真正没账号的人看。
+                ] else if (guestEnabled.value && !auth.isGuest) ...[
                   const SizedBox(height: 20),
                   FilledButton.tonal(
                     onPressed: loading ? null : startGuest,
