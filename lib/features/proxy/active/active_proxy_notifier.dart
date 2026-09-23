@@ -90,11 +90,13 @@ class ActiveProxyNotifier extends _$ActiveProxyNotifier with AppLogger {
 
   final _urlTestThrottler = Throttler(const Duration(seconds: 1));
 
-  Future<void> urlTest(String? groupTag_) async {
+  /// [haptic]：只有用户自己点的时候才震。后台的稳定性探测每 5 秒跑一次，
+  /// 带上震动就是连上之后手机一直隔几秒抖一下（1.1.3 起的老毛病，1.1.29 修）。
+  Future<void> urlTest(String? groupTag_, {bool haptic = true}) async {
     final groupTag = groupTag_ ?? "";
     _urlTestThrottler(() async {
       if (state case AsyncData()) {
-        await ref.read(hapticServiceProvider.notifier).lightImpact();
+        if (haptic) await ref.read(hapticServiceProvider.notifier).lightImpact();
         await ref.read(proxyRepositoryProvider).urlTest(groupTag).getOrElse((err) {
           loggy.warning("error testing group", err);
           throw err;

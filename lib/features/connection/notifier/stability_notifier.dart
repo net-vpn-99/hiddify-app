@@ -67,7 +67,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
   Future<void> _probe() async {
     if (!_running) return;
     try {
-      await ref.read(activeProxyNotifierProvider.notifier).urlTest("");
+      await ref.read(activeProxyNotifierProvider.notifier).urlTest("", haptic: false);
     } catch (_) {}
     await Future<void>.delayed(const Duration(milliseconds: 2500));
     if (!_running) return;
