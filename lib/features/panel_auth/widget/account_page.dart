@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
@@ -68,10 +69,22 @@ class AccountPage extends HookConsumerWidget {
               Card(
                 child: Column(
                   children: [
-                    // 账号编号：所有人都有，报给客服就能查到人（游客没邮箱，原来根本报不出
-                    // 任何东西）。这是面板 uuid 的前 8 位，不是订阅令牌，给人看没风险。
+                    // 账号编号：所有人都有，报给客服就能查到人（没注册的号没有邮箱，
+                    // 原来根本报不出任何东西）。它是 uuid 派生的，不是订阅令牌，给人看没风险。
                     if (auth.accountNo != null) ...[
-                      _row('账号编号', '#${auth.accountNo}'),
+                      ListTile(
+                        dense: true,
+                        title: const Text('账号编号'),
+                        subtitle: const Text('点一下复制，报给客服能查到你'),
+                        trailing: Text(auth.accountNo!,
+                            style: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 1)),
+                        onTap: () async {
+                          await Clipboard.setData(ClipboardData(text: auth.accountNo!));
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.maybeOf(context)
+                              ?.showSnackBar(const SnackBar(content: Text('账号编号已复制')));
+                        },
+                      ),
                       const Divider(height: 1),
                     ],
                     _row('当前套餐', a.planName ?? '—'),

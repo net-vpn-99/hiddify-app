@@ -31,22 +31,36 @@ class PanelAuthState {
   /// 游客（GslGuest 插件免注册开的号）：邮箱是占位的 g-xxx@guest.invalid。
   bool get isGuest => email != null && email!.toLowerCase().endsWith(PanelApi.guestEmailSuffix);
 
-  /// 账号编号 —— **游客也有**，取面板 uuid 的前 8 位。
+  /// 账号编号 —— **免注册的号也有**，给人看、给人念、报给客服用。
   ///
-  /// 免注册的人在 App 里原来有四种叫法（游客用户 / 免注册试用 / 这台手机的试用 /
-  /// 还没绑定邮箱），指的其实是同一个账号，用户看着就是懵。给他一个看得见、报得出来的
-  /// 号：他**有账号**，只是还没绑邮箱。买套餐就买在这个号上，客服也能凭它查到人。
+  /// 格式 `A4K7-P92`：面板 uuid 的前 8 位十六进制换算成 7 位 Crockford Base32
+  /// （字母表去掉了 I L O U，不会跟 1 和 0 看混），中间加一横分段。
+  ///
+  /// ⚠️ **不要改成面板的用户 ID**：那是全站递增的，等于把「我们一共多少用户」印在
+  /// 每个客户的界面上。uuid 派生的编号同样唯一，还不暴露规模。
+  ///
+  /// ⚠️ 这个编号**不能用来登录**（免注册的号靠设备号认人，换台手机就没了）。
+  /// 客服按编号找人：把编号反算回 hex 前 8 位，`SELECT * FROM v2_user WHERE uuid LIKE '<hex>%'`，
+  /// 步骤写在 VPN 仓库 docs/客户端.md §2a-2。
   String? get accountNo {
     final u = account?.uuid?.replaceAll('-', '');
     if (u == null || u.length < 8) return null;
-    return u.substring(0, 8).toUpperCase();
+    var n = int.tryParse(u.substring(0, 8), radix: 16);
+    if (n == null) return null;
+    const abc = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    var s = '';
+    for (var i = 0; i < 7; i++) {
+      s = abc[n! % 32] + s;
+      n = n ~/ 32;
+    }
+    return '${s.substring(0, 4)}-${s.substring(4)}';
   }
 
-  /// 给人看的账号名：绑了邮箱就是邮箱，没绑就是「账号 #A1B2C3D4」。
+  /// 给人看的账号名：注册过就是邮箱，没注册就是「账号 A4K7-P92」。
   String get accountLabel {
     if (!isGuest && email != null && email!.isNotEmpty) return email!;
     final no = accountNo;
-    return no == null ? '我的账号' : '账号 #$no';
+    return no == null ? '我的账号' : '账号 $no';
   }
 
   PanelAuthState copyWith({
