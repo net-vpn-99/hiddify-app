@@ -1,30 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
-import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
-import 'package:hiddify/features/profile/data/profile_data_providers.dart';
-import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
-import 'package:hiddify/features/proxy/model/node_display.dart';
-import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
+import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-typedef LineOption = ({String name, String desc});
+export 'package:hiddify/features/proxy/line/line_source.dart' show LineOption, activeProfileLinesProvider;
 
-/// 当前订阅里的线路列表，从本地 profile 文件离线读出来（不用连接）。
-final activeProfileLinesProvider = FutureProvider<List<LineOption>>((ref) async {
-  final profile = await ref.watch(activeProfileProvider.future);
-  if (profile == null) return const [];
-  final repo = await ref.watch(profileRepositoryProvider.future);
-  final raw = await repo.getRawConfig(profile.id).getOrElse((_) => '').run();
-  if (raw.isEmpty) return const [];
-  return parseSubscriptionLines(raw);
-});
-
-/// 首页"光速卡"点一下弹出来的线路选择器（底部抽屉）。断开也能选。
+/// 线路页：首页线路条点「换线路」打开。
+///
+/// 断开也能看、没账号也能看、到期也能看 —— 这三种情况下显示的是公开清单（只有名字），
+/// 点具体某条时才弹引导（去买套餐 / 登录）。就是推广要的「先看得到，点的时候才拦」。
+///
+/// 故意**不做**「自动选最快」和延迟数字：
+///  - 自动选最快 = 内核 urltest，要先连上再逐条发真实请求测，走隧道扣流量；而且所有人都
+///    测出同一条最快就一起涌过去，跟服务端的负载均衡对着干（订阅模板早就关了 urltest）。
+///    推荐哪条由服务端负载均衡决定 —— 订阅第一条就是给这个用户的，标个「推荐」就够了。
+///  - 延迟数字会被用户拿去跟别家比，而别家显示的经常是到中转入口、不是到落地的。
 Future<void> showLinePicker(BuildContext context, WidgetRef ref) async {
   await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
+    isScrollControlled: true,
     builder: (context) => const _LinePickerSheet(),
   );
 }
@@ -35,46 +33,63 @@ class _LinePickerSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-
-    final offline = ref.watch(activeProfileLinesProvider);
-    // 连着的时候内核实时列表兜底（离线解析万一失败）
-    final liveGroup = ref.watch(proxiesOverviewNotifierProvider).valueOrNull;
+    final set = ref.watch(lineSetProvider);
     final currentName = ref.watch(Preferences.lastNodeName);
 
-    final offlineOptions = offline.valueOrNull ?? const <LineOption>[];
-    final List<LineOption> options;
-    if (offlineOptions.isNotEmpty) {
-      options = offlineOptions;
-    } else if (liveGroup != null && liveGroup.items.isNotEmpty) {
-      options = [for (final it in liveGroup.items) splitNodeName(it.tagDisplay)];
-    } else {
-      options = const [];
-    }
+    final value = set.valueOrNull;
+    final options = value?.lines ?? const <LineOption>[];
+    final locked = value?.locked ?? false;
 
     Widget body;
     if (options.isNotEmpty) {
       final selName = currentName.isNotEmpty ? currentName : options.first.name;
       body = Flexible(
-        child: ListView(
+        child: ListView.builder(
           shrinkWrap: true,
-          children: [
-            for (final o in options)
-              ListTile(
-                title: Text(o.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: o.desc.isEmpty ? null : Text(o.desc),
-                trailing: o.name == selName ? Icon(Icons.check_rounded, color: theme.colorScheme.primary) : null,
-                selected: o.name == selName,
-                onTap: () => _pick(context, ref, o),
+          itemCount: options.length,
+          itemBuilder: (context, i) {
+            final o = options[i];
+            // 推荐 = 服务端负载均衡排在订阅第一位的那条（节点粘性也认这一条）。
+            final recommended = i == 0 && !locked;
+            return ListTile(
+              title: Row(
+                children: [
+                  Flexible(child: Text(o.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+                  if (recommended) ...[
+                    const Gap(8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '推荐',
+                        style: theme.textTheme.labelSmall
+                            ?.copyWith(color: theme.colorScheme.onPrimaryContainer),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-          ],
+              subtitle: o.desc.isEmpty ? null : Text(o.desc),
+              trailing: locked
+                  ? Icon(Icons.lock_outline_rounded, size: 18, color: theme.colorScheme.outline)
+                  : (o.name == selName
+                        ? Icon(Icons.check_rounded, color: theme.colorScheme.primary)
+                        : null),
+              selected: !locked && o.name == selName,
+              onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
+            );
+          },
         ),
       );
-    } else if (offline.isLoading) {
+    } else if (set.isLoading) {
       body = const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()));
     } else {
       body = const Padding(
         padding: EdgeInsets.all(20),
-        child: Text('没读到线路。点右上角「更新订阅」，或先连接一次再回来。'),
+        child: Text('暂时读不到线路，检查一下网络，或在「我的」页联系客服。'),
       );
     }
 
@@ -87,28 +102,38 @@ class _LinePickerSheet extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
             child: Text('选择线路', style: theme.textTheme.titleMedium),
           ),
+          if (locked && options.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+              child: Text(
+                '这些是我们现有的线路，买套餐后就能选着用。',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ),
           body,
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.swap_horiz_rounded),
-            title: const Text('管理 / 更换订阅'),
-            onTap: () {
-              Navigator.of(context).pop();
-              ref.read(bottomSheetsNotifierProvider.notifier).showProfilesOverview();
-            },
-          ),
           const Gap(8),
         ],
       ),
     );
   }
 
-  /// 选线路：只记偏好 + 立即更新首页卡显示；实际切换由 autoLineFixer 统一做
+  /// 选线路：只记偏好 + 立即更新首页显示；实际切换由 autoLineFixer 统一做
   /// （已连接 → 立刻切；没连接 → 下次连接时按名字切）。
   Future<void> _pick(BuildContext context, WidgetRef ref, LineOption o) async {
     await ref.read(Preferences.preferredLineName.notifier).update(o.name);
     await ref.read(Preferences.lastNodeName.notifier).update(o.name);
     await ref.read(Preferences.lastNodeDesc.notifier).update(o.desc);
     if (context.mounted) Navigator.of(context).pop();
+  }
+
+  /// 点了连不上的线路：按他缺什么给什么（有账号但到期 → 买套餐；没账号 → 登录 / 试用）。
+  Future<void> _promptUnlock(BuildContext context, WidgetRef ref) async {
+    Navigator.of(context).pop();
+    final account = ref.read(panelAuthProvider).account;
+    if (account != null) {
+      await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(account, force: true);
+      return;
+    }
+    await ref.read(dialogNotifierProvider.notifier).showNeedAccount();
   }
 }

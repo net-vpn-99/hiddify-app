@@ -15,6 +15,7 @@ import 'package:hiddify/core/theme/theme_extensions.dart';
 import 'package:hiddify/core/widget/animated_text.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
@@ -87,8 +88,10 @@ class ConnectionButton extends HookConsumerWidget {
           await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(account!, force: true);
         },
         enabled: true,
-        label: account?.stateSlug == 'expired' ? '会员已到期' : '流量已用完',
-        hint: '点按钮邀请好友或续费',
+        label: account?.stateSlug != 'expired'
+            ? '流量已用完'
+            : (ref.watch(panelAuthProvider.select((s) => s.isGuest)) ? '试用已结束' : '会员已到期'),
+        hint: '点一下买套餐继续用',
         buttonColor: buttonTheme.idleColor!,
         newButtonColor: buttonTheme.idleColor!,
         animated: false,
@@ -119,12 +122,17 @@ class ConnectionButton extends HookConsumerWidget {
         },
         AsyncData(value: Disconnected()) || AsyncError() => () async {
           if (ref.read(activeProfileProvider).valueOrNull == null) {
-            // OneRay: 没订阅 —— 没登录就先引导登录（订阅登录后自动导入），
-            // 不再弹 Hiddify 那个「选择配置文件」通用空状态。
+            // OneRay: 没订阅 —— 没账号的话先把游客号补开一次（首页开号可能还没跑完，
+            // 或者上次网络不好失败了），补不出来才弹引导。1.1.28 起不再直接把人踢去
+            // 登录页：首页不拦人，点下去才说话。
             if (!ref.read(Preferences.panelLoggedIn)) {
-              ref.read(inAppNotificationControllerProvider).showInfoToast('请先登录光速账号');
-              context.go('/login');
-              return;
+              await ref.read(guestBootstrapProvider.notifier).ensure();
+              if (!ref.read(Preferences.panelLoggedIn)) {
+                await ref
+                    .read(dialogNotifierProvider.notifier)
+                    .showNeedAccount(message: ref.read(guestBootstrapProvider).message);
+                return;
+              }
             }
             // 登录了却没有可用订阅：多半是试用 / 会员到期或流量用完。补一次账号再判断，
             // 别再给用户看「还没有 VPN 服务器？免费设置一个」那种误导文案。

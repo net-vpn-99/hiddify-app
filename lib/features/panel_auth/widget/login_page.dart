@@ -2,16 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// 开游客号正在进行中。登录页若被重建（路由刷新等），自动开号不能再跑一遍：
-/// 两次并发会各自导入一次订阅，用户会多出一条重复线路。
-bool _guestStartInFlight = false;
-
 /// 光速会员账号登录。登录成功后自动把订阅加成配置并回主页。
+///
+/// 1.1.28 起这一页**不再是必经之路**：装好打开直接进首页，游客号在首页后台开
+/// （guestBootstrapProvider）。到这一页只有两种人 —— 首页点了「已有账号？去登录」的，
+/// 和游客开不出来时点提示条进来的。所以这里不再自动开号，只留一个手动按钮。
 class LoginPage extends HookConsumerWidget {
   const LoginPage({super.key});
 
@@ -30,46 +31,38 @@ class LoginPage extends HookConsumerWidget {
     final guestBusy = useState(false);
     final notice = useState<String?>(null);
 
+    // 用户主动点「免注册，直接试用」：开号走首页那套（同一把锁，不会开两个号），
+    // 顺便把之前的「已退出」标记清掉，以后打开又能自动开号了。
     Future<void> startGuest() async {
-      if (_guestStartInFlight) return;
-      _guestStartInFlight = true;
       errorText.value = null;
       notice.value = null;
       guestBusy.value = true;
-      try {
-        final r = await ref.read(panelAuthProvider.notifier).guestLogin();
-        if (!context.mounted) return;
-        if (r.hasAccountMask != null) {
-          guestBusy.value = false;
-          notice.value = r.hasAccountMask!.isEmpty
-              ? '这台手机登录过账号，请直接登录'
-              : '这台手机登录过 ${r.hasAccountMask}，请直接登录';
-          return;
-        }
-        final url = r.subscribeUrl;
-        if (r.error != null || url == null || url.isEmpty) {
-          guestBusy.value = false;
-          errorText.value = r.error ?? '免注册试用暂时不可用，请注册账号';
-          return;
-        }
-        await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
-        if (!context.mounted) return;
-        guestBusy.value = false;
+      final boot = ref.read(guestBootstrapProvider.notifier);
+      boot.reset();
+      await ref.read(Preferences.guestOptOut.notifier).update(false);
+      await boot.ensure();
+      if (!context.mounted) return;
+      guestBusy.value = false;
+      final st = ref.read(guestBootstrapProvider);
+      if (!st.blocked) {
         context.go('/home');
-      } finally {
-        _guestStartInFlight = false;
+        return;
+      }
+      if (st.reason == GuestBlockReason.hasAccount) {
+        notice.value = st.message;
+      } else {
+        errorText.value = st.message ?? '免注册试用暂时不可用，请注册账号';
       }
     }
 
-    // 第一次打开、没主动退出过：不用填任何东西，直接开游客。
+    // 服务端开着游客才显示那个按钮；这里只读开关，不自动开号。
     useEffect(() {
       Future(() async {
         final opts = await ref.read(panelAuthProvider.notifier).guestOptions();
         if (!context.mounted) return;
         guestEnabled.value = opts.enabled;
-        if (opts.enabled && !ref.read(Preferences.guestOptOut) && !ref.read(panelAuthProvider).loggedIn) {
-          await startGuest();
-        }
+        final boot = ref.read(guestBootstrapProvider);
+        if (boot.reason == GuestBlockReason.hasAccount) notice.value = boot.message;
       });
       return null;
     }, const []);

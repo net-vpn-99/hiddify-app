@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/purchase/model/plan_offer.dart';
 
@@ -39,6 +40,21 @@ class PurchaseService {
     final offers = <PlanOffer>[];
     for (final p in list) {
       if (p is Map) offers.addAll(PlanOffer.expand(p.cast<String, dynamic>()));
+    }
+    final (recPeriod, recBadge) = await _recommended();
+    if (recPeriod.isEmpty) return offers;
+    return [
+      for (final o in offers) o.period == recPeriod ? o.copyWith(recommended: true, badge: recBadge) : o,
+    ];
+  }
+
+  /// 没账号时的套餐清单：走 GslGuest 的免登录 catalog，字段和 `user/plan/fetch` 一样，
+  /// 所以共用 [PlanOffer.expand]。只给看，下单仍然要账号（点购买时现开游客号）。
+  Future<List<PlanOffer>> fetchPublicPlans() async {
+    final catalog = await PanelApi().getCatalog();
+    final offers = <PlanOffer>[];
+    for (final p in catalog.plans) {
+      offers.addAll(PlanOffer.expand(p));
     }
     final (recPeriod, recBadge) = await _recommended();
     if (recPeriod.isEmpty) return offers;

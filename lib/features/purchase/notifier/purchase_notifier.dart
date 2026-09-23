@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
+import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
@@ -162,8 +163,15 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
   Future<void> loadPlans() async {
     state = state.copyWith(plansLoading: true, plansError: null);
     final token = await _token();
+    // 没账号也要看得到套餐 —— 走 GslGuest 的免登录清单（1.1.28）。真下单时才需要账号。
     if (token == null || token.isEmpty) {
-      state = state.copyWith(plansLoading: false, plansError: '请先登录');
+      final offers = await _service.fetchPublicPlans();
+      state = state.copyWith(
+        plansLoading: false,
+        plans: offers,
+        plansError: offers.isEmpty ? '暂时读不到套餐，检查一下网络' : null,
+        selected: _pickDefault(offers),
+      );
       return;
     }
     try {
@@ -207,9 +215,15 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
   /// 拿后端应付 → 结账 → 打开收银台。
   Future<void> startPurchase(PlanOffer offer) async {
     if (state.stage == PurchaseStage.working) return;
-    final token = await _token();
+    var token = await _token();
     if (token == null || token.isEmpty) {
-      state = state.copyWith(error: '请先登录');
+      // 从免登录的套餐清单点进来的：现开一个游客号，钱就挂在这个号上（GslGuest 1.1.0
+      // 允许游客下单）。付完之后购买页会劝他绑邮箱，不绑也能用。
+      await ref.read(guestBootstrapProvider.notifier).ensure();
+      token = await _token();
+    }
+    if (token == null || token.isEmpty) {
+      state = state.copyWith(error: ref.read(guestBootstrapProvider).message ?? '请先登录账号');
       return;
     }
     state = state.copyWith(stage: PurchaseStage.working, error: null, refreshFailed: false, fulfilled: false);
@@ -466,7 +480,10 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
       if (profile is RemoteProfileEntity) {
         return await ref.read(updateProfileNotifierProvider(profile.id).notifier).updateProfile(profile);
       }
-      return true;
+      // 还一条订阅都没有 —— 免登录看套餐直接买的人就是这样（1.1.28 起有这条路）。
+      // 付完得把订阅导进来，不然回首页照样连不上。
+      await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
+      return ref.read(addProfileNotifierProvider) is! AsyncError;
     } catch (_) {
       return false;
     }

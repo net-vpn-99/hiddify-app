@@ -5,6 +5,9 @@ import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
 
+/// 游客试用的服务端开关与文案（GslGuest 插件下发，改了不用发版）。
+typedef GuestOptions = ({bool enabled, String suffix, String? bindBonusText, bool canBuy});
+
 /// 对接 Xboard 会员系统。接口与桌面版 OneRay 保持一致
 /// （见 VPN 仓库 src/control/XboardControlPlane.cpp）。
 class PanelApi {
@@ -176,12 +179,16 @@ class PanelApi {
 
   /// 游客试用开关 / 文案（GslGuest 插件，走 guest/comm/config）。拿不到 gsl_guest 对象
   /// = 服务端没装插件，enabled=false（不走游客，照旧登录页）。
-  Future<({bool enabled, String suffix, String? bindBonusText})> getGuestOptions() async {
+  ///
+  /// canBuy = 游客能不能不绑邮箱直接下单（GslGuest 1.1.0 的「允许游客直接购买」）。
+  /// 读不到按 false 处理 —— 和老服务端行为一致（购买前先跳绑定页），免得客户端放行
+  /// 了服务端却拦着，用户填完支付信息才报错。
+  Future<GuestOptions> getGuestOptions() async {
     try {
       final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
       final data = _dataOf(res.data);
       final g = data?['gsl_guest'];
-      if (g is! Map) return (enabled: false, suffix: guestEmailSuffix, bindBonusText: null);
+      if (g is! Map) return _guestOptionsOff;
       final enabled = g['enabled'] == true || g['enabled'] == 1 || g['enabled'] == '1';
       final suffix = g['email_suffix'] is String && (g['email_suffix'] as String).isNotEmpty
           ? g['email_suffix'] as String
@@ -191,9 +198,41 @@ class PanelApi {
         enabled: enabled,
         suffix: suffix,
         bindBonusText: bonus is String && bonus.trim().isNotEmpty ? bonus.trim() : null,
+        canBuy: g['can_buy'] == true || g['can_buy'] == 1 || g['can_buy'] == '1',
       );
     } catch (_) {
-      return (enabled: false, suffix: guestEmailSuffix, bindBonusText: null);
+      return _guestOptionsOff;
+    }
+  }
+
+  static const GuestOptions _guestOptionsOff =
+      (enabled: false, suffix: guestEmailSuffix, bindBonusText: null, canBuy: false);
+
+  /// 免登录的节点 + 套餐清单（GslGuest 1.1.0 的 catalog）。
+  ///
+  /// 首页和购买页在「还没开成号」「试用已到期」这两种状态下也得有东西可显示，而这两种
+  /// 状态下订阅是空的、`user/plan/fetch` 也调不了。节点只有名字，拿到也连不上。
+  /// 插件没装 / 网络不通 → 两个空列表，调用方自己降级。
+  Future<({List<String> nodeNames, List<Map<String, dynamic>> plans})> getCatalog() async {
+    try {
+      final res = await _dio.get<dynamic>('/api/v1/guest/gsl_guest/catalog');
+      final data = _dataOf(res.data);
+      final names = <String>[];
+      if (data?['nodes'] case final List raw) {
+        for (final n in raw) {
+          final name = n is Map ? n['name'] : n;
+          if (name is String && name.trim().isNotEmpty) names.add(name.trim());
+        }
+      }
+      final plans = <Map<String, dynamic>>[];
+      if (data?['plans'] case final List raw) {
+        for (final p in raw) {
+          if (p is Map) plans.add(p.cast<String, dynamic>());
+        }
+      }
+      return (nodeNames: names, plans: plans);
+    } catch (_) {
+      return (nodeNames: const <String>[], plans: const <Map<String, dynamic>>[]);
     }
   }
 

@@ -3,9 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:hiddify/features/diagnostic/diag_service.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-/// 「我的 → 帮助与客服」里的「连接诊断」。收集日志+设置，上传后弹出诊断码给客服。
+/// 「我的」页里的「连接诊断」。收集日志+设置，上传后弹出诊断码给客服。
+///
+/// [builder] 给「我的」页那排方块用：长什么样由调用方决定，这里只管跑和给进度。
 class DiagTile extends ConsumerStatefulWidget {
-  const DiagTile({super.key});
+  const DiagTile({super.key, this.builder});
+
+  final Widget Function(BuildContext context, bool busy, VoidCallback? run)? builder;
 
   @override
   ConsumerState<DiagTile> createState() => _DiagTileState();
@@ -58,6 +62,8 @@ class _DiagTileState extends ConsumerState<DiagTile> {
 
   @override
   Widget build(BuildContext context) {
+    final builder = widget.builder;
+    if (builder != null) return builder(context, _busy, _busy ? null : _run);
     return Material(
       child: ListTile(
         leading: const Icon(Icons.bug_report_outlined),

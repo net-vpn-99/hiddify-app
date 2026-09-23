@@ -112,11 +112,12 @@ class AccountPage extends HookConsumerWidget {
               ),
             ],
             const SizedBox(height: 8),
-            // 游客没有密码可改：换成「绑定邮箱」（GslGuest，绑定再送时长）。
+            // 游客没有密码可改：换成「绑定邮箱」。1.1.28 起绑定不再送时长，卖点改成说
+            // 实话的那两条 —— 换手机能找回、电脑上也能用同一个套餐。
             if (auth.isGuest)
               FilledButton.tonalIcon(
                 icon: const Icon(Icons.mark_email_read_outlined),
-                label: const Text('绑定邮箱，换手机也能登录'),
+                label: const Text('绑定邮箱，换手机和电脑也能用'),
                 onPressed: () async {
                   final bound = await context.pushNamed<bool>('bindEmail');
                   if (bound == true) await load();

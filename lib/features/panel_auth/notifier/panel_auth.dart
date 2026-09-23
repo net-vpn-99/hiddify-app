@@ -53,9 +53,15 @@ final panelAuthProvider =
 
 /// 邀请文案（服务器下发，改文案不用发版）：`bonus` = 奖励额度，`share` = 分享文案模板。
 /// 拿不到对应项为 null，UI 兜底（入口显示「查看邀请奖励」，分享用客户端内置文案）。
-/// 游客试用开关 / 绑定赠送文案（GslGuest，走 guest/comm/config，改了不用发版）。
-final guestOptionsProvider =
-    FutureProvider.autoDispose<({bool enabled, String suffix, String? bindBonusText})>((ref) => PanelApi().getGuestOptions());
+/// 游客试用开关 / 绑定赠送文案 / 能不能直接买（GslGuest，走 guest/comm/config，改了不用发版）。
+final guestOptionsProvider = FutureProvider<GuestOptions>((ref) => PanelApi().getGuestOptions());
+
+/// 免登录的节点 + 套餐清单（GslGuest catalog）。没开成游客号、试用到期时首页和购买页
+/// 靠它撑住，不至于一片空白。拉不到就是两个空列表，UI 自己降级。
+final catalogProvider =
+    FutureProvider<({List<String> nodeNames, List<Map<String, dynamic>> plans})>(
+      (ref) => PanelApi().getCatalog(),
+    );
 
 final inviteTextsProvider =
     FutureProvider.autoDispose<({String? bonus, String? share, String? linkTemplate})>((ref) => PanelApi().getInviteTexts());
@@ -139,7 +145,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
   Future<({bool emailVerify, bool inviteForce, bool recaptcha})> registerOptions() =>
       _api.getRegisterOptions();
 
-  Future<({bool enabled, String suffix, String? bindBonusText})> guestOptions() => _api.getGuestOptions();
+  Future<GuestOptions> guestOptions() => _api.getGuestOptions();
 
   /// 免注册试用：按本机 ANDROID_ID 开 / 取回游客号，成功返回订阅地址。
   /// 这台设备登过正式账号时返回 hasAccountMask（让用户直接登录），不开游客。

@@ -7,6 +7,7 @@ import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/failures.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/widget/adaptive_icon.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
@@ -14,6 +15,9 @@ import 'package:hiddify/features/app_update/notifier/app_update_state.dart';
 import 'package:hiddify/gen/assets.gen.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+
+/// 版本号被连点了几下（跨重建保留，所以放在 widget 外面）。
+int _versionTaps = 0;
 
 class AboutPage extends HookConsumerWidget {
   const AboutPage({super.key});
@@ -98,7 +102,21 @@ class AboutPage extends HookConsumerWidget {
                     children: [
                       Text(t.common.appTitle, style: Theme.of(context).textTheme.titleLarge),
                       const Gap(4),
-                      Text("${t.common.version} ${appInfo.presentVersion}"),
+                      // 连点 5 次版本号 = 开 / 关「我的」页里的高级设置（客服排障用）。
+                      // 普通用户碰不到，我们也不用为了改个 DNS 让人重装。
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () async {
+                          _versionTaps++;
+                          if (_versionTaps < 5) return;
+                          _versionTaps = 0;
+                          final on = !ref.read(Preferences.devMode);
+                          await ref.read(Preferences.devMode.notifier).update(on);
+                          if (!context.mounted) return;
+                          CustomToast.success(on ? '高级设置已显示在「我的」页' : '高级设置已隐藏').show(context);
+                        },
+                        child: Text("${t.common.version} ${appInfo.presentVersion}"),
+                      ),
                     ],
                   ),
                 ],

@@ -64,6 +64,10 @@ class GeneralPage extends HookConsumerWidget {
             ),
           ],
           if (PlatformUtils.isAndroid) const BatteryOptimizationWidget(),
+          // 下面这些普通用户改了只会把自己搞挂（内存限制 / 调试模式 / 日志级别 / 测速地址 /
+          // urltest 间隔 / Clash 端口 / 内核选择）。默认收起来，「关于」页连点版本号 5 次
+          // 解锁 devMode 才显示 —— 客服排障时要用。见 settings_page.dart 的说明。
+          if (ref.watch(Preferences.devMode)) ...[
           SwitchListTile.adaptive(
             title: Text(t.pages.settings.general.memoryLimit),
             subtitle: Text(t.pages.settings.general.memoryLimitMsg),
@@ -133,6 +137,7 @@ class GeneralPage extends HookConsumerWidget {
             value: ref.watch(ConfigOptions.useXrayCoreWhenPossible),
             onChanged: ref.read(ConfigOptions.useXrayCoreWhenPossible.notifier).update,
           ),
+          ],
         ],
       ),
     );

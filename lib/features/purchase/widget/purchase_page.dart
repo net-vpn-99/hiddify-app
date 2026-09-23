@@ -207,8 +207,11 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
   }
 
   Future<void> _confirm(PurchaseTokens t, PlanOffer offer) async {
-    // 游客（GslGuest）：钱不能挂在找不回的号上，先绑定邮箱，绑完接着付（服务端也会拦）。
-    if (ref.read(panelAuthProvider).isGuest) {
+    // 1.1.28 起游客默认不用先绑邮箱就能买（GslGuest 1.1.0 的「允许游客直接购买」）。
+    // 后台把那个开关关掉时服务端仍会拦下单，所以这里也跟着先跳绑定页 —— 不然用户
+    // 填完支付信息才被服务端退回来。
+    final canBuy = ref.read(guestOptionsProvider).valueOrNull?.canBuy ?? false;
+    if (!canBuy && ref.read(panelAuthProvider).isGuest) {
       final bound = await context.pushNamed<bool>('bindEmail');
       if (bound != true || !mounted) return;
     }
@@ -359,12 +362,52 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                 child: const Text('重新刷新'),
               ),
             ],
+            // 游客买完：这时候才劝他留邮箱。不拦着用 —— 套餐已经生效了，这里只说清代价。
+            // 没有邮箱的号只认这台手机的设备号，换手机 / 恢复出厂就找不回来了，电脑上
+            // 也享受不到这个套餐（那是另一台设备 = 另一个游客号）。
+            if (ref.watch(panelAuthProvider).isGuest) ...[
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: t.raised,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: t.warning.withValues(alpha: .5)),
+                ),
+                child: Column(
+                  children: [
+                    Text('留个邮箱，保住这个套餐',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: t.text)),
+                    const SizedBox(height: 6),
+                    Text(
+                      '现在这个账号只认这台手机。留个邮箱，换手机和电脑上也能用同一个套餐，'
+                      '想拿邀请返利也需要它。',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: t.secondary, height: 1.4),
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: t.primary, foregroundColor: t.onPrimary),
+                      onPressed: () => context.pushNamed('bindEmail'),
+                      child: const Text('绑定邮箱'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: t.primary, foregroundColor: t.onPrimary),
-              onPressed: () => context.canPop() ? context.pop() : context.goNamed('home'),
-              child: const Text('完成'),
-            ),
+            // 游客这一屏的主按钮是「绑定邮箱」，「完成」退成次要的，别抢。
+            if (ref.watch(panelAuthProvider).isGuest)
+              TextButton(
+                onPressed: () => context.canPop() ? context.pop() : context.goNamed('home'),
+                child: const Text('以后再说，先用着'),
+              )
+            else
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: t.primary, foregroundColor: t.onPrimary),
+                onPressed: () => context.canPop() ? context.pop() : context.goNamed('home'),
+                child: const Text('完成'),
+              ),
           ],
         ),
       ),

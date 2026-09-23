@@ -14,8 +14,10 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'general_preferences.g.dart';
 
-/// OneRay: 这次启动是「装好后的第一次」（bootstrap 里置位）。没有引导页了，首启直接进登录页，
-/// 游客试用在登录页自动开号。别改成在 router 的 redirect 里写偏好 —— 会重建登录页、开号跑两次。
+/// OneRay: 这次启动是「装好后的第一次」（bootstrap 里置位）。没有引导页，首启和平时一样
+/// 直接进首页，游客号由 guestBootstrapProvider 在后台开。这个标记留给诊断 / 埋点。
+/// 别改成在 router 的 redirect 里写偏好 —— 写入会通知 RefreshListenable，页面白重建一遍。
+// ignore: unused_element
 bool firstLaunchAfterInstall = false;
 
 bool _debugIntroPage = false;
@@ -105,6 +107,10 @@ abstract class Preferences {
 
   // OneRay: 主动退出过（游客或正式账号）就不再自动开游客；登录页的「免注册试用」照样能点。
   static final guestOptOut = PreferencesNotifier.create<bool, bool>("guest_opt_out", false);
+
+  // OneRay: 「关于」页连点版本号 5 次解锁，「我的」页才显示高级设置（路由 / DNS / 入站 /
+  // TLS / WARP / 日志）。普通用户改这些只会把自己搞挂，但客服排障时要用。
+  static final devMode = PreferencesNotifier.create<bool, bool>("dev_mode", false);
 
   // OneRay: 上次连接的线路名 / 说明，断开时也能在首页显示"当前线路"
   static final lastNodeName = PreferencesNotifier.create<String, String>("last_node_name", "");

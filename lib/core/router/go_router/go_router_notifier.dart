@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
 import 'package:hiddify/core/router/go_router/routing_config_notifier.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -17,9 +16,10 @@ class GoRouterNotifer extends _$GoRouterNotifer {
   GoRouter build() {
     ref.listen(routingConfigNotifierProvider, (_, next) => rConfig.value = next);
     return GoRouter.routingConfig(
-      // OneRay: 装好后第一次打开直接进登录页（游客试用在那里自动开号）；
-      // 以后每次打开都回首页。标记在 bootstrap 里置位，见 firstLaunchAfterInstall。
-      initialLocation: firstLaunchAfterInstall ? '/login' : '/home',
+      // OneRay: 任何时候打开都直接进首页，包括装好后的第一次 —— 游客号在首页后台静默开
+      // （guestBootstrapProvider）。开不出来首页也照常显示节点和套餐，点的时候才提示。
+      // 1.1.27 及以前首启先跳 /login 在那儿开号，用户要干看一次「正在开通免费试用…」。
+      initialLocation: '/home',
       navigatorKey: rootNavKey,
       routingConfig: rConfig,
       refreshListenable: RefreshListenable(ref),

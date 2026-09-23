@@ -266,13 +266,32 @@ class DialogNotifier extends _$DialogNotifier {
       if (action == null) return;
       final context = rootNavKey.currentContext;
       if (context == null || !context.mounted) return;
-      context.pushNamed(switch (action) {
-        QuotaEndedAction.invite => 'invite',
-        QuotaEndedAction.purchase => 'purchase',
-        QuotaEndedAction.bind => 'bindEmail',
-      });
+      _go(action);
     } finally {
       _quotaShowing = false;
     }
+  }
+
+  /// 这台设备还没有账号（游客没开成）时点连接 / 点线路弹的引导。
+  Future<void> showNeedAccount({String? message}) async {
+    if (_quotaShowing) return;
+    _quotaShowing = true;
+    try {
+      _go(await _show<QuotaEndedAction?>(NeedAccountDialog(message: message)));
+    } finally {
+      _quotaShowing = false;
+    }
+  }
+
+  void _go(QuotaEndedAction? action) {
+    if (action == null) return;
+    final context = rootNavKey.currentContext;
+    if (context == null || !context.mounted) return;
+    context.pushNamed(switch (action) {
+      QuotaEndedAction.invite => 'invite',
+      QuotaEndedAction.purchase => 'purchase',
+      QuotaEndedAction.bind => 'bindEmail',
+      QuotaEndedAction.login => 'login',
+    });
   }
 }

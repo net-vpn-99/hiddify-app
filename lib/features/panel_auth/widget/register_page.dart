@@ -143,7 +143,10 @@ class RegisterPage extends HookConsumerWidget {
                     children: [
                       Text(
                         bind
-                            ? '绑定后换手机也能用这个邮箱登录，买套餐也需要先绑定。已开的试用和订阅都不变。'
+                            // 1.1.28：买套餐不再要求先绑定，所以这里只说绑定真正换来的
+                            // 东西 —— 换设备能找回、电脑上也能用、要拿返利得有邮箱。
+                            ? '绑定后换手机、在电脑上都能用同一个账号和套餐，想拿邀请返利也需要它。'
+                                '现在的试用 / 套餐和订阅都不变。'
                                 '${bonusText.value != null ? '\n${bonusText.value}' : ''}'
                             : '注册成功即自动开通试用，登录后自动导入订阅。',
                         style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
