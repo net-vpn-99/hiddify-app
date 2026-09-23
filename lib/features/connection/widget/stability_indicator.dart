@@ -33,7 +33,7 @@ class StabilityIndicator extends ConsumerWidget {
           _Bars(score: s.score, color: color),
           const SizedBox(width: 8),
           Text(
-            s.measuring ? '稳定性测量中…' : '${s.label}（${s.score}/10）',
+            s.measuring ? '稳定性检测中…' : '连接${s.label}',
             style: theme.textTheme.bodySmall?.copyWith(color: color, fontWeight: FontWeight.w600),
           ),
         ],

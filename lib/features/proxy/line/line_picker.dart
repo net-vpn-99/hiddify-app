@@ -4,6 +4,7 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
+import 'package:hiddify/features/proxy/model/node_flag.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 export 'package:hiddify/features/proxy/line/line_source.dart' show LineOption, activeProfileLinesProvider;
@@ -52,6 +53,7 @@ class _LinePickerSheet extends ConsumerWidget {
             // 推荐 = 服务端负载均衡排在订阅第一位的那条（节点粘性也认这一条）。
             final recommended = i == 0 && !locked;
             return ListTile(
+              leading: LineFlag(o.name, size: 26),
               title: Row(
                 children: [
                   Flexible(child: Text(o.name, style: const TextStyle(fontWeight: FontWeight.w600))),

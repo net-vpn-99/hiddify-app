@@ -3,6 +3,7 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
+import 'package:hiddify/features/proxy/model/node_flag.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 首页连接按钮下面那条常驻的线路条。
@@ -55,7 +56,7 @@ class LineBar extends ConsumerWidget {
             ),
             child: Row(
               children: [
-                Icon(Icons.public_rounded, size: 20, color: theme.colorScheme.primary),
+                LineFlag(name),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
