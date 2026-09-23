@@ -56,12 +56,10 @@ final panelAuthProvider =
 /// 游客试用开关 / 绑定赠送文案 / 能不能直接买（GslGuest，走 guest/comm/config，改了不用发版）。
 final guestOptionsProvider = FutureProvider<GuestOptions>((ref) => PanelApi().getGuestOptions());
 
-/// 免登录的节点 + 套餐清单（GslGuest catalog）。没开成游客号、试用到期时首页和购买页
-/// 靠它撑住，不至于一片空白。拉不到就是两个空列表，UI 自己降级。
-final catalogProvider =
-    FutureProvider<({List<String> nodeNames, List<Map<String, dynamic>> plans})>(
-      (ref) => PanelApi().getCatalog(),
-    );
+/// 免登录的公开节点清单（GslGuest catalog）。没开成游客号、试用到期时首页和线路页
+/// 靠它撑住，不至于一片空白。拉不到就是空列表，UI 自己降级。
+/// （套餐不走这儿：Xboard 自带免登录的 `guest/plan/fetch`，见 PurchaseService。）
+final publicNodesProvider = FutureProvider<List<String>>((ref) => PanelApi().getPublicNodes());
 
 final inviteTextsProvider =
     FutureProvider.autoDispose<({String? bonus, String? share, String? linkTemplate})>((ref) => PanelApi().getInviteTexts());

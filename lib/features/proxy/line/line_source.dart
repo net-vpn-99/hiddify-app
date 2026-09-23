@@ -39,11 +39,8 @@ final lineSetProvider = FutureProvider<LineSet>((ref) async {
     if (subLines.isNotEmpty) return LineSet(lines: subLines, locked: false);
   }
 
-  final catalog = await ref.watch(catalogProvider.future);
-  return LineSet(
-    lines: [for (final n in catalog.nodeNames) splitNodeName(n)],
-    locked: true,
-  );
+  final names = await ref.watch(publicNodesProvider.future);
+  return LineSet(lines: [for (final n in names) splitNodeName(n)], locked: true);
 });
 
 /// 当前订阅里的线路列表，从本地 profile 文件离线读出来（不用连接）。

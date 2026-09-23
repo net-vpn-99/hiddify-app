@@ -68,7 +68,7 @@ String _stateLabel(WidgetRef ref) {
 Future<String> _collect(WidgetRef ref) async {
   final appInfo = ref.read(appInfoProvider).requireValue;
   final b = StringBuffer();
-  b.writeln('===== 光速 诊断报告 =====');
+  b.writeln('===== 光速雷达 诊断报告 =====');
   b.writeln('时间: ${DateTime.now().toIso8601String()}');
   b.writeln('版本: ${appInfo.version} (${appInfo.release.name})');
   b.writeln('系统: ${_osLine()}');

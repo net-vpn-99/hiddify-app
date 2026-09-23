@@ -208,12 +208,13 @@ class PanelApi {
   static const GuestOptions _guestOptionsOff =
       (enabled: false, suffix: guestEmailSuffix, bindBonusText: null, canBuy: false);
 
-  /// 免登录的节点 + 套餐清单（GslGuest 1.1.0 的 catalog）。
+  /// 免登录的公开节点清单（GslGuest 插件的 catalog）。
   ///
-  /// 首页和购买页在「还没开成号」「试用已到期」这两种状态下也得有东西可显示，而这两种
-  /// 状态下订阅是空的、`user/plan/fetch` 也调不了。节点只有名字，拿到也连不上。
-  /// 插件没装 / 网络不通 → 两个空列表，调用方自己降级。
-  Future<({List<String> nodeNames, List<Map<String, dynamic>> plans})> getCatalog() async {
+  /// 首页和线路页在「还没开成号」「试用已到期」这两种状态下也得有东西可显示，而这两种
+  /// 状态下订阅是空的。只有名字（`地区 | 说明 | 场景`），拿到也连不上；服务端按
+  /// machine_id 去重，所以这里拿到的是真实机器数，不是面板里的行数。
+  /// 插件没装 / 网络不通 → 空列表，调用方自己降级。
+  Future<List<String>> getPublicNodes() async {
     try {
       final res = await _dio.get<dynamic>('/api/v1/guest/gsl_guest/catalog');
       final data = _dataOf(res.data);
@@ -224,15 +225,9 @@ class PanelApi {
           if (name is String && name.trim().isNotEmpty) names.add(name.trim());
         }
       }
-      final plans = <Map<String, dynamic>>[];
-      if (data?['plans'] case final List raw) {
-        for (final p in raw) {
-          if (p is Map) plans.add(p.cast<String, dynamic>());
-        }
-      }
-      return (nodeNames: names, plans: plans);
+      return names;
     } catch (_) {
-      return (nodeNames: const <String>[], plans: const <Map<String, dynamic>>[]);
+      return const <String>[];
     }
   }
 

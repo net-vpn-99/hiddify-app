@@ -161,6 +161,9 @@ flutter:
     # - assets/core/geoip.db
     # - assets/core/geosite.db
     - assets/images/logo.svg
+    # 品牌标（金底 + 雷达指针，和官网 favicon 同一份），顶栏和「关于」页用。
+    # logo.svg 是无底色的纯图形，连接按钮要把它整体染色，两份不能混用。
+    - assets/images/brand_mark.svg
     - assets/images/tray_icon.ico
     - assets/images/tray_icon.png
     - assets/images/tray_icon_dark.ico

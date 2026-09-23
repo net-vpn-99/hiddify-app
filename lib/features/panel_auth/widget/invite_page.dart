@@ -222,7 +222,7 @@ class InvitePage extends HookConsumerWidget {
       return template.replaceAll('{bonus}', bonus ?? '奖励').replaceAll('{link}', link).replaceAll('{code}', code);
     }
     final b = bonus != null ? '各得 $bonus' : '都有奖励';
-    return '我在用「光速」，速度快、YouTube 4K 不卡。\n用我的链接注册，咱俩$b：\n$link\n官网打不开时：https://gsl-status.guangsu-970.workers.dev/';
+    return '我在用「光速雷达」，速度快、YouTube 4K 不卡。\n用我的链接注册，咱俩$b：\n$link\n官网打不开时：https://gsl-status.guangsu-970.workers.dev/';
   }
 
   static void _toast(BuildContext context, String msg) {

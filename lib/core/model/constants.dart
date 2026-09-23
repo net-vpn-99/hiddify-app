@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 abstract class Constants {
-  static const appName = "光速";
+  static const appName = "光速雷达";
   // OneRay: 会员系统 API（登录 / 拉订阅），对接 Xboard，与桌面版同一套接口
   static const panelApiBase = "https://api.quarrybell.com"; // 香港中转（主入口，2026-09-19）
   // 自有指针在前，第三方阿里 OSS 只当救援。跟 Windows panel.json ossPointerUrls 同一份。

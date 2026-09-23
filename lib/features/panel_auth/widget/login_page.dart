@@ -96,7 +96,7 @@ class LoginPage extends HookConsumerWidget {
     final loading = busy.value || auth.loading || guestBusy.value;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('登录光速账号')),
+      appBar: AppBar(title: const Text('登录光速雷达账号')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
@@ -154,7 +154,7 @@ class LoginPage extends HookConsumerWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '不用填邮箱，打开就能用。买套餐时再绑定邮箱。',
+                    '不用填邮箱，打开就能用。想换手机或在电脑上也用，再绑邮箱。',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),

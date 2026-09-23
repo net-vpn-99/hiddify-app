@@ -48,7 +48,7 @@ class AccountPage extends HookConsumerWidget {
                         auth.isGuest ? '游客' : (a?.email ?? auth.email ?? '已登录'),
                         style: theme.textTheme.titleMedium,
                       ),
-                      Text(auth.isGuest ? '还没绑定邮箱，换手机前记得绑定' : '光速会员', style: theme.textTheme.bodySmall),
+                      Text(auth.isGuest ? '还没绑定邮箱，换手机前记得绑定' : '光速雷达会员', style: theme.textTheme.bodySmall),
                     ],
                   ),
                 ),

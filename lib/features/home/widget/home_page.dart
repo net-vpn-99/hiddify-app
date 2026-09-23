@@ -83,11 +83,14 @@ class HomePage extends HookConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
+        // 品牌组合：官网同一个金底雷达标 + 「光速雷达」。别换成 logo.svg —— 那份是
+        // 无底色的纯图形，连接按钮把它整体染色用（`ColorFilter.srcIn`），加了底色方块
+        // 会被染成一个实心圆角方块。
         title: Row(
           children: [
-            Assets.images.logo.svg(height: 24),
-            const Gap(8),
-            Text(t.common.appTitle),
+            Assets.images.brandMark.svg(height: 26, width: 26),
+            const Gap(10),
+            Text(t.common.appTitle, style: const TextStyle(letterSpacing: .5)),
           ],
         ),
         actions: [

@@ -643,7 +643,7 @@ class ConnectReporter {
       final boxPath = snap.existsSync() ? snap.path : p.join(dir.path, 'box.log');
 
       final text = StringBuffer()
-        ..writeln('===== 光速 连接轨迹 =====')
+        ..writeln('===== 光速雷达 连接轨迹 =====')
         ..writeln('time: ${_startedAt.toIso8601String()}')
         ..writeln('ver: ${_version()}  os: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}')
         ..writeln('fail_stage: $failStage  reached: $_reached')

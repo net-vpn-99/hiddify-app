@@ -81,7 +81,7 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
       }
     }
     loggy.info("rejected non-account subscription");
-    ref.read(inAppNotificationControllerProvider).showErrorToast('只能导入光速账号的订阅，登录光速账号后会自动导入');
+    ref.read(inAppNotificationControllerProvider).showErrorToast('只能导入光速雷达账号的订阅，登录后会自动导入');
     return null;
   }
 
@@ -146,6 +146,10 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
     if (state.isLoading) return;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
+      // ⚠️「光速」是**内部标识**，不是给人看的名字，1.1.28 改品牌名时故意没动：
+      // `own_subscribe.dart` 靠 `userOverride.name == '光速'` 认「这是自家账号的订阅」，
+      // 改了老用户本地那份就认不出来，会被当成别家订阅重新导入。用户能看到它的地方
+      // （首页卡片、通知栏）都已经改成显示线路名 / 品牌名了。
       const userOverride = UserOverride(name: '光速');
       return await (await _accountSubscribeTask(url, userOverride))
           .match(

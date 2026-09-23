@@ -74,7 +74,7 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
         NotificationCompat.Builder(service, notificationChannel)
                 .setShowWhen(false)
                 .setOngoing(true)
-                .setContentTitle("光速")
+                .setContentTitle("光速雷达")
                 .setOnlyAlertOnce(true)
                 .setSmallIcon(R.drawable.ic_stat_logo)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -115,7 +115,10 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
         }
         service.startForeground(
             notificationId, notificationBuilder
-                .setContentTitle(profileName.takeIf { it.isNotBlank() } ?: "光速")
+                // 通知栏固定显示品牌名。原来显示的是订阅名 —— 老用户那份叫「光速」，
+                // 那是内部标识（own_subscribe.dart 靠它认自家订阅，不能改），挂在通知栏
+                // 上正好成了「像山寨」的来源。1.1.28 起统一「光速雷达」。
+                .setContentTitle("光速雷达")
                 .setContentText(service.getString(contentTextId)).build()
         )
     }

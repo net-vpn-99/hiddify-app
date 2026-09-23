@@ -17,7 +17,7 @@ class AccountTile extends ConsumerWidget {
       return Material(
         child: ListTile(
           leading: const Icon(Icons.person_outline),
-          title: const Text('登录光速账号'),
+          title: const Text('登录光速雷达账号'),
           subtitle: const Text('用邮箱密码登录，自动导入订阅'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => context.pushNamed('login'),
@@ -33,7 +33,7 @@ class AccountTile extends ConsumerWidget {
           'traffic_exhausted' => '本期流量已用完 · 点击处理',
           'expired' => '会员已到期 · 点击处理',
           'no_plan' => '还没有套餐 · 点击开通',
-          _ => '光速会员 · 点击查看套餐 / 续费',
+          _ => '光速雷达会员 · 点击查看套餐 / 续费',
         }),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => context.pushNamed('account'),

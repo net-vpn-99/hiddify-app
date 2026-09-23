@@ -42,13 +42,13 @@ class _SupportImageViewerState extends State<SupportImageViewer> {
         }
       }
       if (widget.localPath != null) {
-        await Gal.putImage(widget.localPath!, album: '光速');
+        await Gal.putImage(widget.localPath!, album: '光速雷达');
       } else {
         final res = await Dio().get<List<int>>(
           widget.imageUrl!,
           options: Options(responseType: ResponseType.bytes),
         );
-        await Gal.putImageBytes(Uint8List.fromList(res.data ?? const []), album: '光速');
+        await Gal.putImageBytes(Uint8List.fromList(res.data ?? const []), album: '光速雷达');
       }
       _toast('已保存到相册');
     } on GalException catch (e) {

@@ -130,7 +130,7 @@ class RegisterPage extends HookConsumerWidget {
     final o = opts.value;
 
     return Scaffold(
-      appBar: AppBar(title: Text(bind ? '绑定邮箱' : '注册光速账号')),
+      appBar: AppBar(title: Text(bind ? '绑定邮箱' : '注册光速雷达账号')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
