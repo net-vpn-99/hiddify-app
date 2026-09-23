@@ -284,7 +284,7 @@ class PanelApi {
     final data = _dataOf(res.data);
     final bound = data?['email'];
     if (res.statusCode == 200 && bound is String && bound.isNotEmpty) return bound;
-    throw PanelApiException(_messageOf(res.data) ?? '绑定失败，请稍后再试');
+    throw PanelApiException(_messageOf(res.data) ?? '注册失败，请稍后再试');
   }
 
   /// 用邮箱验证码重置密码。

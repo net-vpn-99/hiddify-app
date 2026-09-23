@@ -25,7 +25,7 @@ class QuotaEndedDialog extends ConsumerWidget {
     final isGuest = ref.watch(panelAuthProvider).isGuest && slug != 'no_plan';
 
     final (title, body) = isGuest
-        ? ('免费试用已结束', '买个套餐就能接着用，不用注册。绑定邮箱后还能邀请好友，$bonusBit。')
+        ? ('免费试用已结束', '买个套餐就能接着用，不用先注册。')
         : switch (slug) {
             'traffic_exhausted' => ('本期流量已用完', '续费或升级套餐后继续用。也可以邀请好友，$bonusBit。'),
             'expired' => ('会员已到期', '续费后就能接着用。也可以邀请好友，$bonusBit。'),
@@ -69,7 +69,7 @@ class QuotaEndedDialog extends ConsumerWidget {
               const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: () => context.pop(QuotaEndedAction.invite),
-                child: Text(isGuest ? '邀请好友（先绑邮箱）' : '邀请好友试用'),
+                child: Text(isGuest ? '邀请好友（先注册）' : '邀请好友试用'),
               ),
             ],
             TextButton(

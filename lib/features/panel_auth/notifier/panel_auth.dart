@@ -216,7 +216,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       return e.message;
     } catch (e) {
       state = state.copyWith(loading: false);
-      return '绑定出错：$e';
+      return '注册出错：$e';
     }
   }
 

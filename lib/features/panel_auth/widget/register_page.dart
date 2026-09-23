@@ -98,7 +98,7 @@ class RegisterPage extends HookConsumerWidget {
         if (!context.mounted) return;
         busy.value = false;
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(content: Text('邮箱已绑定，以后用 ${emailCtrl.text.trim()} 登录')),
+          SnackBar(content: Text('注册完成，以后用 ${emailCtrl.text.trim()} 登录')),
         );
         if (context.canPop()) {
           context.pop(true);
@@ -131,7 +131,9 @@ class RegisterPage extends HookConsumerWidget {
     final o = opts.value;
 
     return Scaffold(
-      appBar: AppBar(title: Text(bind ? '绑定邮箱' : '注册光速雷达账号')),
+      // 用户眼里只有「注册」和「登录」两件事。bind=true 底层是把当前这个免注册的号
+      // 原地变成正式账号（套餐、试用、线路全保留），但那是实现细节 —— 界面上一律叫注册。
+      appBar: AppBar(title: const Text('注册光速雷达账号')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
@@ -148,7 +150,7 @@ class RegisterPage extends HookConsumerWidget {
                         const AccountBenefitList(),
                         const SizedBox(height: 6),
                         Text(
-                          '现在的试用、套餐和线路都不会变。',
+                          '现在的试用、套餐和线路都会保留，不用重新买。',
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                         ),
                         if (bonusText.value != null && bonusText.value!.isNotEmpty)
@@ -237,12 +239,12 @@ class RegisterPage extends HookConsumerWidget {
                         onPressed: busy.value ? null : submit,
                         child: busy.value
                             ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                            : Text(bind ? '绑定' : '注册并登录'),
+                            : const Text('注册'),
                       ),
                       const SizedBox(height: 8),
                       TextButton(
                         onPressed: () => context.canPop() ? context.pop() : context.go(bind ? '/home' : '/login'),
-                        child: Text(bind ? '暂不绑定' : '已有账号？去登录'),
+                        child: Text(bind ? '以后再说' : '已有账号？去登录'),
                       ),
                     ],
                   ),

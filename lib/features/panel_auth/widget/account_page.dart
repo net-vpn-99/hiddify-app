@@ -48,7 +48,7 @@ class AccountPage extends HookConsumerWidget {
                         auth.accountLabel,
                         style: theme.textTheme.titleMedium,
                       ),
-                      Text(auth.isGuest ? '还没绑定邮箱，换手机前记得绑定' : '光速雷达会员', style: theme.textTheme.bodySmall),
+                      Text(auth.isGuest ? '还没注册，换手机前记得注册' : '光速雷达会员', style: theme.textTheme.bodySmall),
                     ],
                   ),
                 ),
@@ -105,7 +105,7 @@ class AccountPage extends HookConsumerWidget {
             if (auth.isGuest)
               FilledButton.tonalIcon(
                 icon: const Icon(Icons.mark_email_read_outlined),
-                label: const Text('绑定邮箱，换手机和电脑也能用'),
+                label: const Text('注册账号，换手机和电脑也能用'),
                 onPressed: () async {
                   final bound = await context.pushNamed<bool>('bindEmail');
                   if (bound == true) await load();

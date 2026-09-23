@@ -177,7 +177,7 @@ class LoginPage extends HookConsumerWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '不用填邮箱，打开就能用。想换手机或在电脑上也用，再绑邮箱。',
+                    '不用填邮箱，打开就能用。想换手机或在电脑上也用，以后再注册。',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
@@ -233,7 +233,7 @@ class LoginPage extends HookConsumerWidget {
                       // 都留在旧号上（旧号只认这台手机，等于白丢）。他要的是把现在这个号
                       // 变成自己的，那叫「绑定邮箱」。两个页面长得一样，更得把入口分清。
                       onPressed: () => context.pushNamed(auth.isGuest ? 'bindEmail' : 'register'),
-                      child: Text(auth.isGuest ? '还没有账号？绑定邮箱' : '注册账号'),
+                      child: const Text('还没有账号？去注册'),
                     ),
                     TextButton(
                       onPressed: () => context.pushNamed(

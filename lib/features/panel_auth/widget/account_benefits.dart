@@ -18,7 +18,7 @@ List<String> accountBenefits({String? inviteBonus, bool inviteFirst = false}) {
 class AccountBenefitList extends StatelessWidget {
   const AccountBenefitList({
     super.key,
-    this.lead = '绑定邮箱后：',
+    this.lead = '注册后：',
     this.inviteBonus,
     this.inviteFirst = false,
     this.color,

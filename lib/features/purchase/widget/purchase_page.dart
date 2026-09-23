@@ -414,19 +414,19 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                 ),
                 child: Column(
                   children: [
-                    Text('留个邮箱，保住这个套餐',
+                    Text('注册一下，保住这个套餐',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: t.text)),
                     const SizedBox(height: 8),
                     // 跟别处同一份说法（account_benefits.dart），别再单独编一段。
                     const Align(
                       alignment: Alignment.centerLeft,
-                      child: AccountBenefitList(lead: '绑定邮箱后：'),
+                      child: AccountBenefitList(),
                     ),
                     const SizedBox(height: 10),
                     FilledButton(
                       style: FilledButton.styleFrom(backgroundColor: t.primary, foregroundColor: t.onPrimary),
                       onPressed: () => context.pushNamed('bindEmail'),
-                      child: const Text('绑定邮箱'),
+                      child: const Text('注册账号'),
                     ),
                   ],
                 ),
@@ -531,7 +531,7 @@ class _AccountCard extends StatelessWidget {
             Text(
               // 短、准、不吓人。「只能本机使用」那种说法会被读成「买了就锁死」，
               // 而事实是绑个邮箱就能换机 —— 两件事必须放在同一句里说完。
-              '只在这台手机有效，绑邮箱后可换机',
+              '只在这台手机有效，注册后可换机',
               style: TextStyle(color: t.secondary, fontSize: 11, height: 1.3),
             ),
           ],

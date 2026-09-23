@@ -123,13 +123,13 @@ class AccountCard extends ConsumerWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            '这个账号还没绑邮箱，换手机就用不了了',
+                            '还没注册，换台手机就用不了了',
                             style: theme.textTheme.bodySmall
                                 ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
                           ),
                         ),
                         Text(
-                          '去绑定',
+                          '去注册',
                           style: theme.textTheme.labelMedium
                               ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
                         ),

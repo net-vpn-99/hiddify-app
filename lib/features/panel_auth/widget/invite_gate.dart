@@ -20,15 +20,14 @@ Future<void> openInvite(BuildContext context, {required bool isGuest, String? bo
   final go = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('邀请好友要先绑定邮箱'),
+      title: const Text('邀请好友要先注册账号'),
       content: AccountBenefitList(
-        lead: '绑定邮箱后：',
         inviteBonus: bonus,
         inviteFirst: true,
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('以后再说')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('去绑定邮箱')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('去注册')),
       ],
     ),
   );
