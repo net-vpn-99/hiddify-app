@@ -102,8 +102,10 @@ class LoginPage extends HookConsumerWidget {
       if (!context.mounted) return;
       busy.value = false;
       // 结果说在这里：登完告诉他现在是哪个号，比登录前解释「试用会不会带过去」有用。
+      // 用服务端回来的邮箱，不用输入框 —— 他可能是拿账号编号登的。
+      final who = ref.read(panelAuthProvider).email ?? emailCtrl.text.trim();
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text('已切换到 ${emailCtrl.text.trim()}')),
+        SnackBar(content: Text('已切换到 $who')),
       );
       context.go('/home');
     }
@@ -123,7 +125,7 @@ class LoginPage extends HookConsumerWidget {
                 // 第一次打开这页的人要先知道「这页是给谁用的」。原来写的是
                 // 「…自动导入订阅」——「订阅」是我们内部的说法，客户不懂。
                 Text(
-                  '已经在官网或电脑上注册过账号？用那个邮箱和密码登录。',
+                  '注册过的账号：填邮箱或账号编号，加上密码就能登。',
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
@@ -186,10 +188,16 @@ class LoginPage extends HookConsumerWidget {
                 CustomTextFormField(
                   controller: emailCtrl,
                   maxLines: 1,
-                  label: '邮箱',
-                  hint: 'you@example.com',
-                  validator: (v) =>
-                      (v == null || !v.contains('@')) ? '请输入正确的邮箱' : null,
+                  // 账号编号和邮箱是同一个账号的两个名字（编号是 uuid 派生的，注册前后
+                  // 不变）。带 @ 走 Xboard 登录，不带走 GslGuest 的 login-by-no。
+                  label: '邮箱 或 账号编号',
+                  hint: 'you@example.com 或 A4K7-P92',
+                  validator: (v) {
+                    final s = v?.trim() ?? '';
+                    if (s.isEmpty) return '请输入邮箱或账号编号';
+                    if (s.contains('@')) return null;
+                    return s.replaceAll('-', '').length < 6 ? '账号编号填完整，像 A4K7-P92' : null;
+                  },
                 ),
                 const SizedBox(height: 16),
                 CustomTextFormField(

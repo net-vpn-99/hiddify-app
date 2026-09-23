@@ -114,16 +114,23 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
   Future<String?> currentToken() => _secureStorage.read(key: _kTokenKey);
 
   /// 登录并返回订阅地址。失败时 subscribeUrl 为 null、error 为中文提示。
-  Future<PanelLoginResult> login(String email, String password) async {
+  ///
+  /// [identifier] 可以是**邮箱**，也可以是 App 里显示的**账号编号**（`A4K7-P92`）——
+  /// 编号是 uuid 派生的，注册前后不变，所以两者指同一个账号。带 `@` 走 Xboard 的
+  /// 登录接口，不带就走 GslGuest 的 login-by-no。
+  Future<PanelLoginResult> login(String identifier, String password) async {
     if (state.loading) return (subscribeUrl: null, error: null);
     state = state.copyWith(loading: true);
+    final id = identifier.trim();
     try {
-      final token = await _api.login(email.trim(), password);
+      final token = id.contains('@')
+          ? await _api.login(id, password)
+          : await _api.loginByAccountNo(id, password);
       final sub = await _api.getSubscribe(token);
       await _secureStorage.write(key: _kTokenKey, value: token);
-      await _secureStorage.write(key: _kEmailKey, value: sub.email ?? email.trim());
+      await _secureStorage.write(key: _kEmailKey, value: sub.email ?? id);
       await ref.read(Preferences.panelLoggedIn.notifier).update(true);
-      state = state.copyWith(loading: false, email: sub.email ?? email.trim(), account: sub.account);
+      state = state.copyWith(loading: false, email: sub.email ?? id, account: sub.account);
       return (subscribeUrl: sub.subscribeUrl, error: null);
     } on PanelApiException catch (e) {
       state = state.copyWith(loading: false);

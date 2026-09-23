@@ -75,7 +75,9 @@ class AccountPage extends HookConsumerWidget {
                       ListTile(
                         dense: true,
                         title: const Text('账号编号'),
-                        subtitle: const Text('点一下复制，报给客服能查到你'),
+                        subtitle: Text(auth.isGuest
+                            ? '点一下复制。报给客服能查到你'
+                            : '登录时可以用它代替邮箱 · 点一下复制'),
                         trailing: Text(auth.accountNo!,
                             style: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 1)),
                         onTap: () async {

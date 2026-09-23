@@ -34,6 +34,25 @@ class PanelApi {
     throw PanelApiException(msg);
   }
 
+  /// 用「账号编号 + 密码」登录（GslGuest 1.2.0 的 login-by-no）。
+  ///
+  /// 编号就是 App 里显示的那串 `A4K7-P92`（uuid 前 8 位换算来的，注册前后都不变），
+  /// 所以用户可以用编号或邮箱登录同一个账号。没注册过的号密码是随机的，登不上。
+  Future<String> loginByAccountNo(String accountNo, String password) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '/api/v1/guest/gsl_guest/login-by-no',
+        data: {'account_no': accountNo, 'password': password},
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    final token = _extractToken(res.data);
+    if (token != null && token.isNotEmpty) return token;
+    throw PanelApiException(_messageOf(res.data) ?? '账号编号或密码不对');
+  }
+
   /// 订阅令牌是不是本面板发的：用当前可用的 API 拉一次订阅，200 且有内容即是
   /// （别家机场的令牌在这里是 403）。用来认「链接域名不在已知名单里」的自家订阅——
   /// 换域靠 feed 不发版，所以导入时不能只靠域名名单判断（2026-09-20）。
