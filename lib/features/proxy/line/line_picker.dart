@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/proxy/model/node_flag.dart';
@@ -17,8 +18,14 @@ export 'package:hiddify/features/proxy/line/line_source.dart' show LineOption, a
 /// 故意**不做**「自动选最快」和延迟数字：
 ///  - 自动选最快 = 内核 urltest，要先连上再逐条发真实请求测，走隧道扣流量；而且所有人都
 ///    测出同一条最快就一起涌过去，跟服务端的负载均衡对着干（订阅模板早就关了 urltest）。
-///    推荐哪条由服务端负载均衡决定 —— 订阅第一条就是给这个用户的，标个「推荐」就够了。
+///    推荐哪条由服务端负载均衡决定 —— 订阅第一条就是给这个用户的。
 ///  - 延迟数字会被用户拿去跟别家比，而别家显示的经常是到中转入口、不是到落地的。
+///
+/// 标记的口径（1.1.40 改）：
+///  - 「使用中 / 上次用的」标在用户自己那条上 —— 他打开这页最先要找的就是它；
+///  - 「推荐」只给**还没自己选过线路**的人看。老用户有习惯的线路，再对着订阅第一条
+///    喊推荐就是噪音，他又不会照着换；
+///  - 打开时自动滚到自己那条：线路十几条，不滚它经常在屏幕外。
 Future<void> showLinePicker(BuildContext context, WidgetRef ref) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -28,14 +35,57 @@ Future<void> showLinePicker(BuildContext context, WidgetRef ref) async {
   );
 }
 
-class _LinePickerSheet extends ConsumerWidget {
+class _LinePickerSheet extends ConsumerStatefulWidget {
   const _LinePickerSheet();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_LinePickerSheet> createState() => _LinePickerSheetState();
+}
+
+class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
+  /// 一条 ListTile 的大致高度（名字 + 一行说明）。只用来估初始滚动位置，
+  /// 估歪了后面的 ensureVisible 会兜住。
+  static const _tileHeight = 76.0;
+
+  /// 挂在「使用中 / 上次用的」那条上，用来精确滚到它。
+  final _currentKey = GlobalKey();
+
+  ScrollController? _controller;
+  bool _scrolled = false;
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  /// 先按行高粗估跳过去（列表是懒构建的，屏幕外的条目根本没 build，没法直接定位），
+  /// 等目标进了视口再 ensureVisible 精确居中。只做一次，之后用户滚到哪就是哪。
+  void _revealCurrent(int index) {
+    if (_scrolled || index < 0) return;
+    _scrolled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _currentKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.4,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final set = ref.watch(lineSetProvider);
+    // 正在用 / 上次连上的那条（连接成功时首页会写进来）。
     final currentName = ref.watch(Preferences.lastNodeName);
+    // 用户自己在这页选过的那条。选过了就不用再给他看「推荐」。
+    final pickedName = ref.watch(Preferences.preferredLineName);
+    final connected = ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
 
     final value = set.valueOrNull;
     final options = value?.lines ?? const <LineOption>[];
@@ -43,47 +93,32 @@ class _LinePickerSheet extends ConsumerWidget {
 
     Widget body;
     if (options.isNotEmpty) {
-      final selName = currentName.isNotEmpty ? currentName : options.first.name;
+      final currentIndex =
+          (locked || currentName.isEmpty) ? -1 : options.indexWhere((o) => o.name == currentName);
+      // 前两条本来就在视口里，不用滚。
+      final needScroll = currentIndex > 1;
+      _controller ??= ScrollController(
+        initialScrollOffset: needScroll ? (currentIndex * _tileHeight - 120).clamp(0.0, 4000.0) : 0,
+      );
+      if (needScroll) _revealCurrent(currentIndex);
+
       body = Flexible(
-        child: ListView.builder(
+        child: ListView(
+          controller: _controller,
           shrinkWrap: true,
-          itemCount: options.length,
-          itemBuilder: (context, i) {
-            final o = options[i];
-            // 推荐 = 服务端负载均衡排在订阅第一位的那条（节点粘性也认这一条）。
-            final recommended = i == 0 && !locked;
-            return ListTile(
-              leading: LineFlag(o.name, size: 26),
-              title: Row(
-                children: [
-                  Flexible(child: Text(o.name, style: const TextStyle(fontWeight: FontWeight.w600))),
-                  if (recommended) ...[
-                    const Gap(8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        '推荐',
-                        style: theme.textTheme.labelSmall
-                            ?.copyWith(color: theme.colorScheme.onPrimaryContainer),
-                      ),
-                    ),
-                  ],
-                ],
+          children: [
+            for (final (i, o) in options.indexed)
+              _LineTile(
+                key: i == currentIndex ? _currentKey : null,
+                option: o,
+                locked: locked,
+                current: i == currentIndex,
+                // 没自己选过线路才标「推荐」；正在用的那条只标「使用中」，不叠两个牌子。
+                recommended: i == 0 && !locked && pickedName.isEmpty && i != currentIndex,
+                connected: connected,
+                onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
               ),
-              subtitle: o.desc.isEmpty ? null : Text(o.desc),
-              trailing: locked
-                  ? Icon(Icons.lock_outline_rounded, size: 18, color: theme.colorScheme.outline)
-                  : (o.name == selName
-                        ? Icon(Icons.check_rounded, color: theme.colorScheme.primary)
-                        : null),
-              selected: !locked && o.name == selName,
-              onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
-            );
-          },
+          ],
         ),
       );
     } else if (set.isLoading) {
@@ -137,5 +172,63 @@ class _LinePickerSheet extends ConsumerWidget {
       return;
     }
     await ref.read(dialogNotifierProvider.notifier).showNeedAccount();
+  }
+}
+
+class _LineTile extends StatelessWidget {
+  const _LineTile({
+    super.key,
+    required this.option,
+    required this.locked,
+    required this.current,
+    required this.recommended,
+    required this.connected,
+    required this.onTap,
+  });
+
+  final LineOption option;
+  final bool locked;
+  final bool current;
+  final bool recommended;
+  final bool connected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // 没连着的时候说「上次用的」才是实话 —— 写「使用中」会让人以为已经连上了。
+    // 第二项 = 要不要高亮：自己那条用主题色牌子，「推荐」只是灰牌子，别抢眼。
+    final (String, bool)? tag = current
+        ? (connected ? '使用中' : '上次用的', true)
+        : (recommended ? const ('推荐', false) : null);
+
+    return ListTile(
+      leading: LineFlag(option.name, size: 26),
+      title: Row(
+        children: [
+          Flexible(child: Text(option.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+          if (tag != null) ...[
+            const Gap(8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: tag.$2 ? theme.colorScheme.primaryContainer : theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                tag.$1,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: tag.$2 ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      subtitle: option.desc.isEmpty ? null : Text(option.desc),
+      trailing: locked ? Icon(Icons.lock_outline_rounded, size: 18, color: theme.colorScheme.outline) : null,
+      selected: current,
+      onTap: onTap,
+    );
   }
 }

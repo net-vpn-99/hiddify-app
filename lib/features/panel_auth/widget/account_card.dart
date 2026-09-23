@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -159,13 +160,26 @@ class AccountCard extends ConsumerWidget {
       case 'no_plan':
         return '还没有套餐';
       default:
-        final who = auth.isGuest ? '免费试用中' : '会员';
-        if (acc.lifetime) return who;
-        final secs = acc.expiredAt! - DateTime.now().millisecondsSinceEpoch ~/ 1000;
-        if (secs <= 0) return who;
-        if (secs >= 86400) return '$who · 剩 ${secs ~/ 86400} 天';
-        if (secs >= 3600) return '$who · 剩 ${secs ~/ 3600} 小时';
-        return '$who · 剩 ${(secs ~/ 60).clamp(1, 59)} 分钟';
+        // 会员报套餐名，且第二段一定要有 —— 长期有效的号算不出剩余时长，
+        // 以前这里就只剩「会员」两个字，跟首页状态条同一个毛病（1.1.40 一起改）。
+        if (auth.isGuest) {
+          final left = _remaining(acc);
+          return left == null ? '免费试用中' : '免费试用中 · 剩 $left';
+        }
+        final name = acc.planName?.trim().isNotEmpty == true ? acc.planName!.trim() : '会员';
+        if (acc.lifetime) return '$name · 长期有效';
+        final left = _remaining(acc);
+        return left == null ? name : '$name · 剩 $left';
     }
+  }
+
+  /// 剩余时长：超过一天说天，不足一天说小时，不足一小时说分钟。长期有效 / 已过期返回 null。
+  String? _remaining(PanelAccount acc) {
+    if (acc.lifetime) return null;
+    final secs = acc.expiredAt! - DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    if (secs <= 0) return null;
+    if (secs >= 86400) return '${secs ~/ 86400} 天';
+    if (secs >= 3600) return '${secs ~/ 3600} 小时';
+    return '${(secs ~/ 60).clamp(1, 59)} 分钟';
   }
 }

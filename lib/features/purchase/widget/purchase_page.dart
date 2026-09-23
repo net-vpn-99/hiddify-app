@@ -44,6 +44,11 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
   Widget build(BuildContext context) {
     final t = PurchaseTokens.of(context);
     final state = ref.watch(purchaseNotifierProvider);
+    // 标题看人说话：只有买过套餐的老会员才叫「续费 / 升级」。游客和第一次来的人是
+    // 头一回开通，顶着「续费」两个字会让他以为自己已经买过了。
+    final auth = ref.watch(panelAuthProvider);
+    final acc = ref.watch(purchaseAccountProvider).asData?.value ?? auth.account;
+    final renewing = auth.loggedIn && !auth.isGuest && (acc?.planName?.trim().isNotEmpty ?? false);
     return Scaffold(
       backgroundColor: t.background,
       appBar: AppBar(
@@ -51,7 +56,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
         surfaceTintColor: Colors.transparent,
         foregroundColor: t.text,
         elevation: 0,
-        title: const Text('续费 / 升级套餐'),
+        title: Text(renewing ? '续费 / 升级套餐' : '选择套餐'),
       ),
       body: switch (state.stage) {
         PurchaseStage.working => Center(child: CircularProgressIndicator(color: t.primary)),
@@ -504,12 +509,17 @@ class _AccountCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 「这单买给谁」。原来这张卡只写「当前套餐 / 剩余流量」，游客和已登录用户看到的
+          // 「这单记在谁头上」。原来这张卡只写「当前套餐 / 剩余流量」，游客和已登录用户看到的
           // 一模一样 —— 用户的原话是「我不太清楚我是给谁在购买」。买订阅跟买实物不一样，
           // 钱是记在某个账号上的，所以身份必须摆在最上面。
+          //
+          // 说法分身份（1.1.40）：自己给自己续费的人看到「购买给 自己的邮箱」会愣一下 ——
+          // 那是替别人付款的口气。已注册登录 → 「当前账号」；免注册的和没账号的才说
+          // 「购买给」，他们真正要确认的正是这笔钱落到哪个号上。
           Row(
             children: [
-              Text('购买给 ', style: TextStyle(color: t.secondary, fontSize: 11)),
+              Text(loggedIn && !isGuest ? '当前账号 ' : '购买给 ',
+                  style: TextStyle(color: t.secondary, fontSize: 11)),
               Expanded(
                 child: Text(
                   loggedIn ? label : '还没有账号（付款时自动创建）',

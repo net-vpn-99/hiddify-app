@@ -9,9 +9,14 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// 首页最下面那条状态条：一眼知道自己是什么身份、还剩多久、下一步点哪。
 ///
 /// 文案按用户真实状态说人话（运营定的口径）：
-///   免费试用中 · 剩 11 小时 / 会员 · 剩 28 天 / 免费试用已结束 · 买套餐继续用 /
-///   会员已到期 · 去续费 / 流量已用完 · 去续费 / 还没有套餐 · 去看看
+///   免费试用中 · 剩 11 小时 / 全速版 · 剩 28 天 / 全速版 · 长期有效 /
+///   免费试用已结束 · 买套餐继续用 / 会员已到期 · 去续费 / 流量已用完 · 去续费 /
+///   还没有套餐 · 去看看
 /// 点哪都是去购买页 —— 只有「这台手机登录过账号」那种情况去登录页。
+///
+/// 颜色也是口径的一部分：**正常会员用低调灰**（_Tone.plain）。付过钱、还没到期
+/// 的人不需要每次开 App 都被一条高亮条提醒「有事要办」。黄（good）只留给还在
+/// 试用、该转化的游客，橙（warn）只留给真出事了 —— 到期 / 流量用完。
 class AccountStatusBar extends ConsumerWidget {
   const AccountStatusBar({super.key});
 
@@ -96,9 +101,17 @@ class AccountStatusBar extends ConsumerWidget {
       case 'no_plan':
         return ('还没有套餐', '去看看', _Tone.plain, 'purchase');
       default:
+        if (guest) {
+          final left = _remaining(acc);
+          return (left == null ? '免费试用中' : '免费试用中 · 剩 $left', '看套餐', _Tone.good, 'purchase');
+        }
+        // 会员：报套餐名，且第二段（长期有效 / 剩多久）一定要有。
+        // 以前长期有效的号算不出剩余时长，整条就只剩「会员」两个字 + 右边「看套餐」，
+        // 被读成「去开通会员」的广告 —— 分不清是在说我的状态还是在推销。
+        final name = acc.planName?.trim().isNotEmpty == true ? acc.planName!.trim() : '会员';
+        if (acc.lifetime) return ('$name · 长期有效', '我的套餐', _Tone.plain, 'purchase');
         final left = _remaining(acc);
-        final who = guest ? '免费试用中' : '会员';
-        return (left == null ? who : '$who · 剩 $left', '看套餐', _Tone.good, 'purchase');
+        return (left == null ? name : '$name · 剩 $left', '续费', _Tone.plain, 'purchase');
     }
   }
 
