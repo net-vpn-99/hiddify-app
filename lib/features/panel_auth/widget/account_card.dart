@@ -90,8 +90,13 @@ class AccountCard extends ConsumerWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => context.pushNamed(loggedIn ? 'account' : 'login'),
-                    child: Text(loggedIn ? '账号管理' : '登录'),
+                    // 游客这颗按钮是「登录已有账号」而不是「账号管理」：在官网注册过的人
+                    // 装上 App 会被自动开成游客号，首页一个「登录」字样都没有，原来那两个字
+                    // 只藏在 我的 → 账号管理 → 最底下。账号页仍可从卡片左半边点进去。
+                    onPressed: () => context.pushNamed(
+                      loggedIn && !auth.isGuest ? 'account' : 'login',
+                    ),
+                    child: Text(loggedIn && !auth.isGuest ? '账号管理' : '登录已有账号'),
                   ),
                 ),
               ],

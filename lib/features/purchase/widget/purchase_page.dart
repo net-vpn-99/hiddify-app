@@ -84,6 +84,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final selected = state.selected;
     final acctAsync = ref.watch(purchaseAccountProvider);
     final account = acctAsync.asData?.value;
+    final auth = ref.watch(panelAuthProvider);
 
     return Column(
       children: [
@@ -91,7 +92,15 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
             children: [
-              _AccountCard(t: t, account: account, loading: acctAsync.isLoading),
+              _AccountCard(
+                t: t,
+                account: account,
+                loading: acctAsync.isLoading,
+                isGuest: auth.isGuest,
+                loggedIn: auth.loggedIn,
+                email: auth.isGuest ? null : auth.email,
+                onLogin: () => context.pushNamed('login'),
+              ),
               const SizedBox(height: 16),
               if (state.pendingOrder != null) ...[
                 _PendingOrderBanner(
@@ -446,11 +455,23 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
 // ================================================================= 子部件
 
 class _AccountCard extends StatelessWidget {
-  const _AccountCard({required this.t, required this.account, required this.loading});
+  const _AccountCard({
+    required this.t,
+    required this.account,
+    required this.loading,
+    required this.isGuest,
+    required this.loggedIn,
+    required this.email,
+    required this.onLogin,
+  });
 
   final PurchaseTokens t;
   final PanelAccount? account;
   final bool loading;
+  final bool isGuest;
+  final bool loggedIn;
+  final String? email;
+  final VoidCallback onLogin;
 
   @override
   Widget build(BuildContext context) {
@@ -468,6 +489,41 @@ class _AccountCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 「这单买给谁」。原来这张卡只写「当前套餐 / 剩余流量」，游客和已登录用户看到的
+          // 一模一样 —— 用户的原话是「我不太清楚我是给谁在购买」。买订阅跟买实物不一样，
+          // 钱是记在某个账号上的，所以身份必须摆在最上面。
+          Row(
+            children: [
+              Text('购买给 ', style: TextStyle(color: t.secondary, fontSize: 11)),
+              Expanded(
+                child: Text(
+                  isGuest
+                      ? '这台手机的免注册试用'
+                      : (email?.isNotEmpty == true ? email! : (loggedIn ? '你的账号' : '还没有账号')),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+              ),
+              if (isGuest || !loggedIn)
+                GestureDetector(
+                  onTap: onLogin,
+                  child: Text('已有账号？登录',
+                      style: TextStyle(color: t.primary, fontSize: 11, fontWeight: FontWeight.w600)),
+                ),
+            ],
+          ),
+          if (isGuest) ...[
+            const SizedBox(height: 2),
+            Text(
+              '这个号只认这台手机，没有邮箱。付完可以留个邮箱，换手机和电脑上就能用同一个套餐。',
+              style: TextStyle(color: t.secondary, fontSize: 11, height: 1.3),
+            ),
+          ],
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Divider(height: 1, color: t.border),
+          ),
           Row(
             children: [
               Text('当前套餐 ', style: TextStyle(color: t.secondary, fontSize: 11)),

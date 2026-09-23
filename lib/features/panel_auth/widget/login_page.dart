@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
@@ -87,7 +90,15 @@ class LoginPage extends HookConsumerWidget {
         return;
       }
       // 固定名字「光速」—— 别用订阅 URL 的最后一段（那是 token，敏感）
+      // 游客直接登录（没先退出）时这一步是**按 ID 原地换 URL**，不会多出第二条订阅。
       await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
+      // 换了账号就是换了订阅：还连着的话先断开，别让人以为还在用刚才那条线路。
+      try {
+        await ref.read(connectionNotifierProvider.notifier).abortConnection();
+      } catch (_) {}
+      // 登记这台设备。原来只有连接时才登记，所以「登录过但没连过」的人重装 App 之后
+      // 认不出来，会被当成新设备开一个游客号（线上 242 个正式用户只有 38 个有登记）。
+      unawaited(ref.read(panelAuthProvider.notifier).claimDevice(connected: false));
       if (!context.mounted) return;
       busy.value = false;
       context.go('/home');
@@ -110,6 +121,23 @@ class LoginPage extends HookConsumerWidget {
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
+                // 游客点「已有账号？去登录」进来的：把代价先说清楚（行业惯例是**提交前**
+                // 讲，不是登录完才发现试用没了），并且强调现在还没换、退回去照旧能用。
+                if (auth.isGuest) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '你现在用的是这台手机的免注册试用。登录已有账号后，App 会切换到那个账号，这台手机上的试用记录不会带过去（它本来也只在这台手机上）。\n还没登录之前什么都不会变 —— 直接返回就还是现在这个试用。',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant, height: 1.4),
+                    ),
+                  ),
+                ],
                 // 这台手机登过正式账号：不给游客（防卸载重装反复领试用），按钮收起来，
                 // 提示放显眼处——不然还摆着「免注册」按钮，点了只会再弹同一句话。
                 if (notice.value != null) ...[
@@ -218,6 +246,15 @@ class LoginPage extends HookConsumerWidget {
                     ),
                   ],
                 ),
+                // 退出登录后是 go('/login')，导航栈被清空 = 没有返回箭头。没有这个出口，
+                // 不想登录的人只能杀掉 App 才回得了首页（用户反馈过）。首页本来就不拦人。
+                if (!context.canPop()) ...[
+                  const SizedBox(height: 4),
+                  TextButton(
+                    onPressed: () => context.go('/home'),
+                    child: const Text('先回首页看看'),
+                  ),
+                ],
               ],
             ),
           ),

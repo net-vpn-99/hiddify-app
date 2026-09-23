@@ -143,11 +143,18 @@ class AccountPage extends HookConsumerWidget {
             const SizedBox(height: 24),
             TextButton(
               onPressed: () async {
+                // 游客去登录：**不能先退出**。1.1.31 及以前是 logout + go('/login')——
+                // 订阅先被删、连接先被断，人还被扔到一个返回不了的登录页（栈被 go 清了），
+                // 用户的原话是「好像变成了两个 App，只能杀掉重开」。
+                // 正确顺序是「先登上，再换过去」：push 登录页，登录成功那一刻才换账号
+                // （订阅按 ID 原地替换），中途退回来还是原来的游客状态，什么都没丢。
+                if (auth.isGuest) {
+                  await context.pushNamed('login');
+                  return;
+                }
                 final ok = await ref.read(dialogNotifierProvider.notifier).showConfirmation(
-                      title: auth.isGuest ? '用已有账号登录' : '退出登录',
-                      message: auth.isGuest
-                          ? '会回到登录页，用你的邮箱和密码登录。点错了也没关系，登录页点「免注册，直接试用」还能回到现在这个试用。'
-                          : '退出后会断开连接、清除已导入的订阅，需要重新登录才能继续使用。',
+                      title: '退出登录',
+                      message: '退出后会断开连接、清除已导入的订阅，需要重新登录才能继续使用。',
                     );
                 if (!ok) return;
                 await ref.read(panelAuthProvider.notifier).logout();
