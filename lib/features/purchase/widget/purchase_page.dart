@@ -206,11 +206,24 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     );
   }
 
+  /// 「允许游客直接购买」开关（GslGuest）。**不能**写成 `ref.read(...).valueOrNull ?? false`：
+  /// 这个 FutureProvider 在「试用到期 → 去买」这条路上没人提前加载过，第一次点必然读到
+  /// null，游客当场被推去绑定页 —— 1.1.28 定的「不绑邮箱也能买」就这么失效了。这里等它
+  /// 一次；拿不到就放行，让服务端去拦（服务端本来就会拦，错误文案还更准）。
+  Future<bool> _canGuestBuy() async {
+    try {
+      return (await ref.read(guestOptionsProvider.future)).canBuy;
+    } catch (_) {
+      return true;
+    }
+  }
+
   Future<void> _confirm(PurchaseTokens t, PlanOffer offer) async {
     // 1.1.28 起游客默认不用先绑邮箱就能买（GslGuest 1.1.0 的「允许游客直接购买」）。
     // 后台把那个开关关掉时服务端仍会拦下单，所以这里也跟着先跳绑定页 —— 不然用户
     // 填完支付信息才被服务端退回来。
-    final canBuy = ref.read(guestOptionsProvider).valueOrNull?.canBuy ?? false;
+    final canBuy = await _canGuestBuy();
+    if (!mounted) return;
     if (!canBuy && ref.read(panelAuthProvider).isGuest) {
       final bound = await context.pushNamed<bool>('bindEmail');
       if (bound != true || !mounted) return;

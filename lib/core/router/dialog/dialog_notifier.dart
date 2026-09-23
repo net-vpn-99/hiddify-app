@@ -26,6 +26,8 @@ import 'package:hiddify/core/router/go_router/go_router_notifier.dart';
 import 'package:hiddify/features/app_update/model/remote_version_entity.dart';
 import 'package:hiddify/features/common/qr_code_dialog.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:protobuf/protobuf.dart';
@@ -266,7 +268,7 @@ class DialogNotifier extends _$DialogNotifier {
       if (action == null) return;
       final context = rootNavKey.currentContext;
       if (context == null || !context.mounted) return;
-      _go(action);
+      await _go(action);
     } finally {
       _quotaShowing = false;
     }
@@ -277,16 +279,25 @@ class DialogNotifier extends _$DialogNotifier {
     if (_quotaShowing) return;
     _quotaShowing = true;
     try {
-      _go(await _show<QuotaEndedAction?>(NeedAccountDialog(message: message)));
+      await _go(await _show<QuotaEndedAction?>(NeedAccountDialog(message: message)));
     } finally {
       _quotaShowing = false;
     }
   }
 
-  void _go(QuotaEndedAction? action) {
+  Future<void> _go(QuotaEndedAction? action) async {
     if (action == null) return;
     final context = rootNavKey.currentContext;
     if (context == null || !context.mounted) return;
+    // 邀请是账号功能：游客先绑邮箱，统一走 invite_gate，别在各入口各写一遍。
+    if (action == QuotaEndedAction.invite) {
+      await openInvite(
+        context,
+        isGuest: ref.read(panelAuthProvider).isGuest,
+        bonus: ref.read(inviteTextsProvider).valueOrNull?.bonus,
+      );
+      return;
+    }
     context.pushNamed(switch (action) {
       QuotaEndedAction.invite => 'invite',
       QuotaEndedAction.purchase => 'purchase',

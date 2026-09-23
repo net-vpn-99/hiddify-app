@@ -8,7 +8,9 @@ import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
 import 'package:hiddify/features/diagnostic/diag_tile.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/panel_auth/widget/account_card.dart';
+import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
 import 'package:hiddify/features/support/notifier/support_chat_notifier.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -164,7 +166,11 @@ class _ActionGrid extends ConsumerWidget {
               label: '邀请返利',
               // 没账号也照样摆在这儿（首页不拦人那套），点了才说要先有账号。
               onTap: () => ref.read(Preferences.panelLoggedIn)
-                  ? context.pushNamed('invite')
+                  ? openInvite(
+                      context,
+                      isGuest: ref.read(panelAuthProvider).isGuest,
+                      bonus: ref.read(inviteTextsProvider).valueOrNull?.bonus,
+                    )
                   : ref.read(dialogNotifierProvider.notifier).showNeedAccount(
                       message: '邀请返利要先有账号。登录已有账号，或者买个套餐就能用。',
                     ),

@@ -104,10 +104,14 @@ final purchaseAccountProvider = FutureProvider.autoDispose<PanelAccount?>(
 class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
   final _service = PurchaseService();
 
+  /// 「开通中」时的自动复查定时器（见 _watchFulfillment）。
+  Timer? _fulfillTimer;
+
   @override
   PurchaseState build() {
     Future.microtask(loadPlans);
     Future.microtask(_recoverPersistedOrder);
+    ref.onDispose(() => _fulfillTimer?.cancel());
     return const PurchaseState();
   }
 
@@ -454,6 +458,29 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
     );
     final ok = await _refreshSubscription();
     state = state.copyWith(refreshing: false, refreshFailed: !ok);
+    // 账号也要立刻拉一次：只刷订阅的话，回首页那条状态栏还写着「免费试用已结束」，
+    // 刚付过钱的人看到这个会以为白付了。
+    unawaited(ref.read(panelAuthProvider.notifier).fetchAccount());
+    if (fulfilled) {
+      _fulfillTimer?.cancel();
+    } else {
+      _watchFulfillment();
+    }
+  }
+
+  /// 订单停在「开通中」（Xboard 异步发货）：自己每 5 秒查一次，最多两分钟。
+  /// 原来只有成功页上一个「再查一次」按钮 —— 人刚付完钱，不该让他自己去点。
+  void _watchFulfillment() {
+    _fulfillTimer?.cancel();
+    var tries = 0;
+    _fulfillTimer = Timer.periodic(const Duration(seconds: 5), (t) async {
+      tries++;
+      if (state.fulfilled || tries > 24) {
+        t.cancel();
+        return;
+      }
+      await recheckFulfillment();
+    });
   }
 
   Future<void> retryRefresh() async {

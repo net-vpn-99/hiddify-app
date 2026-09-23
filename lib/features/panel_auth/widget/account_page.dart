@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class AccountPage extends HookConsumerWidget {
@@ -90,7 +91,9 @@ class AccountPage extends HookConsumerWidget {
               FilledButton.icon(
                 icon: const Icon(Icons.group_add_outlined),
                 label: const Text('邀请好友试用'),
-                onPressed: () => context.pushNamed('invite'),
+                onPressed: () => openInvite(context,
+                    isGuest: auth.isGuest,
+                    bonus: ref.read(inviteTextsProvider).valueOrNull?.bonus),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
@@ -108,7 +111,9 @@ class AccountPage extends HookConsumerWidget {
               OutlinedButton.icon(
                 icon: const Icon(Icons.group_add_outlined),
                 label: const Text('邀请好友'),
-                onPressed: () => context.pushNamed('invite'),
+                onPressed: () => openInvite(context,
+                    isGuest: auth.isGuest,
+                    bonus: ref.read(inviteTextsProvider).valueOrNull?.bonus),
               ),
             ],
             const SizedBox(height: 8),
