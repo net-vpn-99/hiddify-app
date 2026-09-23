@@ -101,6 +101,10 @@ class LoginPage extends HookConsumerWidget {
       unawaited(ref.read(panelAuthProvider.notifier).claimDevice(connected: false));
       if (!context.mounted) return;
       busy.value = false;
+      // 结果说在这里：登完告诉他现在是哪个号，比登录前解释「试用会不会带过去」有用。
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('已切换到 ${emailCtrl.text.trim()}')),
+      );
       context.go('/home');
     }
 
@@ -123,15 +127,10 @@ class LoginPage extends HookConsumerWidget {
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
-                // 游客从「登录已有账号」进来的，只补一句代价，别长篇大论。
-                if (auth.isGuest) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    '当前的免费试用不会跟过去。',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                  ),
-                ],
+                // 这里原来还有一句「当前的免费试用不会跟过去」——删了。
+                // 用户点进来的入口就叫「登录已有账号」，他清楚自己要干什么；在登录前解释
+                // 一个他不关心的机制（试用归属），只会让人看不懂、还以为有什么风险。
+                // 结果用登录成功后的一条提示交代（「已切换到 xxx」），不在事前吓人。
                 // 这台手机登过正式账号：不给游客（防卸载重装反复领试用），按钮收起来，
                 // 提示放显眼处——不然还摆着「免注册」按钮，点了只会再弹同一句话。
                 if (notice.value != null) ...[
