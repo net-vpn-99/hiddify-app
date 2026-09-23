@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/panel_auth/widget/account_benefits.dart';
 import 'package:hiddify/features/purchase/data/purchase_service.dart';
 import 'package:hiddify/features/purchase/model/plan_offer.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
@@ -415,12 +416,11 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                   children: [
                     Text('留个邮箱，保住这个套餐',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: t.text)),
-                    const SizedBox(height: 6),
-                    Text(
-                      '现在这个账号只认这台手机。留个邮箱，换手机和电脑上也能用同一个套餐，'
-                      '想拿邀请返利也需要它。',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12, color: t.secondary, height: 1.4),
+                    const SizedBox(height: 8),
+                    // 跟别处同一份说法（account_benefits.dart），别再单独编一段。
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: AccountBenefitList(lead: '绑定邮箱后：'),
                     ),
                     const SizedBox(height: 10),
                     FilledButton(

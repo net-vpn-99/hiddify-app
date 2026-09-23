@@ -116,17 +116,18 @@ class LoginPage extends HookConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // 第一次打开这页的人要先知道「这页是给谁用的」。原来写的是
+                // 「…自动导入订阅」——「订阅」是我们内部的说法，客户不懂。
                 Text(
-                  '用你在官网 / 电脑客户端的邮箱和密码登录，自动导入订阅。',
+                  '已经在官网或电脑上注册过账号？用那个邮箱和密码登录。',
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
-                // 游客点「已有账号？去登录」进来的：代价要在提交前讲，但一句就够。
-                // 上一版写了一整段，用户反馈「又啰嗦又没结果」。
+                // 游客从「登录已有账号」进来的，只补一句代价，别长篇大论。
                 if (auth.isGuest) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
-                    '登录后会换成那个账号，当前试用不带过去。没登录前什么都不变。',
+                    '当前的免费试用不会跟过去。',
                     style: theme.textTheme.bodySmall
                         ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
@@ -229,8 +230,11 @@ class LoginPage extends HookConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     TextButton(
-                      onPressed: () => context.pushNamed('register'),
-                      child: const Text('注册账号'),
+                      // 游客不该走「注册」—— 那会新开一个账号，他现在的试用和买过的套餐
+                      // 都留在旧号上（旧号只认这台手机，等于白丢）。他要的是把现在这个号
+                      // 变成自己的，那叫「绑定邮箱」。两个页面长得一样，更得把入口分清。
+                      onPressed: () => context.pushNamed(auth.isGuest ? 'bindEmail' : 'register'),
+                      child: Text(auth.isGuest ? '还没有账号？绑定邮箱' : '注册账号'),
                     ),
                     TextButton(
                       onPressed: () => context.pushNamed(

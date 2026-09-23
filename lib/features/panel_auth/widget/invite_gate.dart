@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/features/panel_auth/widget/account_benefits.dart';
 
 /// 打开邀请页 —— 游客先绑邮箱。
 ///
@@ -14,15 +15,16 @@ Future<void> openInvite(BuildContext context, {required bool isGuest, String? bo
     context.pushNamed('invite');
     return;
   }
-  final reward = (bonus != null && bonus.isNotEmpty) ? '各得 $bonus' : '双方都有奖励';
+  // 文案只讲「绑了能得到什么」，一条一行。原来这里是一段口语解释（奖励记在账号上、
+  // 只认这台手机、跑不掉…），用户看完的评价是「像没读过书的人说的话」。
   final go = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('邀请好友要先绑定邮箱'),
-      content: Text(
-        '好友通过你的链接注册、完成邮箱验证后，你和好友$reward。\n\n'
-        '这些奖励要记在账号上。你现在用的是免注册试用，只认这台手机 —— '
-        '留个邮箱，奖励和返利才跑不掉，换手机、换电脑也还是同一个号。',
+      content: AccountBenefitList(
+        lead: '绑定邮箱后：',
+        inviteBonus: bonus,
+        inviteFirst: true,
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('以后再说')),

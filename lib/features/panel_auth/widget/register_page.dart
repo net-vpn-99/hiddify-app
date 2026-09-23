@@ -5,6 +5,7 @@ import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/panel_auth/widget/account_benefits.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
 import 'package:hiddify/utils/uri_utils.dart';
@@ -141,16 +142,25 @@ class RegisterPage extends HookConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        bind
-                            // 1.1.28：买套餐不再要求先绑定，所以这里只说绑定真正换来的
-                            // 东西 —— 换设备能找回、电脑上也能用、要拿返利得有邮箱。
-                            ? '绑定后换手机、在电脑上都能用同一个账号和套餐，想拿邀请返利也需要它。'
-                                '现在的试用 / 套餐和订阅都不变。'
-                                '${bonusText.value != null ? '\n${bonusText.value}' : ''}'
-                            : '注册成功即自动开通试用，登录后自动导入订阅。',
-                        style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                      ),
+                      // 说清楚「绑了能得到什么」，一条一行（account_benefits.dart 是全 App
+                      // 唯一那份说法）。以前是一段绕来绕去的解释，用户看不懂。
+                      if (bind) ...[
+                        const AccountBenefitList(),
+                        const SizedBox(height: 6),
+                        Text(
+                          '现在的试用、套餐和线路都不会变。',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                        if (bonusText.value != null && bonusText.value!.isNotEmpty)
+                          Text(
+                            bonusText.value!,
+                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary),
+                          ),
+                      ] else
+                        Text(
+                          '注册成功就送免费试用，马上能用。',
+                          style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        ),
                       const SizedBox(height: 20),
                       CustomTextFormField(
                         controller: emailCtrl,
