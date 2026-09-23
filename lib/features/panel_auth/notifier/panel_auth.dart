@@ -31,6 +31,24 @@ class PanelAuthState {
   /// 游客（GslGuest 插件免注册开的号）：邮箱是占位的 g-xxx@guest.invalid。
   bool get isGuest => email != null && email!.toLowerCase().endsWith(PanelApi.guestEmailSuffix);
 
+  /// 账号编号 —— **游客也有**，取面板 uuid 的前 8 位。
+  ///
+  /// 免注册的人在 App 里原来有四种叫法（游客用户 / 免注册试用 / 这台手机的试用 /
+  /// 还没绑定邮箱），指的其实是同一个账号，用户看着就是懵。给他一个看得见、报得出来的
+  /// 号：他**有账号**，只是还没绑邮箱。买套餐就买在这个号上，客服也能凭它查到人。
+  String? get accountNo {
+    final u = account?.uuid?.replaceAll('-', '');
+    if (u == null || u.length < 8) return null;
+    return u.substring(0, 8).toUpperCase();
+  }
+
+  /// 给人看的账号名：绑了邮箱就是邮箱，没绑就是「账号 #A1B2C3D4」。
+  String get accountLabel {
+    if (!isGuest && email != null && email!.isNotEmpty) return email!;
+    final no = accountNo;
+    return no == null ? '我的账号' : '账号 #$no';
+  }
+
   PanelAuthState copyWith({
     bool? loading,
     String? email,

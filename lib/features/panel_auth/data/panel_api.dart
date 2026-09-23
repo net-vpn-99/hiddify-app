@@ -113,6 +113,7 @@ class PanelApi {
     final plan = data['plan'];
     return PanelAccount(
       email: (data['email'] as String?)?.trim(),
+      uuid: (data['uuid'] as String?)?.trim(),
       planName: (plan is Map ? plan['name'] as String? : null)?.trim() ?? (data['plan_name'] as String?)?.trim(),
       expiredAt: data['expired_at'] == null ? null : n(data['expired_at']).toInt(),
       transferEnable: n(data['transfer_enable']).toInt(),
@@ -506,6 +507,7 @@ class PanelSubscribe {
 class PanelAccount {
   const PanelAccount({
     this.email,
+    this.uuid,
     this.planName,
     this.expiredAt,
     this.transferEnable = 0,
@@ -514,6 +516,10 @@ class PanelAccount {
   });
 
   final String? email;
+
+  /// 面板用户 UUID（`getSubscribe` 返回的 `uuid`）。**不是**订阅 token，可以给用户看。
+  /// 拿它的前 8 位做「账号编号」，见 [accountNo]。
+  final String? uuid;
   final String? planName;
   final int? expiredAt; // unix 秒；null = 长期有效
   final int transferEnable; // 总流量字节

@@ -22,11 +22,11 @@ class AccountCard extends ConsumerWidget {
     if (!loggedIn) {
       title = '还没有账号';
       subtitle = '登录已有账号，或直接买套餐开始用';
-    } else if (auth.isGuest) {
-      title = '游客用户';
-      subtitle = _planLine(ref, auth);
     } else {
-      title = auth.email ?? '已登录';
+      // 游客显示「账号 #A1B2C3D4」而不是「游客用户」：他确实有一个账号，套餐也买在
+      // 这个号上，只是还没绑邮箱。原来这里叫「游客用户」、购买页叫「这台手机的免注册
+      // 试用」、账号页叫「游客」—— 同一个东西三种叫法，用户只会更糊涂。
+      title = auth.accountLabel;
       subtitle = _planLine(ref, auth);
     }
 
@@ -123,7 +123,7 @@ class AccountCard extends ConsumerWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            '还没绑邮箱，换手机会丢账号',
+                            '这个账号还没绑邮箱，换手机就用不了了',
                             style: theme.textTheme.bodySmall
                                 ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
                           ),

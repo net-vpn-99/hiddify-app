@@ -46,7 +46,7 @@ class AccountPage extends HookConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        auth.isGuest ? '游客' : (a?.email ?? auth.email ?? '已登录'),
+                        auth.accountLabel,
                         style: theme.textTheme.titleMedium,
                       ),
                       Text(auth.isGuest ? '还没绑定邮箱，换手机前记得绑定' : '光速雷达会员', style: theme.textTheme.bodySmall),
@@ -69,6 +69,12 @@ class AccountPage extends HookConsumerWidget {
               Card(
                 child: Column(
                   children: [
+                    // 账号编号：所有人都有，报给客服就能查到人（游客没邮箱，原来根本报不出
+                    // 任何东西）。这是面板 uuid 的前 8 位，不是订阅令牌，给人看没风险。
+                    if (auth.accountNo != null) ...[
+                      _row('账号编号', '#${auth.accountNo}'),
+                      const Divider(height: 1),
+                    ],
                     _row('当前套餐', a.planName ?? '—'),
                     const Divider(height: 1),
                     _row('剩余时间', a.lifetime ? '长期有效' : _fmtDate(a.expiredAt!)),

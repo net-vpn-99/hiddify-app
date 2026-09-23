@@ -98,7 +98,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                 loading: acctAsync.isLoading,
                 isGuest: auth.isGuest,
                 loggedIn: auth.loggedIn,
-                email: auth.isGuest ? null : auth.email,
+                label: auth.accountLabel,
                 onLogin: () => context.pushNamed('login'),
               ),
               const SizedBox(height: 16),
@@ -461,7 +461,7 @@ class _AccountCard extends StatelessWidget {
     required this.loading,
     required this.isGuest,
     required this.loggedIn,
-    required this.email,
+    required this.label,
     required this.onLogin,
   });
 
@@ -470,7 +470,7 @@ class _AccountCard extends StatelessWidget {
   final bool loading;
   final bool isGuest;
   final bool loggedIn;
-  final String? email;
+  final String label;
   final VoidCallback onLogin;
 
   @override
@@ -497,9 +497,7 @@ class _AccountCard extends StatelessWidget {
               Text('购买给 ', style: TextStyle(color: t.secondary, fontSize: 11)),
               Expanded(
                 child: Text(
-                  isGuest
-                      ? '这台手机的免注册试用'
-                      : (email?.isNotEmpty == true ? email! : (loggedIn ? '你的账号' : '还没有账号')),
+                  loggedIn ? label : '还没有账号（付款时自动创建）',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.bold),
@@ -516,7 +514,7 @@ class _AccountCard extends StatelessWidget {
           if (isGuest) ...[
             const SizedBox(height: 2),
             Text(
-              '这个号只认这台手机，没有邮箱。付完可以留个邮箱，换手机和电脑上就能用同一个套餐。',
+              '这个号还没绑邮箱，只认这台手机。付完留个邮箱，换手机和电脑上就能用同一个套餐。',
               style: TextStyle(color: t.secondary, fontSize: 11, height: 1.3),
             ),
           ],
