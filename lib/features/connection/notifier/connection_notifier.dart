@@ -26,6 +26,13 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 
 part 'connection_notifier.g.dart';
 
+/// 用户自己点了「连接」才算刚连上。
+///
+/// App 切到后台再回来，连接状态流会重放一遍（先来个空值 / 断开，再 Connected），
+/// 原来那一下被当成「刚连上」，于是每次切回 App 都震一下（1.1.30 修）。记在模块级，
+/// provider 重建也留得住。自动连接（快捷开关、启动自动连）不震，本来也不该震。
+bool _userAskedToConnect = false;
+
 @Riverpod(keepAlive: true)
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   @override
@@ -40,6 +47,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       if (previous == next) return;
       if (previous case AsyncData(:final value) when !value.isConnected) {
         if (next case AsyncData(value: final Connected _)) {
+          if (!_userAskedToConnect) return;
+          _userAskedToConnect = false;
           await ref.read(hapticServiceProvider.notifier).heavyImpact();
 
           if (Platform.isAndroid && !ref.read(Preferences.storeReviewedByUser)) {
@@ -223,16 +232,19 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   Future<void> toggleConnection() async {
     final haptic = ref.read(hapticServiceProvider.notifier);
     if (state case AsyncError()) {
+      _userAskedToConnect = true;
       await haptic.lightImpact();
       await _connect();
     } else if (state case AsyncData(:final value)) {
       switch (value) {
         case Disconnected():
+          _userAskedToConnect = true;
           await haptic.lightImpact();
           await ref.read(Preferences.startedByUser.notifier).update(true);
           await _connect();
         case Connected():
           // default:
+          _userAskedToConnect = false;
           await haptic.mediumImpact();
           await ref.read(Preferences.startedByUser.notifier).update(false);
           await _disconnect();
@@ -249,6 +261,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         return _disconnect();
       }
       loggy.info("active profile changed, reconnecting");
+      _userAskedToConnect = true;
       await ref.read(Preferences.startedByUser.notifier).update(true);
       await _connectionRepo.reconnect(profile, ref.read(Preferences.disableMemoryLimit)).mapLeft((err) async {
         loggy.warning("error reconnecting", err);
