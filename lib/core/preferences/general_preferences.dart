@@ -108,6 +108,10 @@ abstract class Preferences {
   // OneRay: 主动退出过（游客或正式账号）就不再自动开游客；登录页的「免注册试用」照样能点。
   static final guestOptOut = PreferencesNotifier.create<bool, bool>("guest_opt_out", false);
 
+  // OneRay: 免注册号的「钥匙」（账号编号 + 密码）用户已经抄走了。没抄走之前「我的」页
+  // 挂红点。默认 true —— 1.3.0 之前开的老号本来就没有待办，别凭空长出一个红点。
+  static final guestKeySaved = PreferencesNotifier.create<bool, bool>("guest_key_saved", true);
+
   // OneRay: 「关于」页连点版本号 5 次解锁，「我的」页才显示高级设置（路由 / DNS / 入站 /
   // TLS / WARP / 日志）。普通用户改这些只会把自己搞挂，但客服排障时要用。
   static final devMode = PreferencesNotifier.create<bool, bool>("dev_mode", false);

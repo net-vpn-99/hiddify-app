@@ -6,7 +6,7 @@ import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
 
 /// 游客试用的服务端开关与文案（GslGuest 插件下发，改了不用发版）。
-typedef GuestOptions = ({bool enabled, String suffix, String? bindBonusText, bool canBuy});
+typedef GuestOptions = ({bool enabled, String suffix, String? bindBonusText, bool canBuy, bool selfPassword});
 
 /// 对接 Xboard 会员系统。接口与桌面版 OneRay 保持一致
 /// （见 VPN 仓库 src/control/XboardControlPlane.cpp）。
@@ -219,6 +219,9 @@ class PanelApi {
         suffix: suffix,
         bindBonusText: bonus is String && bonus.trim().isNotEmpty ? bonus.trim() : null,
         canBuy: g['can_buy'] == true || g['can_buy'] == 1 || g['can_buy'] == '1',
+        // 1.3.0：这台服务端开号会回一个抄得下来的密码，也支持免注册号自己设密码。
+        selfPassword:
+            g['self_password'] == true || g['self_password'] == 1 || g['self_password'] == '1',
       );
     } catch (_) {
       return _guestOptionsOff;
@@ -226,7 +229,7 @@ class PanelApi {
   }
 
   static const GuestOptions _guestOptionsOff =
-      (enabled: false, suffix: guestEmailSuffix, bindBonusText: null, canBuy: false);
+      (enabled: false, suffix: guestEmailSuffix, bindBonusText: null, canBuy: false, selfPassword: false);
 
   /// 免登录的公开节点清单（GslGuest 插件的 catalog）。
   ///
@@ -256,7 +259,11 @@ class PanelApi {
 
   /// 按设备号开通 / 取回游客号。成功返回 token；这台设备登过正式账号返回 hasAccountMask
   /// （打码邮箱，可能是空串）。失败抛 [PanelApiException]。
-  Future<({String? token, String? hasAccountMask})> guestLogin(String deviceId) async {
+  ///
+  /// password 只有**这次是新开的号**才有值（GslGuest 1.3.0）：服务端只存哈希，
+  /// 取回同一个老号时给不出原文。空不是错误，别拿它判断成功失败。
+  Future<({String? token, String? hasAccountMask, String? password})> guestLogin(
+      String deviceId) async {
     Response<dynamic> res;
     try {
       res = await _dio.post<dynamic>(
@@ -269,11 +276,37 @@ class PanelApi {
     final data = _dataOf(res.data);
     if (data?['status'] == 'has_account') {
       final mask = data?['email_mask'];
-      return (token: null, hasAccountMask: mask is String ? mask : '');
+      return (token: null, hasAccountMask: mask is String ? mask : '', password: null);
     }
     final token = _extractToken(res.data);
-    if (token != null && token.isNotEmpty) return (token: token, hasAccountMask: null);
+    if (token != null && token.isNotEmpty) {
+      final pw = data?['password'];
+      return (
+        token: token,
+        hasAccountMask: null,
+        password: pw is String && pw.isNotEmpty ? pw : null,
+      );
+    }
     throw PanelApiException(_messageOf(res.data) ?? '免注册试用暂时不可用，请注册账号');
+  }
+
+  /// 免注册号自己设密码（GslGuest 1.3.0）。账号编号 + 这个密码 = 换手机也能登回来。
+  /// 成功返回 null，失败抛 [PanelApiException]。
+  Future<void> setGuestPassword(String token, String password) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '/api/v1/user/gsl_guest/set-password',
+        data: {'password': password},
+        options: Options(headers: {'auth_data': token, 'Authorization': token}),
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    if (res.statusCode == 401) throw PanelApiException('登录已过期，请重新打开 App', unauthorized: true);
+    if (res.statusCode != null && res.statusCode! >= 400) {
+      throw PanelApiException(_messageOf(res.data) ?? '设置密码失败，请稍后再试');
+    }
   }
 
   /// 游客绑定邮箱：原账号改成这个邮箱 + 密码，token 和订阅都不变。返回绑定后的邮箱。

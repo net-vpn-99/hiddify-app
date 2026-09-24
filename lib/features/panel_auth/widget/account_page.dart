@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/panel_auth/widget/account_key_dialog.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class AccountPage extends HookConsumerWidget {
@@ -16,6 +18,9 @@ class AccountPage extends HookConsumerWidget {
     final auth = ref.watch(panelAuthProvider);
     final account = useState<PanelAccount?>(null);
     final loading = useState(true);
+    // 服务端支持「不留邮箱也有一把自己的钥匙」时才显示那一格（老服务端拿不到 → 不显示）。
+    final guestOpts = ref.watch(guestOptionsProvider).valueOrNull;
+    final keySaved = ref.watch(Preferences.guestKeySaved);
 
     Future<void> load() async {
       loading.value = true;
@@ -115,6 +120,28 @@ class AccountPage extends HookConsumerWidget {
               onPressed: () => context.pushNamed('purchase'),
             ),
             const SizedBox(height: 8),
+            // 钥匙（账号编号 + 密码）。免注册的号才有，而且只在服务端发得出密码时才有。
+            //   - 还没抄走 → 强调色，点开是「记下这两样」
+            //   - 抄走了   → 平常样子，点开是「设置密码」（换成自己记得住的）
+            if (auth.isGuest && (guestOpts?.selfPassword ?? false)) ...[
+              if (!keySaved && auth.guestPassword != null)
+                FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: theme.colorScheme.errorContainer,
+                    foregroundColor: theme.colorScheme.onErrorContainer,
+                  ),
+                  icon: const Icon(Icons.key_outlined),
+                  label: const Text('还没记下账号和密码，点这里'),
+                  onPressed: () => showAccountKeyDialog(context, ref),
+                )
+              else
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.password_outlined),
+                  label: const Text('设置密码（换手机时用）'),
+                  onPressed: () => showSetGuestPasswordDialog(context, ref),
+                ),
+              const SizedBox(height: 8),
+            ],
             // 游客没有密码可改：换成「绑定邮箱」。1.1.28 起绑定不再送时长，卖点改成说
             // 实话的那两条 —— 换手机能找回、电脑上也能用同一个套餐。
             if (auth.isGuest)

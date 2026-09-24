@@ -10,14 +10,22 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 const _kTokenKey = 'oneray_panel_token';
 const _kEmailKey = 'oneray_panel_email';
 
+/// 开号时服务端发的初始密码。**只发这一次**（服务端只存哈希），所以拿到就存起来，
+/// 等用户按了「我抄好了」再删。不存的话，用户还没抄就切出去 / App 被杀，这个号
+/// 连他自己都进不去了。
+const _kGuestPwKey = 'oneray_guest_password';
+
 const _secureStorage = FlutterSecureStorage(
   aOptions: AndroidOptions(encryptedSharedPreferences: true),
 );
 
 class PanelAuthState {
-  const PanelAuthState({this.loading = false, this.email, this.account});
+  const PanelAuthState({this.loading = false, this.email, this.account, this.guestPassword});
 
   final bool loading;
+
+  /// 免注册号的初始密码，用户还没抄走。null = 没有待办（老号 / 已经抄过 / 已注册）。
+  final String? guestPassword;
 
   /// 已登录账号的邮箱；null = 未登录。
   final String? email;
@@ -67,13 +75,16 @@ class PanelAuthState {
     bool? loading,
     String? email,
     PanelAccount? account,
+    String? guestPassword,
     bool clearEmail = false,
     bool clearAccount = false,
+    bool clearGuestPassword = false,
   }) {
     return PanelAuthState(
       loading: loading ?? this.loading,
       email: clearEmail ? null : (email ?? this.email),
       account: clearAccount ? null : (account ?? this.account),
+      guestPassword: clearGuestPassword ? null : (guestPassword ?? this.guestPassword),
     );
   }
 }
@@ -107,6 +118,10 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       if (email != null && email.isNotEmpty && !state.loggedIn) {
         state = state.copyWith(email: email);
       }
+    });
+    // 上次开号发的密码，用户还没按「我抄好了」——重开 App 还得能看到。
+    _secureStorage.read(key: _kGuestPwKey).then((pw) {
+      if (pw != null && pw.isNotEmpty) state = state.copyWith(guestPassword: pw);
     });
     return const PanelAuthState();
   }
@@ -206,7 +221,19 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       await _secureStorage.write(key: _kEmailKey, value: email);
       await ref.read(Preferences.panelLoggedIn.notifier).update(true);
       await ref.read(Preferences.guestOptOut.notifier).update(false);
-      state = state.copyWith(loading: false, email: email, account: sub.account);
+      // 刚开出来的新号才会带密码。先落盘再说 —— 用户还没抄、App 被切走或被杀掉
+      // 的话，这个号连他自己都进不去（服务端取不回原文）。
+      final pw = r.password;
+      if (pw != null && pw.isNotEmpty) {
+        await _secureStorage.write(key: _kGuestPwKey, value: pw);
+        await ref.read(Preferences.guestKeySaved.notifier).update(false);
+      }
+      state = state.copyWith(
+        loading: false,
+        email: email,
+        account: sub.account,
+        guestPassword: pw,
+      );
       return (subscribeUrl: sub.subscribeUrl, error: null, hasAccountMask: null);
     } on PanelApiException catch (e) {
       state = state.copyWith(loading: false);
@@ -215,6 +242,38 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       state = state.copyWith(loading: false);
       return (subscribeUrl: null, error: '免注册试用出错：$e', hasAccountMask: null);
     }
+  }
+
+  /// 免注册号自己设一个记得住的密码（GslGuest 1.3.0）。成功返回 null，失败返回中文提示。
+  ///
+  /// 设完「账号编号 + 这个密码」就是完整的一把钥匙，换手机能登回来。开号时发的那串
+  /// 随机密码同时作废（本地删掉，红点收掉）。
+  Future<String?> setGuestPassword(String password) async {
+    final token = await currentToken();
+    if (token == null || token.isEmpty) return '登录已过期，请重新打开 App';
+    if (state.loading) return null;
+    state = state.copyWith(loading: true);
+    try {
+      await _api.setGuestPassword(token, password);
+      await _secureStorage.delete(key: _kGuestPwKey);
+      await ref.read(Preferences.guestKeySaved.notifier).update(true);
+      state = state.copyWith(loading: false, clearGuestPassword: true);
+      return null;
+    } on PanelApiException catch (e) {
+      state = state.copyWith(loading: false);
+      if (e.unauthorized) await logout(wipe: false);
+      return e.message;
+    } catch (e) {
+      state = state.copyWith(loading: false);
+      return '设置密码出错：$e';
+    }
+  }
+
+  /// 用户按了「我抄好了」：删掉本地那份初始密码，红点跟着消失。
+  Future<void> confirmGuestKeySaved() async {
+    await _secureStorage.delete(key: _kGuestPwKey);
+    await ref.read(Preferences.guestKeySaved.notifier).update(true);
+    state = state.copyWith(clearGuestPassword: true);
   }
 
   /// 游客绑定邮箱（买套餐前必须）。成功返回 null，失败返回中文提示。
@@ -227,7 +286,10 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     try {
       final bound = await _api.bindGuest(token, email, password, code: code, inviteCode: inviteCode);
       await _secureStorage.write(key: _kEmailKey, value: bound);
-      state = state.copyWith(loading: false, email: bound);
+      // 注册时他自己设了密码，开号那把临时钥匙作废。
+      await _secureStorage.delete(key: _kGuestPwKey);
+      await ref.read(Preferences.guestKeySaved.notifier).update(true);
+      state = state.copyWith(loading: false, email: bound, clearGuestPassword: true);
       // 到期时间变了（绑定赠送），刷一下缓存
       await fetchAccount();
       return null;
@@ -375,8 +437,12 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     if (wipe) await ref.read(Preferences.guestOptOut.notifier).update(true);
     await _secureStorage.delete(key: _kTokenKey);
     await _secureStorage.delete(key: _kEmailKey);
+    // 钥匙跟着这个号走。免注册的号没有「退出登录」，走到这儿的都是有邮箱的正式账号。
+    await _secureStorage.delete(key: _kGuestPwKey);
+    await ref.read(Preferences.guestKeySaved.notifier).update(true);
     await ref.read(Preferences.panelLoggedIn.notifier).update(false);
-    state = state.copyWith(loading: false, clearEmail: true, clearAccount: true);
+    state = state.copyWith(
+        loading: false, clearEmail: true, clearAccount: true, clearGuestPassword: true);
     if (!wipe) return;
 
     // 退出 = 不能再连。断开 + 删订阅。
