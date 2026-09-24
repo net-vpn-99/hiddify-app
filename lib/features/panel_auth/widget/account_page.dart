@@ -153,7 +153,7 @@ class AccountPage extends HookConsumerWidget {
             if (auth.isGuest)
               FilledButton.tonalIcon(
                 icon: const Icon(Icons.mark_email_read_outlined),
-                label: const Text('注册账号，换手机和电脑也能用'),
+                label: const Text('绑定邮箱，换手机也能登录、也能找回密码'),
                 onPressed: () async {
                   final bound = await context.pushNamed<bool>('bindEmail');
                   if (bound == true) await load();
@@ -162,7 +162,7 @@ class AccountPage extends HookConsumerWidget {
             else
             OutlinedButton.icon(
               icon: const Icon(Icons.password_outlined),
-              label: const Text('修改密码'),
+              label: const Text('找回密码'),
               onPressed: () {
                 final mail = a?.email ?? auth.email;
                 context.pushNamed(

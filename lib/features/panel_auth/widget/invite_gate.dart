@@ -41,6 +41,7 @@ Future<void> openInvite(BuildContext context, {required bool isGuest, String? bo
           children: [
             line('双方各得 $reward'),
             line('可登录多台设备使用'),
+            line('忘了密码可以用这个邮箱找回'),
           ],
         ),
         actions: [

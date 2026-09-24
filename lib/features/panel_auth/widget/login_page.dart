@@ -153,7 +153,7 @@ class LoginPage extends HookConsumerWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '用这个账号的邮箱和密码登录就行；忘了密码点下面「忘记密码」。想换个新账号，点「注册账号」。',
+                          '用这个账号的邮箱和密码登录就行；忘了密码点下面「找回密码」。',
                           style: theme.textTheme.bodySmall
                               ?.copyWith(color: theme.colorScheme.onPrimaryContainer),
                         ),
@@ -248,7 +248,7 @@ class LoginPage extends HookConsumerWidget {
                         'resetPassword',
                         queryParameters: {if (emailCtrl.text.trim().isNotEmpty) 'email': emailCtrl.text.trim()},
                       ),
-                      child: const Text('忘记密码'),
+                      child: const Text('找回密码'),
                     ),
                   ],
                 ),

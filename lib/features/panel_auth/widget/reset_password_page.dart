@@ -67,7 +67,7 @@ class ResetPasswordPage extends HookConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('修改密码')),
+      appBar: AppBar(title: const Text('找回密码')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
@@ -76,6 +76,11 @@ class ResetPasswordPage extends HookConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                Text(
+                  '验证码会发到这个邮箱。还没绑定邮箱的账号，先到「我的 → 账号」绑定，否则这里收不到码。',
+                  style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant, height: 1.4),
+                ),
+                const SizedBox(height: 16),
                 CustomTextFormField(
                   controller: emailCtrl,
                   maxLines: 1,
@@ -129,7 +134,7 @@ class ResetPasswordPage extends HookConsumerWidget {
                   onPressed: busy.value ? null : submit,
                   child: busy.value
                       ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('重置密码'),
+                      : const Text('找回密码'),
                 ),
               ],
             ),
