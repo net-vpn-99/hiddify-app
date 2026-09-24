@@ -1,4 +1,6 @@
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/core/utils/device_id.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -16,7 +18,21 @@ enum GuestBlockReason {
 }
 
 class GuestBootstrapState {
-  const GuestBootstrapState({this.working = false, this.reason, this.message, this.emailMask});
+  const GuestBootstrapState({
+    this.working = false,
+    this.reason,
+    this.message,
+    this.emailMask,
+    this.deviceKind,
+    this.deviceAccountNo,
+  });
+
+  /// probe 问出来的「这台手机上是谁」（1.1.41）：'guest' / 'account' / 'none'；
+  /// null = 没问到（网络不好 / 老服务端）。只在他自己退出过、不给自动开号时才去问。
+  final String? deviceKind;
+
+  /// deviceKind == 'guest' 时，那个免注册号的账号编号（A4K7-P92）。
+  final String? deviceAccountNo;
 
   /// 正在开号：首页显示「正在准备…」，连接按钮先别让点。
   final bool working;
@@ -31,6 +47,24 @@ class GuestBootstrapState {
   final String? emailMask;
 
   bool get blocked => reason != null;
+
+  GuestBootstrapState copyWith({
+    bool? working,
+    GuestBlockReason? reason,
+    String? message,
+    String? emailMask,
+    String? deviceKind,
+    String? deviceAccountNo,
+  }) {
+    return GuestBootstrapState(
+      working: working ?? this.working,
+      reason: reason ?? this.reason,
+      message: message ?? this.message,
+      emailMask: emailMask ?? this.emailMask,
+      deviceKind: deviceKind ?? this.deviceKind,
+      deviceAccountNo: deviceAccountNo ?? this.deviceAccountNo,
+    );
+  }
 }
 
 /// 装好第一次打开时在**后台**开游客号。
@@ -76,10 +110,13 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
       } catch (_) {}
       return;
     }
-    // 自己退出过：别再塞一个游客号给他，但首页不拦着他逛。
+    // 自己退出过：别再塞一个游客号给他 —— 但**要去问一句「这台手机上是谁」**。
+    // 1.1.40 及以前这里干脆不问，首页只能写一句含糊的「登录后就能连接」，
+    // 而服务端其实认得出这台手机上是哪个账号。
     if (ref.read(Preferences.guestOptOut)) {
       _done = true;
       state = const GuestBootstrapState(reason: GuestBlockReason.optedOut, message: '登录后就能连接');
+      await _probe();
       return;
     }
 
@@ -125,6 +162,39 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
         reason: GuestBlockReason.unavailable,
         message: '免费试用暂时开不了：$e',
       );
+    }
+  }
+
+  /// 「这台手机上是谁」。不开号、不发 token，只把名字问回来给首页写。
+  ///
+  /// ⚠️ 只能在服务端报了 self_password（GslGuest 1.3.0+）时问：老服务端不认 probe，
+  /// 会当成普通开号真的建一个号 —— 那正是这里要避免的事。
+  Future<void> _probe() async {
+    try {
+      final opts = await ref.read(panelAuthProvider.notifier).guestOptions();
+      if (!opts.selfPassword) return;
+      final deviceId = await DeviceId.read();
+      if (deviceId == null) return;
+      final r = await PanelApi().probeDevice(deviceId);
+      if (r.kind == 'account') {
+        final mask = r.emailMask ?? '';
+        state = state.copyWith(
+          deviceKind: 'account',
+          emailMask: mask,
+          message: mask.isEmpty ? '这台手机上有账号，登录后继续用' : '这台手机上是 $mask，登录后继续用',
+        );
+      } else if (r.kind == 'guest') {
+        final no = r.accountNo ?? '';
+        state = state.copyWith(
+          deviceKind: 'guest',
+          deviceAccountNo: no,
+          message: no.isEmpty ? '这台手机上有一个免注册的账号，点一下就能回去' : '这台手机上是账号 $no，点一下就能回去',
+        );
+      } else {
+        state = state.copyWith(deviceKind: 'none');
+      }
+    } catch (_) {
+      // 问不出来就维持原样（首页仍然不拦人）。
     }
   }
 }

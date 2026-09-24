@@ -47,7 +47,10 @@ class PanelAuthState {
   /// ⚠️ **不要改成面板的用户 ID**：那是全站递增的，等于把「我们一共多少用户」印在
   /// 每个客户的界面上。uuid 派生的编号同样唯一，还不暴露规模。
   ///
-  /// ⚠️ 这个编号**不能用来登录**（免注册的号靠设备号认人，换台手机就没了）。
+  /// 编号 + 密码**可以登录**（1.1.39 起，走 GslGuest 的 login-by-no）。免注册的号从
+  /// 1.1.41 起开号时就会发一个能抄下来的密码，所以换手机也带得走 —— 别再照抄以前那句
+  /// 「编号不能用来登录」。
+  ///
   /// 客服按编号找人：把编号反算回 hex 前 8 位，`SELECT * FROM v2_user WHERE uuid LIKE '<hex>%'`，
   /// 步骤写在 VPN 仓库 docs/客户端.md §2a-2。
   String? get accountNo {
@@ -145,6 +148,10 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       await _secureStorage.write(key: _kTokenKey, value: token);
       await _secureStorage.write(key: _kEmailKey, value: sub.email ?? id);
       await ref.read(Preferences.panelLoggedIn.notifier).update(true);
+      // 登进来了 = 「他自己退出过」这件事翻篇了。不擦掉的话这台手机永远卡在
+      // 「不自动开号」那条路上，以后哪天没登录态又回到那一屏（1.1.40 及以前只有
+      // 走「免注册试用」才擦，普通登录不擦 —— 这是病根）。
+      await ref.read(Preferences.guestOptOut.notifier).update(false);
       state = state.copyWith(loading: false, email: sub.email ?? id, account: sub.account);
       return (subscribeUrl: sub.subscribeUrl, error: null);
     } on PanelApiException catch (e) {

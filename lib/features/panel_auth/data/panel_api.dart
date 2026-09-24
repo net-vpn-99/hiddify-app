@@ -290,6 +290,57 @@ class PanelApi {
     throw PanelApiException(_messageOf(res.data) ?? '免注册试用暂时不可用，请注册账号');
   }
 
+  /// 只问「这台设备上是谁」，**不发 token、不开号**（GslGuest 1.3.0 的 probe）。
+  ///
+  /// 用户主动退出过之后走这条路：既不能偷偷再塞一个免费号给他，也不该像 1.1.40
+  /// 那样干脆不问、在首页写一句含糊的「登录后就能连接」。
+  ///
+  /// ⚠️ 只能在 comm/config 报了 self_password（= 1.3.0+）时调用。老服务端不认
+  /// probe，会当成普通开号**真的建一个号**出来。
+  /// 返回 kind：'guest' / 'account' / 'none'。
+  Future<({String kind, String? accountNo, String? emailMask, String? altAccountNo, String? altEmailMask})>
+      probeDevice(String deviceId) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '/api/v1/guest/gsl_guest/login',
+        data: {'device_id': deviceId, 'platform': 'android', 'probe': true},
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    final data = _dataOf(res.data);
+    final status = data?['status'];
+    String? s(String k) {
+      final v = data?[k];
+      return v is String && v.isNotEmpty ? v : null;
+    }
+
+    if (status == 'has_account') {
+      return (
+        kind: 'account',
+        accountNo: null,
+        emailMask: s('email_mask') ?? '',
+        altAccountNo: s('also_account_no'),
+        altEmailMask: null,
+      );
+    }
+    if (status == 'guest') {
+      return (
+        kind: 'guest',
+        accountNo: s('account_no'),
+        emailMask: null,
+        altAccountNo: null,
+        altEmailMask: s('also_email_mask'),
+      );
+    }
+    if (status == 'none') {
+      return (kind: 'none', accountNo: null, emailMask: null, altAccountNo: null, altEmailMask: null);
+    }
+    // 老服务端把 probe 当成普通开号了（不该走到这儿，调用方应该先看 self_password）。
+    throw PanelApiException('这台服务端还不支持');
+  }
+
   /// 免注册号自己设密码（GslGuest 1.3.0）。账号编号 + 这个密码 = 换手机也能登回来。
   /// 成功返回 null，失败抛 [PanelApiException]。
   Future<void> setGuestPassword(String token, String password) async {

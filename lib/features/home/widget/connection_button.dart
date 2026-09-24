@@ -127,6 +127,15 @@ class ConnectionButton extends HookConsumerWidget {
             // 登录页：首页不拦人，点下去才说话。
             if (!ref.read(Preferences.panelLoggedIn)) {
               await ref.read(guestBootstrapProvider.notifier).ensure();
+              // 他退出过，但这台手机上还有一个免注册的号（probe 问出来的）：直接把他
+              // 送回去，别弹「需要账号」—— 那个号本来就是他的，而且没有邮箱和密码，
+              // 弹个登录框给他毫无意义。
+              if (!ref.read(Preferences.panelLoggedIn) &&
+                  ref.read(guestBootstrapProvider).deviceKind == 'guest') {
+                await ref.read(Preferences.guestOptOut.notifier).update(false);
+                ref.read(guestBootstrapProvider.notifier).reset();
+                await ref.read(guestBootstrapProvider.notifier).ensure();
+              }
               if (!ref.read(Preferences.panelLoggedIn)) {
                 await ref
                     .read(dialogNotifierProvider.notifier)
