@@ -262,13 +262,17 @@ class PanelApi {
   ///
   /// password 只有**这次是新开的号**才有值（GslGuest 1.3.0）：服务端只存哈希，
   /// 取回同一个老号时给不出原文。空不是错误，别拿它判断成功失败。
-  Future<({String? token, String? hasAccountMask, String? password})> guestLogin(
-      String deviceId) async {
+  Future<({String? token, String? hasAccountMask, String? password, bool hasInviter})> guestLogin(
+      String deviceId, {String? inviteCode}) async {
     Response<dynamic> res;
     try {
       res = await _dio.post<dynamic>(
         '/api/v1/guest/gsl_guest/login',
-        data: {'device_id': deviceId, 'platform': 'android'},
+        data: {
+          'device_id': deviceId,
+          'platform': 'android',
+          if (inviteCode != null && inviteCode.trim().isNotEmpty) 'invite_code': inviteCode.trim(),
+        },
       );
     } on DioException catch (e) {
       throw PanelApiException(_networkMessage(e));
@@ -276,7 +280,7 @@ class PanelApi {
     final data = _dataOf(res.data);
     if (data?['status'] == 'has_account') {
       final mask = data?['email_mask'];
-      return (token: null, hasAccountMask: mask is String ? mask : '', password: null);
+      return (token: null, hasAccountMask: mask is String ? mask : '', password: null, hasInviter: false);
     }
     final token = _extractToken(res.data);
     if (token != null && token.isNotEmpty) {
@@ -285,6 +289,7 @@ class PanelApi {
         token: token,
         hasAccountMask: null,
         password: pw is String && pw.isNotEmpty ? pw : null,
+        hasInviter: data?['has_inviter'] == true,
       );
     }
     throw PanelApiException(_messageOf(res.data) ?? '免注册试用暂时不可用，请注册账号');
@@ -339,6 +344,27 @@ class PanelApi {
     }
     // 老服务端把 probe 当成普通开号了（不该走到这儿，调用方应该先看 self_password）。
     throw PanelApiException('这台服务端还不支持');
+  }
+
+  /// 已经开好的号补填一次邀请码。已经有推荐人时服务端不覆盖。
+  /// 返回 ok / already。失败抛 [PanelApiException]。
+  Future<String> setGuestInvite(String token, String inviteCode) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '/api/v1/user/gsl_guest/invite',
+        data: {'invite_code': inviteCode.trim()},
+        options: Options(headers: {'auth_data': token, 'Authorization': token}),
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    if (res.statusCode != null && res.statusCode! >= 400) {
+      throw PanelApiException(_messageOf(res.data) ?? '邀请码没记上，稍后再试');
+    }
+    final data = _dataOf(res.data);
+    final status = data?['status'];
+    return status is String ? status : 'ok';
   }
 
   /// 免注册号自己设密码（GslGuest 1.3.0）。账号编号 + 这个密码 = 换手机也能登回来。

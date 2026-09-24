@@ -216,7 +216,8 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     }
     state = state.copyWith(loading: true);
     try {
-      final r = await _api.guestLogin(deviceId);
+      final pending = ref.read(Preferences.pendingInviteCode).trim();
+      final r = await _api.guestLogin(deviceId, inviteCode: pending.isEmpty ? null : pending);
       final token = r.token;
       if (token == null) {
         state = state.copyWith(loading: false);
@@ -235,6 +236,10 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
         await _secureStorage.write(key: _kGuestPwKey, value: pw);
         await ref.read(Preferences.guestKeySaved.notifier).update(false);
       }
+      if (r.hasInviter) {
+        await ref.read(Preferences.inviteAttached.notifier).update(true);
+        await ref.read(Preferences.pendingInviteCode.notifier).update('');
+      }
       state = state.copyWith(
         loading: false,
         email: email,
@@ -248,6 +253,24 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     } catch (e) {
       state = state.copyWith(loading: false);
       return (subscribeUrl: null, error: '免注册试用出错：$e', hasAccountMask: null);
+    }
+  }
+
+  /// 记下邀请码。还没登录就先存着，下次开号带上；已经登录就写到这个号上。
+  /// 成功返回 null。已经有推荐人时服务端不覆盖，这里也当成功收起输入行。
+  Future<String?> applyInviteCode(String code) async {
+    final trimmed = code.trim();
+    if (trimmed.isEmpty) return '请填写邀请码';
+    await ref.read(Preferences.pendingInviteCode.notifier).update(trimmed);
+    final token = await currentToken();
+    if (token == null || token.isEmpty) return null;
+    try {
+      await _api.setGuestInvite(token, trimmed);
+      await ref.read(Preferences.inviteAttached.notifier).update(true);
+      await ref.read(Preferences.pendingInviteCode.notifier).update('');
+      return null;
+    } on PanelApiException catch (e) {
+      return e.message;
     }
   }
 

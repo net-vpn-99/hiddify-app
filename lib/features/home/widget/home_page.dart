@@ -18,6 +18,7 @@ import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/home/widget/line_bar.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
 import 'package:hiddify/features/panel_auth/widget/account_key_dialog.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/active/auto_line_fixer.dart';
@@ -53,6 +54,11 @@ class HomePage extends HookConsumerWidget {
     ref.watch(autoLineFixerProvider);
 
     useEffect(() {
+      final code = pendingInviteFromLink;
+      if (code.isNotEmpty) {
+        pendingInviteFromLink = '';
+        Future(() => ref.read(panelAuthProvider.notifier).applyInviteCode(code));
+      }
       // 装好第一次打开：在后台静默开游客号（开不出来首页照常能逛）。
       Future(() => ref.read(guestBootstrapProvider.notifier).ensure());
       // OneRay: 启动后清掉残留更新包 + 静默检查更新一次
@@ -132,10 +138,10 @@ class HomePage extends HookConsumerWidget {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 600),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
+                  const Expanded(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -147,13 +153,59 @@ class HomePage extends HookConsumerWidget {
                       ],
                     ),
                   ),
-                  LineBar(),
-                  AccountStatusBar(),
+                  const _InviteFillBar(),
+                  const LineBar(),
+                  const AccountStatusBar(),
                 ],
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 免注册号还没有推荐人时，首页留一行让他把邀请码填上。记下之后收起来。
+class _InviteFillBar extends HookConsumerWidget {
+  const _InviteFillBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final attached = ref.watch(Preferences.inviteAttached);
+    final auth = ref.watch(panelAuthProvider);
+    if (attached || !auth.loggedIn || !auth.isGuest) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final field = useTextEditingController();
+    final error = useState<String?>(null);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: field,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: error.value ?? '有朋友的推荐码？填一下',
+                hintStyle: TextStyle(color: error.value == null ? null : theme.colorScheme.error),
+                border: const OutlineInputBorder(),
+              ),
+              onSubmitted: (v) async {
+                final msg = await ref.read(panelAuthProvider.notifier).applyInviteCode(v);
+                error.value = msg;
+              },
+            ),
+          ),
+          const Gap(8),
+          FilledButton(
+            onPressed: () async {
+              final msg = await ref.read(panelAuthProvider.notifier).applyInviteCode(field.text);
+              error.value = msg;
+            },
+            child: const Text('记下'),
+          ),
+        ],
       ),
     );
   }

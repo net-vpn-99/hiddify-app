@@ -112,6 +112,12 @@ abstract class Preferences {
   // 挂红点。默认 true —— 1.3.0 之前开的老号本来就没有待办，别凭空长出一个红点。
   static final guestKeySaved = PreferencesNotifier.create<bool, bool>("guest_key_saved", true);
 
+  // OneRay: 邀请页送来的、还没记到账号上的推荐码。开号时带上，记上之后清空。
+  static final pendingInviteCode = PreferencesNotifier.create<String, String>("pending_invite_code", "");
+
+  // OneRay: 这个号已经有推荐人。首页那行「填一下」据此收起来。
+  static final inviteAttached = PreferencesNotifier.create<bool, bool>("invite_attached", false);
+
   // OneRay: 「关于」页连点版本号 5 次解锁，「我的」页才显示高级设置（路由 / DNS / 入站 /
   // TLS / WARP / 日志）。普通用户改这些只会把自己搞挂，但客服排障时要用。
   static final devMode = PreferencesNotifier.create<bool, bool>("dev_mode", false);

@@ -6,6 +6,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 // For temporary storage of the link received from AppLinks.
 String newUrlFromAppLink = '';
 
+/// 邀请页 `oneray://invite?code=` 送到首页去记。别当成订阅导入。
+String pendingInviteFromLink = '';
+
 class RefreshListenable extends ChangeNotifier {
   RefreshListenable(this.ref) {
     ref.listen(myAppLinksProvider, (_, next) {

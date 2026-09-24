@@ -71,6 +71,11 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
       redirect: (context, state) {
         // fix path-parameters for deep link
         String? url;
+        if (state.uri.scheme == 'oneray' && state.uri.host == 'invite') {
+          final code = state.uri.queryParameters['code'] ?? '';
+          if (code.isNotEmpty) pendingInviteFromLink = code;
+          return '/home';
+        }
         if (LinkParser.protocols.contains(state.uri.scheme)) {
           url = state.uri.toString();
         } else if (PlatformUtils.isDesktop && newUrlFromAppLink.isNotEmpty) {
