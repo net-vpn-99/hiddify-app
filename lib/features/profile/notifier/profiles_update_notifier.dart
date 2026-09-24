@@ -9,7 +9,9 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
+import 'package:hiddify/features/profile/model/profile_failure.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart' show freshAccountSubscribeUrlIfChanged;
 import 'package:hiddify/utils/custom_loggers.dart';
 import 'package:meta/meta.dart';
@@ -126,6 +128,12 @@ class ForegroundProfilesUpdateNotifier extends _$ForegroundProfilesUpdateNotifie
           await updateCall
               .mapLeft((l) {
                 loggy.debug("error updating profile [${profile.id}]", l);
+                // 试用结束后面板拒绝下发节点。这不是更新失败，别弹红条。
+                final expired = ref.read(panelAuthProvider).account?.exhausted ?? false;
+                if (profileFailureIsSubscribeDenied(l) && expired) {
+                  state = AsyncData((name: profile.name, success: false));
+                  return;
+                }
                 ref
                     .read(inAppNotificationControllerProvider)
                     .showErrorToast(t.pages.profiles.msg.update.failureNamed(name: profile.name));

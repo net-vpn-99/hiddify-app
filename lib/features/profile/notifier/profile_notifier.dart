@@ -49,6 +49,11 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
             notification.showErrorToast(t.pages.profiles.msg.invalidUrl);
           } else if (error case ProfileCancelByUserFailure()) {
             return;
+          } else if (error is ProfileFailure &&
+              profileFailureIsSubscribeDenied(error) &&
+              (ref.read(panelAuthProvider).account?.exhausted ?? false)) {
+            // 试用结束拉不到节点。首页会自己弹「去买套餐」，不要再盖一层英文报错。
+            return;
           } else {
             ref
                 .read(dialogNotifierProvider.notifier)
@@ -261,6 +266,11 @@ class UpdateProfileNotifier extends _$UpdateProfileNotifier with AppLogger {
         case AsyncData(value: final _?):
           notification.showSuccessToast(t.pages.profiles.msg.update.success);
         case AsyncError(:final error):
+          if (error is ProfileFailure &&
+              profileFailureIsSubscribeDenied(error) &&
+              (ref.read(panelAuthProvider).account?.exhausted ?? false)) {
+            return;
+          }
           ref
               .read(dialogNotifierProvider.notifier)
               .showCustomAlertFromErr(t.presentError(error, action: t.pages.profiles.msg.update.failure));

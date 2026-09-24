@@ -144,6 +144,15 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
         return;
       }
 
+      // 卸载重装拿回的是原来那个号。试用已经结束时，订阅地址会 403。
+      // 不要再去导入，否则会先弹出一长段英文「添加配置文件失败」，点掉才看到「试用已结束」。
+      final resumed = ref.read(panelAuthProvider).account;
+      if (resumed != null && resumed.exhausted) {
+        _done = true;
+        state = const GuestBootstrapState();
+        return;
+      }
+
       final url = r.subscribeUrl;
       if (r.error != null || url == null || url.isEmpty) {
         // 没标 _done：网络不好时下次回到首页还能再试一次。

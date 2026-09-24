@@ -153,7 +153,6 @@ class HomePage extends HookConsumerWidget {
                       ],
                     ),
                   ),
-                  const _InviteFillBar(),
                   const LineBar(),
                   const AccountStatusBar(),
                 ],
@@ -161,51 +160,6 @@ class HomePage extends HookConsumerWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// 免注册号还没有推荐人时，首页留一行让他把邀请码填上。记下之后收起来。
-class _InviteFillBar extends HookConsumerWidget {
-  const _InviteFillBar();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final attached = ref.watch(Preferences.inviteAttached);
-    final auth = ref.watch(panelAuthProvider);
-    if (attached || !auth.loggedIn || !auth.isGuest) return const SizedBox.shrink();
-    final theme = Theme.of(context);
-    final field = useTextEditingController();
-    final error = useState<String?>(null);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: field,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: error.value ?? '有朋友的推荐码？填一下',
-                hintStyle: TextStyle(color: error.value == null ? null : theme.colorScheme.error),
-                border: const OutlineInputBorder(),
-              ),
-              onSubmitted: (v) async {
-                final msg = await ref.read(panelAuthProvider.notifier).applyInviteCode(v);
-                error.value = msg;
-              },
-            ),
-          ),
-          const Gap(8),
-          FilledButton(
-            onPressed: () async {
-              final msg = await ref.read(panelAuthProvider.notifier).applyInviteCode(field.text);
-              error.value = msg;
-            },
-            child: const Text('记下'),
-          ),
-        ],
       ),
     );
   }

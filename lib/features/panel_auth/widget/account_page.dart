@@ -120,6 +120,12 @@ class AccountPage extends HookConsumerWidget {
               onPressed: () => context.pushNamed('purchase'),
             ),
             const SizedBox(height: 8),
+            // 推荐码不放首页。首页是连接，这行只在账号页，填过就消失。
+            if (auth.isGuest && !ref.watch(Preferences.inviteAttached))
+              TextButton(
+                onPressed: () => _askInviteCode(context, ref),
+                child: const Text('有朋友的推荐码？填一下'),
+              ),
             // 钥匙（账号编号 + 密码）。免注册的号才有，而且只在服务端发得出密码时才有。
             //   - 还没抄走 → 强调色，点开是「记下这两样」
             //   - 抄走了   → 平常样子，点开是「设置密码」（换成自己记得住的）
@@ -201,6 +207,46 @@ class AccountPage extends HookConsumerWidget {
       );
 
   static String _gb(int bytes) => '${(bytes / 1073741824).toStringAsFixed(bytes >= 1073741824 ? 1 : 2)} GB';
+
+  static Future<void> _askInviteCode(BuildContext context, WidgetRef ref) async {
+    final field = TextEditingController();
+    final error = ValueNotifier<String?>(null);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('填写推荐码'),
+        content: ValueListenableBuilder<String?>(
+          valueListenable: error,
+          builder: (_, msg, __) => TextField(
+            controller: field,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: '朋友发给你的那一串',
+              errorText: msg,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('记下')),
+        ],
+      ),
+    );
+    if (ok != true) {
+      field.dispose();
+      error.dispose();
+      return;
+    }
+    final msg = await ref.read(panelAuthProvider.notifier).applyInviteCode(field.text);
+    field.dispose();
+    error.dispose();
+    if (!context.mounted) return;
+    if (msg != null) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(msg)));
+      return;
+    }
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('推荐码已记下')));
+  }
 
   static String _fmtDate(int unixSec) {
     final d = DateTime.fromMillisecondsSinceEpoch(unixSec * 1000);

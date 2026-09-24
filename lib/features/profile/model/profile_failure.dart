@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/failures.dart';
@@ -35,4 +36,11 @@ sealed class ProfileFailure with _$ProfileFailure, Failure {
       ProfileCancelByUserFailure(:final message) => (type: t.errors.profiles.canceledByUser, message: message),
     };
   }
+}
+
+/// 订阅地址回 403：账号到期 / 试用结束时面板拒绝下发节点。不是配置坏了。
+bool profileFailureIsSubscribeDenied(ProfileFailure failure) {
+  if (failure is! ProfileUnexpectedFailure) return false;
+  final err = failure.error;
+  return err is DioException && err.response?.statusCode == 403;
 }
