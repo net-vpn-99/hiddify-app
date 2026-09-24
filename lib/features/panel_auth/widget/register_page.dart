@@ -5,7 +5,6 @@ import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
-import 'package:hiddify/features/panel_auth/widget/account_benefits.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
 import 'package:hiddify/utils/uri_utils.dart';
@@ -36,15 +35,9 @@ class RegisterPage extends HookConsumerWidget {
     final busy = useState(false);
     final cooldown = useState(0);
     final opts = useState<_Opts?>(null);
-    final bonusText = useState<String?>(null);
-
     useEffect(() {
       () async {
         opts.value = await ref.read(panelAuthProvider.notifier).registerOptions();
-        if (bind) {
-          final g = await ref.read(panelAuthProvider.notifier).guestOptions();
-          if (context.mounted) bonusText.value = g.bindBonusText;
-        }
       }();
       return null;
     }, const []);
@@ -98,7 +91,7 @@ class RegisterPage extends HookConsumerWidget {
         if (!context.mounted) return;
         busy.value = false;
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(content: Text('注册完成，以后用 ${emailCtrl.text.trim()} 登录')),
+          SnackBar(content: Text('邮箱已绑定，还是原来的账号。以后用 ${emailCtrl.text.trim()} 登录')),
         );
         if (context.canPop()) {
           context.pop(true);
@@ -133,7 +126,7 @@ class RegisterPage extends HookConsumerWidget {
     return Scaffold(
       // 用户眼里只有「注册」和「登录」两件事。bind=true 底层是把当前这个免注册的号
       // 原地变成正式账号（套餐、试用、线路全保留），但那是实现细节 —— 界面上一律叫注册。
-      appBar: AppBar(title: const Text('注册光速雷达账号')),
+      appBar: AppBar(title: Text(bind ? '绑定邮箱' : '注册光速雷达账号')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
@@ -147,17 +140,15 @@ class RegisterPage extends HookConsumerWidget {
                       // 说清楚「绑了能得到什么」，一条一行（account_benefits.dart 是全 App
                       // 唯一那份说法）。以前是一段绕来绕去的解释，用户看不懂。
                       if (bind) ...[
-                        const AccountBenefitList(),
+                        Text(
+                          '还是现在这个账号，只是加上邮箱。套餐和线路都留着。',
+                          style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant, height: 1.4),
+                        ),
                         const SizedBox(height: 6),
                         Text(
-                          '现在的试用、套餐和线路都会保留，不用重新买。',
-                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          '绑定后可以邀请好友，双方各得 ${ref.watch(inviteTextsProvider).valueOrNull?.bonus ?? '1 天不限流量'}，也能在多台设备登录。',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant, height: 1.4),
                         ),
-                        if (bonusText.value != null && bonusText.value!.isNotEmpty)
-                          Text(
-                            bonusText.value!,
-                            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.primary),
-                          ),
                       ] else
                         Text(
                           '注册成功就送免费试用，马上能用。',
@@ -239,7 +230,7 @@ class RegisterPage extends HookConsumerWidget {
                         onPressed: busy.value ? null : submit,
                         child: busy.value
                             ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('注册'),
+                            : Text(bind ? '绑定邮箱' : '注册'),
                       ),
                       const SizedBox(height: 8),
                       TextButton(

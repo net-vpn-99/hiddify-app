@@ -69,7 +69,7 @@ class QuotaEndedDialog extends ConsumerWidget {
               const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: () => context.pop(QuotaEndedAction.invite),
-                child: Text(isGuest ? '邀请好友（先注册）' : '邀请好友试用'),
+                child: Text(isGuest ? '邀请好友' : '邀请好友试用'),
               ),
             ],
             TextButton(
