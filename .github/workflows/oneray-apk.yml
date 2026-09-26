@@ -8,6 +8,11 @@ on:
   push:
     branches: [oneray-rel]
   workflow_dispatch:
+    inputs:
+      default_invite_code:
+        description: "Bake this invite code into the APK. Empty for official builds."
+        required: false
+        default: ""
 
 env:
   FLUTTER_VERSION: "3.38.5"
@@ -86,11 +91,17 @@ jobs:
           echo "--- $LP ---"; cat "$LP"
 
       - name: Build APK (armeabi-v7a / arm64-v8a / x86_64 / universal via gradle splits)
+        env:
+          DEFAULT_INVITE_CODE: ${{ inputs.default_invite_code }}
         run: |
           set -o pipefail
+          EXTRA=()
+          if [ -n "$DEFAULT_INVITE_CODE" ]; then
+            EXTRA+=(--dart-define=DEFAULT_INVITE_CODE="$DEFAULT_INVITE_CODE")
+          fi
           flutter build apk --release -t lib/main_prod.dart \
             --build-name=${{ steps.ver.outputs.name }} --build-number=${{ steps.ver.outputs.code }} \
-            --dart-define sentry_dsn= 2>&1 | tee /tmp/build.log
+            --dart-define sentry_dsn= "${EXTRA[@]}" 2>&1 | tee /tmp/build.log
           echo "--- APK versionName check ---"
           "$ANDROID_SDK_ROOT"/build-tools/*/aapt dump badging build/app/outputs/flutter-apk/app-arm64-v8a-release.apk 2>/dev/null | grep -o "versionName='[^']*'" || true
 
