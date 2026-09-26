@@ -15,6 +15,16 @@ const _kEmailKey = 'oneray_panel_email';
 /// 连他自己都进不去了。
 const _kGuestPwKey = 'oneray_guest_password';
 
+/// 单独打的渠道包用 `--dart-define=DEFAULT_INVITE_CODE=...` 带上。
+/// 官网包不传这个值，留空，行为和以前一样。用户自己填了邀请码时以他填的为准。
+const kDefaultInviteCode = String.fromEnvironment('DEFAULT_INVITE_CODE');
+
+String _inviteOrDefault(String? typed) {
+  final trimmed = typed?.trim() ?? '';
+  if (trimmed.isNotEmpty) return trimmed;
+  return kDefaultInviteCode;
+}
+
 const _secureStorage = FlutterSecureStorage(
   aOptions: AndroidOptions(encryptedSharedPreferences: true),
 );
@@ -183,7 +193,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     }
 
     try {
-      var token = await _api.register(email.trim(), password, code: code, inviteCode: inviteCode);
+      var token = await _api.register(email.trim(), password, code: code, inviteCode: _inviteOrDefault(inviteCode));
       // 部分站点注册后不直接返回令牌 —— 账号已建好，用密码登录一次。
       token ??= await _api.login(email.trim(), password);
       return await finish(token);
@@ -216,7 +226,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     }
     state = state.copyWith(loading: true);
     try {
-      final pending = ref.read(Preferences.pendingInviteCode).trim();
+      final pending = _inviteOrDefault(ref.read(Preferences.pendingInviteCode));
       final r = await _api.guestLogin(deviceId, inviteCode: pending.isEmpty ? null : pending);
       final token = r.token;
       if (token == null) {
@@ -314,7 +324,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     if (state.loading) return null;
     state = state.copyWith(loading: true);
     try {
-      final bound = await _api.bindGuest(token, email, password, code: code, inviteCode: inviteCode);
+      final bound = await _api.bindGuest(token, email, password, code: code, inviteCode: _inviteOrDefault(inviteCode));
       await _secureStorage.write(key: _kEmailKey, value: bound);
       // 注册时他自己设了密码，开号那把临时钥匙作废。
       await _secureStorage.delete(key: _kGuestPwKey);
