@@ -11,7 +11,10 @@ class PreferencesMigration with InfraLogger {
   Future<void> migrate() async {
     final currentVersion = sharedPreferences.getInt(versionKey) ?? 0;
 
-    final migrationSteps = [PreferencesVersion1Migration(sharedPreferences)];
+    final List<PreferencesMigrationStep> migrationSteps = [
+      PreferencesVersion1Migration(sharedPreferences),
+      OneRayRegionCnMigration(sharedPreferences),
+    ];
 
     if (currentVersion == migrationSteps.length) {
       loggy.debug("already using the latest version (v$currentVersion)");
@@ -106,4 +109,24 @@ class PreferencesVersion1Migration extends PreferencesMigrationStep with InfraLo
     "ipv6Only" => "ipv6_only",
     _ => "",
   };
+}
+
+/// OneRay（1.1.48 起）：分流「地区」一律改成中国。
+///
+/// 安卓核心不执行服务端订阅里的分流规则（executeConfigAsIs=false，核心自己重建整个
+/// route），它只在 region != other 时才加「.cn / geosite-cn / geoip-cn → 直连」。
+/// 原来默认是 other，于是安卓上**国内网站也全走代理**：QQ、微信看到的是国外 IP，国内
+/// 流量也计入套餐（2026-09-28 真机浏览器打开 B 站查 IP 接口，显示美国）。
+/// 默认值已改成 cn；这一步把老用户存下来的其它值也改掉（我们的用户都在国内）。
+class OneRayRegionCnMigration extends PreferencesMigrationStep with InfraLogger {
+  OneRayRegionCnMigration(super.sharedPreferences);
+
+  @override
+  Future<void> migrate() async {
+    final current = sharedPreferences.getString("region");
+    if (current != "cn") {
+      loggy.debug("changing region from [$current] to [cn]");
+      await sharedPreferences.setString("region", "cn");
+    }
+  }
 }

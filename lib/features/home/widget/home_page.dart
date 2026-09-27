@@ -159,13 +159,13 @@ class HomePage extends HookConsumerWidget {
                         ConnectionButton(),
                         _SpeedLine(),
                         StabilityIndicator(),
-                        _RouteSummary(),
                         _GoogleTestButton(),
                         ConnectIssueCard(),
                         SupportFailureLink(),
                       ],
                     ),
                   ),
+                  const _RouteRulesEntry(),
                   const LineBar(),
                   const AccountStatusBar(),
                 ],
@@ -263,60 +263,27 @@ class AppVersionLabel extends HookConsumerWidget {
   }
 }
 
-/// 首页分流说明：直接把结论写在状态下面，想了解细节再点「分流规则 ›」。两端同一套
-/// （Windows 在「连接稳定」下面）。原来是线路条上方一行灰字，用户根本没注意到（2026-09-28）。
-/// 实测出异常时前面亮一个橙点。watch routeCheckProvider 也让它从首页起就活着，
+/// 首页「查看分流规则」入口：一直都在（用户最常在连接之前犹豫「QQ 会不会变美国登录」）。
+/// 实测出异常时前面亮一个橙点。watch 一下 routeCheckProvider 也让它从首页起就活着，
 /// 连上第一次测通时能自动测。
-class _RouteSummary extends ConsumerWidget {
-  const _RouteSummary();
+class _RouteRulesEntry extends ConsumerWidget {
+  const _RouteRulesEntry();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final warn = ref.watch(routeCheckProvider.select((s) => s.warning.isNotEmpty));
-    final confirmed = ref.watch(stabilityProvider.select((s) => s.confirmed));
-    final connected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
-    final line = ref.watch(Preferences.lastNodeName);
-    final lit = connected && confirmed;
-    final text = lit
-        ? '国内网站走本地网络 · 国外网站走${line.isEmpty ? '光速雷达' : line}'
-        : '连上后：国内网站走本地网络，国外网站走光速雷达';
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
-      child: Material(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .7),
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () => context.pushNamed('routeRules'),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 44),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (warn) ...[
-                    const Icon(Icons.circle, size: 8, color: Color(0xFFCF8A3B)),
-                    const SizedBox(width: 6),
-                  ],
-                  Flexible(
-                    child: Text(text, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface)),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '分流规则 ›',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: const Color(0xFF3FA372),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+    return Center(
+      child: TextButton.icon(
+        style: TextButton.styleFrom(
+          foregroundColor: theme.colorScheme.onSurfaceVariant,
+          minimumSize: const Size(48, 40),
         ),
+        onPressed: () => context.pushNamed('routeRules'),
+        icon: warn
+            ? const Icon(Icons.circle, size: 8, color: Color(0xFFCF8A3B))
+            : const Icon(Icons.help_outline, size: 16),
+        label: const Text('查看分流规则'),
       ),
     );
   }

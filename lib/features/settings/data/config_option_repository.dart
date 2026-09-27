@@ -32,7 +32,9 @@ abstract class ConfigOptions {
 
   static final region = PreferencesNotifier.create<Region, String>(
     "region",
-    Region.other,
+    // OneRay：默认中国。other 会让安卓核心不加国内直连规则，国内网站全走代理（见
+    // preferences_migration.dart 的 OneRayRegionCnMigration）。
+    Region.cn,
     mapFrom: Region.values.byName,
     mapTo: (value) => value.name,
   );
