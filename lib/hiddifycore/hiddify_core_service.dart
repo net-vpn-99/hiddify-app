@@ -38,6 +38,10 @@ class HiddifyCoreService with InfraLogger {
 
   CoreStatus currentState = const CoreStatus.stopped();
   final statusController = BehaviorSubject<CoreStatus>();
+
+  /// 状态通道是不是我们自己关掉的（切到后台时的 closeFront、重新订阅时取消旧的）。
+  /// 是的话，通道断开不代表 VPN 停了，不能改 currentState。
+  bool _statusClosedByUs = false;
   final logController = BehaviorSubject<List<LogMessage>>();
   final CallOptions? grpcOptions = null; //CallOptions(timeout: const Duration(milliseconds: 10000));
   final Map<String, StreamSubscription?> subscriptions = {};
@@ -438,12 +442,19 @@ class HiddifyCoreService with InfraLogger {
   }
 
   Future<void> startListeningStatus(String key, CoreClient cc) async {
+    // listenSingle 会先取消同名的旧订阅 —— 那也是我们自己关的，同样不能记成「已停止」。
+    _statusClosedByUs = true;
     await listenSingle<CoreStatus>(
       "${key}StatusListener",
       () => cc
           .coreInfoListener(Empty(), options: grpcOptions)
           .doOnCancel(() {
             loggy.error("status", "Canceld");
+            // OneRay：切到后台时是 closeFront() 自己把状态通道关掉的，VPN 还在跑。原来这里
+            // 照样记成「已停止」，回前台 setup() 先把这个错的「已停止」报出去，首页就闪一下
+            //「连接中」再「已连接」—— 用户觉得「一动它就断」（1.1.46 真机反馈）。
+            // 我们自己关的通道不改状态；重新订阅后核心会报真实状态。
+            if (_statusClosedByUs) return;
             if (currentState == const CoreStatus.started()) currentState = const CoreStatus.stopped();
           })
           .doOnData((event) {
@@ -470,6 +481,8 @@ class HiddifyCoreService with InfraLogger {
         // startListeningStatus(key, cc);
       },
     );
+    // 旧订阅已经取消完、新订阅已经挂上：从这里起通道再断开，就是真的断了。
+    _statusClosedByUs = false;
   }
 
   Future<void> startListeningLogs(String key, CoreClient cc) async {
@@ -564,6 +577,7 @@ class HiddifyCoreService with InfraLogger {
       return;
     }
     if (!core.isSingleChannel()) {
+      _statusClosedByUs = true;
       await stopListenSingle("fg");
       await stopListenSingle("bg");
       try {

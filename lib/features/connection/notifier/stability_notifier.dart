@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
-import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -55,41 +54,20 @@ final stabilityProvider =
 /// 下次点连接 / 换线路 / 手动关掉时清掉。
 final deadLineProvider = StateProvider<bool>((ref) => false);
 
-/// 这次连接已经测通过。记在模块级，和 [_rememberedScore] 一样经得起 widget 重建。
-///
-/// **切到桌面再回来不能清它**（1.1.46 真机反馈）：回前台时连接状态流会重放一遍
-///（先来个「断开」，紧接着「已连接」），隧道其实一直没断。原来一看到「断开」就清掉，
-/// 首页于是又从「连接中」测一遍，用户的感觉是「一动它就断」。
-/// 现在只有真的在断开（Disconnecting）才立刻清；
-/// 单独一个「断开」要持续 2 秒才算数，2 秒内又回到「已连接」就当没发生。
-bool _confirmedFlag = false;
-
 class StabilityNotifier extends Notifier<StabilityState> {
   Timer? _timer;
-  Timer? _clearTimer;
   int _consecFail = 0;
   bool _running = false;
-
-  bool get _confirmed => _confirmedFlag;
-  set _confirmed(bool v) => _confirmedFlag = v;
+  bool _confirmed = false;
 
   @override
   StabilityState build() {
-    ref.onDispose(() {
-      _timer?.cancel();
-      _clearTimer?.cancel();
-    });
+    ref.onDispose(() => _timer?.cancel());
     ref.listen(connectionNotifierProvider, (_, next) {
       // 状态还没读出来（loading / 刚回前台）时什么都不做：当成「断开」就会停掉探测，
       // 回来再 _start 一次，客户看到的就是又测一遍。
       final status = next.valueOrNull;
       if (status == null) return;
-      // 真的在断开（用户点断开 / 重连 / 换订阅都会经过这一步）：「已确认」立刻作废。
-      // 不看 Connecting：回前台的重放可能也会带一拍 Connecting。
-      if (status is Disconnecting) {
-        _clearTimer?.cancel();
-        _clearConfirmed();
-      }
       final connected = status.isConnected;
       if (connected && !_running) {
         _start();
@@ -97,28 +75,16 @@ class StabilityNotifier extends Notifier<StabilityState> {
         _stop();
       }
     }, fireImmediately: true);
-    return StabilityState(_rememberedScore, confirmed: _confirmedFlag);
-  }
-
-  void _clearConfirmed() {
-    if (!_confirmed) return;
-    _confirmed = false;
-    state = StabilityState(_rememberedScore);
+    return StabilityState(_rememberedScore);
   }
 
   void _start() {
     _running = true;
     _consecFail = 0;
-    _clearTimer?.cancel();
-    _timer?.cancel();
-    if (_confirmed) {
-      // 回前台重放出来的「已连接」：之前已经测通过，界面保持「已连接」，照常 15 秒一探。
-      state = StabilityState(_rememberedScore, confirmed: true);
-      _timer = Timer.periodic(const Duration(seconds: 15), (_) => _probe());
-      return;
-    }
+    _confirmed = false;
     // 有上次的分数就先照着显示，探完再更新；没有才是「测量中」。
     state = StabilityState(_rememberedScore);
+    _timer?.cancel();
     _probe();
     // 确认通之前 3 秒一探：首页要尽快从「连接中」变「已连接」，不通的线在 10 秒
     // 截止前也要试够几次。确认后在 _probe 里换成 15 秒。
@@ -127,13 +93,10 @@ class StabilityNotifier extends Notifier<StabilityState> {
 
   void _stop() {
     _running = false;
+    _confirmed = false;
     _timer?.cancel();
     // 分数留着不清：断开时首页本来就不显示这一行，下次连上先显示上次结果。
-    // 「已确认」等 2 秒再清 —— 回前台的重放会在这之前回到「已连接」。
-    _clearTimer?.cancel();
-    _clearTimer = Timer(const Duration(seconds: 2), () {
-      if (!_running) _clearConfirmed();
-    });
+    state = StabilityState(_rememberedScore);
   }
 
   bool _probing = false;
