@@ -67,13 +67,14 @@ class RouteCheckNotifier extends Notifier<RouteCheckState> {
   @override
   RouteCheckState build() {
     // 第一次测通（首页从「连接中」变「已连接」）→ 测一次；断开 → 清空。
+    // 测通 → 测一次；真的断开（「已确认」被清掉）→ 清空。不直接看连接状态：切到桌面
+    // 再回来时状态流会重放一下「断开」，看它的话结果会被白白清掉又重测。
     ref.listen(stabilityProvider.select((s) => s.confirmed), (prev, next) {
       if (next && prev != true) {
         unawaited(check());
+      } else if (!next && prev == true) {
+        _reset();
       }
-    });
-    ref.listen(connectionNotifierProvider.select((s) => s.valueOrNull?.isConnected ?? false), (_, connected) {
-      if (!connected) _reset();
     });
     // 已连着换线路（内核里直接切出站，不重连）→ 国外那行要跟着变。
     ref.listen(Preferences.lastNodeName, (prev, next) {
