@@ -12,6 +12,7 @@ import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_state.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/connection/notifier/route_check_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/connection/widget/stability_indicator.dart';
 import 'package:hiddify/features/home/widget/account_status_bar.dart';
@@ -158,6 +159,7 @@ class HomePage extends HookConsumerWidget {
                       ],
                     ),
                   ),
+                  const _RouteRulesEntry(),
                   const LineBar(),
                   const AccountStatusBar(),
                 ],
@@ -250,6 +252,32 @@ class AppVersionLabel extends HookConsumerWidget {
           textDirection: TextDirection.ltr,
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSecondaryContainer),
         ),
+      ),
+    );
+  }
+}
+
+/// 首页「查看分流规则」入口：一直都在（用户最常在连接之前犹豫「QQ 会不会变美国登录」）。
+/// 实测出异常时前面亮一个橙点。watch 一下 routeCheckProvider 也让它从首页起就活着，
+/// 连上第一次测通时能自动测。
+class _RouteRulesEntry extends ConsumerWidget {
+  const _RouteRulesEntry();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final warn = ref.watch(routeCheckProvider.select((s) => s.warning.isNotEmpty));
+    return Center(
+      child: TextButton.icon(
+        style: TextButton.styleFrom(
+          foregroundColor: theme.colorScheme.onSurfaceVariant,
+          minimumSize: const Size(48, 40),
+        ),
+        onPressed: () => context.pushNamed('routeRules'),
+        icon: warn
+            ? const Icon(Icons.circle, size: 8, color: Color(0xFFCF8A3B))
+            : const Icon(Icons.help_outline, size: 16),
+        label: const Text('查看分流规则'),
       ),
     );
   }

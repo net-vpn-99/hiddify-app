@@ -8,6 +8,7 @@ import 'package:hiddify/core/router/go_router/helper/custom_transition.dart';
 import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
 import 'package:hiddify/features/about/widget/about_page.dart';
 import 'package:hiddify/features/home/widget/home_page.dart';
+import 'package:hiddify/features/home/widget/route_rules_page.dart';
 import 'package:hiddify/features/log/overview/logs_page.dart';
 import 'package:hiddify/features/panel_auth/widget/account_page.dart';
 import 'package:hiddify/features/panel_auth/widget/invite_page.dart';
@@ -113,6 +114,13 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                       path: '/proxies',
                       pageBuilder: (_, state) =>
                           customTransition(TransitionType.fade, state.pageKey, const ProxiesOverviewPage()),
+                    ),
+                    // 首页「查看分流规则」：整页（不用抽屉），左上返回。
+                    GoRoute(
+                      name: 'routeRules',
+                      path: '/route-rules',
+                      pageBuilder: (_, state) =>
+                          customTransition(TransitionType.slide, state.pageKey, const RouteRulesPage()),
                     ),
                     if (isMobileBreakpoint)
                       GoRoute(
