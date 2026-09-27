@@ -28,6 +28,7 @@ import 'package:hiddify/features/support/widget/support_failure_link.dart';
 import 'package:hiddify/gen/assets.gen.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/utils/number_formatters.dart';
+import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 首页（1.1.28 重做）。
@@ -149,6 +150,7 @@ class HomePage extends HookConsumerWidget {
                         ConnectionButton(),
                         _SpeedLine(),
                         StabilityIndicator(),
+                        _GoogleTestButton(),
                         SupportFailureLink(),
                       ],
                     ),
@@ -184,6 +186,38 @@ class _SpeedLine extends ConsumerWidget {
       child: Text(
         '↓ ${stats.downlink.toInt().speed()}    ↑ ${stats.uplink.toInt().speed()}',
         style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+/// 连上之后给新用户一个「下一步」：点一下用默认浏览器打开谷歌搜索，看到结果就知道网通了。
+/// 搜「今天天气」是因为谷歌会直接出天气卡片，最直观。没连上时什么都不画。
+class _GoogleTestButton extends ConsumerWidget {
+  const _GoogleTestButton();
+
+  static const _url = 'https://www.google.com/search?q=%E4%BB%8A%E5%A4%A9%E5%A4%A9%E6%B0%94';
+
+  // 跟 StabilityIndicator 分数 ≥ 8 的「稳定」绿同一色。
+  static const _stableGreen = Color(0xFF3FA372);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final connected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
+    if (!connected) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: FilledButton.tonalIcon(
+        onPressed: () => UriUtils.tryLaunch(Uri.parse(_url)),
+        icon: const Icon(Icons.search, size: 18),
+        label: const Text('打开谷歌试试'),
+        style: FilledButton.styleFrom(
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          backgroundColor: _stableGreen.withValues(alpha: 0.14),
+          foregroundColor: _stableGreen,
+        ),
       ),
     );
   }
