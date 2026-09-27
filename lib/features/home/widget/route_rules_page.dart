@@ -255,7 +255,7 @@ class _RouteRulesPageState extends ConsumerState<RouteRulesPage> {
                     else ...[
                       liveRow('国内', check.domesticLine),
                       liveRow('国外', check.foreignLine),
-                      if (check.status == 'done')
+                      if (check.status == 'done' && !check.listLoading)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Text(

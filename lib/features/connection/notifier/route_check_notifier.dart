@@ -26,6 +26,7 @@ class RouteCheckState {
     this.warning = '',
     this.domesticSummary = '',
     this.foreignSummary = '',
+    this.listLoading = false,
   });
 
   /// idle / running / done
@@ -37,6 +38,9 @@ class RouteCheckState {
   /// 纠错留言里写的简短结果
   final String domesticSummary;
   final String foreignSummary;
+
+  /// 国内分流名单还在下载（连上后核心才在后台下），会自动重测；这时不下结论。
+  final bool listLoading;
 }
 
 final routeCheckProvider = NotifierProvider<RouteCheckNotifier, RouteCheckState>(RouteCheckNotifier.new);
@@ -52,6 +56,16 @@ class _Egress {
 
 class RouteCheckNotifier extends Notifier<RouteCheckState> {
   int _serial = 0;
+
+  /// 「分流名单下载中」时还要再测几次（每次稳定性探测成功后测一次）。
+  int _listRetriesLeft = 0;
+
+  /// 核心的国内名单（geosite-cn / geoip-cn）是**连上之后才在后台下载**的（装新版后
+  /// 第一次连接，1.1.50 真机诊断 01D4-0928：内核 0.25 秒就报已连接）。名单到之前 B 站会
+  /// 走代理，但 `.cn` 后缀直连是核心写死的规则、不靠名单 —— 所以国内那行不是中国时再测
+  /// 一个 .cn 网址：.cn 走了本地 = 名单还没到；.cn 也走了代理 = 真被别的东西接管了。
+  static const _cnSuffixUrl = 'https://whois.pconline.com.cn/ipJson.jsp?json=true';
+  static const _maxListRetries = 8;
 
   // 国内网址必须是分流规则一定判成「国内」的域名（B 站：UTF-8、带运营商；腾讯兜底，无运营商）。
   static const _domesticUrls = [
@@ -76,6 +90,13 @@ class RouteCheckNotifier extends Notifier<RouteCheckState> {
         _reset();
       }
     });
+    // 名单下载中 → 每次探测成功（= 隧道确实通着）后再测，测到中国为止。
+    ref.listen(stabilityProvider, (prev, next) {
+      if (_listRetriesLeft > 0 && next.confirmed && next.score >= 0 && state.status == 'done') {
+        _listRetriesLeft--;
+        unawaited(check(fromRetry: true));
+      }
+    });
     // 已连着换线路（内核里直接切出站，不重连）→ 国外那行要跟着变。
     ref.listen(Preferences.lastNodeName, (prev, next) {
       if (prev != next && ref.read(stabilityProvider).confirmed) unawaited(check());
@@ -85,14 +106,17 @@ class RouteCheckNotifier extends Notifier<RouteCheckState> {
 
   void _reset() {
     _serial++;
+    _listRetriesLeft = 0;
     state = const RouteCheckState();
   }
 
-  Future<void> check() async {
+  Future<void> check({bool fromRetry = false}) async {
     final connected = ref.read(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
     if (!connected) return;
+    if (!fromRetry) _listRetriesLeft = 0;
     final serial = ++_serial;
-    state = const RouteCheckState(status: 'running');
+    // 名单下载中的自动重测不闪「检测中」，结果出来直接替换。
+    if (!fromRetry) state = const RouteCheckState(status: 'running');
 
     final results = await Future.wait([_first(_domesticUrls, true), _first(_foreignUrls, false)]);
     if (serial != _serial) return;
@@ -106,6 +130,30 @@ class RouteCheckNotifier extends Notifier<RouteCheckState> {
     String domesticLine;
     String domesticSummary;
     final domesticCn = d.ok && d.cc == 'CN';
+
+    // 国内那行不是中国：看 .cn 网址走没走本地，分清「名单还没下载好」和「真被接管」。
+    var listLoading = false;
+    if (d.ok && !domesticCn && f.ok) {
+      final cnIp = await _cnSuffixIp();
+      if (serial != _serial) return;
+      listLoading = cnIp.isNotEmpty && cnIp != f.ip;
+    }
+    if (listLoading) {
+      if (!fromRetry) _listRetriesLeft = _maxListRetries;
+      if (_listRetriesLeft > 0) {
+        state = RouteCheckState(
+          status: 'done',
+          domesticLine: '分流名单下载中，稍后自动重测',
+          foreignLine: '光速雷达 · ${where.isEmpty ? f.cc : where}\n${_mask(f.ip)}',
+          domesticSummary: '名单下载中',
+          foreignSummary: f.cc,
+          listLoading: true,
+        );
+        return;
+      }
+    } else {
+      _listRetriesLeft = 0;
+    }
     if (!d.ok) {
       domesticLine = '暂时测不出来';
       domesticSummary = '未测';
@@ -130,7 +178,10 @@ class RouteCheckNotifier extends Notifier<RouteCheckState> {
     }
 
     String warning = '';
-    if (d.ok && !domesticCn) {
+    if (listLoading) {
+      // 重测了好几轮名单还没到：多半是名单下载失败，断开重连会重新下载。
+      warning = '国内分流名单没下载下来，请断开后重新连接一次';
+    } else if (d.ok && !domesticCn) {
       warning = '国内网站也被带到了国外，可能有其他 VPN / 加速器在接管网络';
     } else if (foreignCn) {
       warning = '国外网站没有走光速雷达，请换一条线路或联系客服';
@@ -164,6 +215,21 @@ class RouteCheckNotifier extends Notifier<RouteCheckState> {
       }
     }
     return _Egress(ok: false);
+  }
+
+  /// .cn 网址看到的出口 IP（太平洋电脑网，GBK 编码 —— 只取 ASCII 的 ip 字段）。测不出来返回空。
+  Future<String> _cnSuffixIp() async {
+    final cancel = CancelToken();
+    final timer = Timer(const Duration(seconds: 5), () => cancel.cancel('timeout'));
+    try {
+      final res = await ref.read(httpClientProvider).get<dynamic>(_cnSuffixUrl, cancelToken: cancel, proxyOnly: true);
+      final m = RegExp(r'"ip"\s*:\s*"([0-9a-fA-F:.]+)"').firstMatch(res.data?.toString() ?? '');
+      return m?.group(1) ?? '';
+    } catch (_) {
+      return '';
+    } finally {
+      timer.cancel();
+    }
   }
 
   static Map<String, dynamic> _asMap(dynamic data) {
