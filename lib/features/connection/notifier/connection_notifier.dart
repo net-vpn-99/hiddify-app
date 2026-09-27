@@ -12,6 +12,7 @@ import 'package:hiddify/features/connection/data/connection_data_providers.dart'
 import 'package:hiddify/features/connection/data/connection_repository.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
+import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
@@ -32,6 +33,9 @@ part 'connection_notifier.g.dart';
 /// 原来那一下被当成「刚连上」，于是每次切回 App 都震一下（1.1.30 修）。记在模块级，
 /// provider 重建也留得住。自动连接（快捷开关、启动自动连）不震，本来也不该震。
 bool _userAskedToConnect = false;
+
+/// 每次进入 Connected +1，让「10 秒没通」的定时器认得出自己是不是还是那一次连接。
+int _connectedSerial = 0;
 
 @Riverpod(keepAlive: true)
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
@@ -98,30 +102,44 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       // Connect-trace reporter (GslInviteBonus 1.17.0): the Go core is up (TUN +
       // routes) at Connected -- as far as this signal proves. The attempt is only
       // reported "ok" once a real request goes through the tunnel (stability
-      // probe); if none has by 15s, it is a proxy_request failure. A teardown
+      // probe); if none has by 10s, it is a proxy_request failure. A teardown
       // before the attempt resolves is inconclusive -> abandon.
       final reporter = ref.read(connectReporterProvider);
       switch (event) {
         case Connecting():
           reporter.markStage(ConnectReporter.stageCoreStarted);
+          ref.read(deadLineProvider.notifier).state = false;
         case Connected():
           reporter.markStage(ConnectReporter.stageTunnelReady);
           _startQuotaPoll();
           _startDeviceKeepWarm();
-          Future<void>.delayed(const Duration(seconds: 15), () async {
-            if (!reporter.attemptOpen) return;
-            reporter.captureCoreLogSync();
-            // 连上了但 15 秒没有一次成功的隧道请求 —— 先看是不是这段时间流量用完了。
-            // 是账号原因：sync 会触发上面的 listen，拆隧道并弹窗，这里不要记成节点失败。
-            if (await _accountExhaustedAfterFailure(reporter)) return;
-            // 这就是 proxy_request 阶段失败的定义本身（隧道已建好，只是没有一次请求
-            // 成功穿过去），不用再让 _mapFailStage 去猜字符串——这条消息本来就不含任何
-            // 关键词，猜的话会落进「reached>=tunnelReady 就默认 node_tcp」的兜底，
-            // 明明 TCP 大概率是通的，却被标成"没通"。
-            await reporter.reportFailure(
-              "连接后 15 秒内没有一次通过隧道的请求成功（proxy_request）",
-              forcedStage: 'proxy_request',
-            );
+          ref.read(deadLineProvider.notifier).state = false;
+          final serial = ++_connectedSerial;
+          // 两端统一（docs/连上但不通-两端统一-手册.md）：10 秒一次都没通 → 断开，首页说
+          // 原因和下一步。**不自动换线** —— 换了用户不知道后来连上了、觉得我们慢、可能已经走了。
+          Future<void>.delayed(const Duration(seconds: 10), () async {
+            if (serial != _connectedSerial) return;
+            if (state.valueOrNull is! Connected) return;
+            if (ref.read(stabilityProvider).confirmed) return;
+            if (reporter.attemptOpen) {
+              reporter.captureCoreLogSync();
+              // 连上了但 10 秒没有一次成功的隧道请求 —— 先看是不是这段时间流量用完了。
+              // 是账号原因：sync 会触发上面的 listen，拆隧道并弹窗，这里不要记成节点失败。
+              if (await _accountExhaustedAfterFailure(reporter)) return;
+              // 这就是 proxy_request 阶段失败的定义本身（隧道已建好，只是没有一次请求
+              // 成功穿过去），不用再让 _mapFailStage 去猜字符串——这条消息本来就不含任何
+              // 关键词，猜的话会落进「reached>=tunnelReady 就默认 node_tcp」的兜底，
+              // 明明 TCP 大概率是通的，却被标成"没通"。
+              await reporter.reportFailure(
+                "连接后 10 秒内没有一次通过隧道的请求成功（proxy_request）",
+                forcedStage: 'proxy_request',
+              );
+            }
+            // 等上报的这一会儿里用户可能自己断了 / 重连了，或者恰好通了。
+            if (serial != _connectedSerial || state.valueOrNull is! Connected) return;
+            if (ref.read(stabilityProvider).confirmed) return;
+            ref.read(deadLineProvider.notifier).state = true;
+            await abortConnection();
           });
         case Disconnected() || Disconnecting():
           _stopQuotaPoll();

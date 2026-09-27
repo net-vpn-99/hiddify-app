@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -13,6 +14,8 @@ class SupportFailureLink extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final exhausted = ref.watch(panelAuthProvider.select((s) => s.account?.exhausted ?? false));
     if (exhausted) return const SizedBox.shrink();
+    // 「这条线路现在连不通」那张卡里已经有「联系客服」，别再重复一个。
+    if (ref.watch(deadLineProvider)) return const SizedBox.shrink();
 
     final status = ref.watch(connectionNotifierProvider);
     final failed = switch (status) {

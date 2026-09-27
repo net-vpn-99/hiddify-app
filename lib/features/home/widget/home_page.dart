@@ -12,8 +12,10 @@ import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_state.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/connection/widget/stability_indicator.dart';
 import 'package:hiddify/features/home/widget/account_status_bar.dart';
+import 'package:hiddify/features/home/widget/connect_issue_card.dart';
 import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/home/widget/line_bar.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
@@ -151,6 +153,7 @@ class HomePage extends HookConsumerWidget {
                         _SpeedLine(),
                         StabilityIndicator(),
                         _GoogleTestButton(),
+                        ConnectIssueCard(),
                         SupportFailureLink(),
                       ],
                     ),
@@ -204,7 +207,9 @@ class _GoogleTestButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final connected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
-    if (!connected) return const SizedBox.shrink();
+    // 真通了才给（还在「连接中」或中途断了时点了也打不开，只会让人更慌）。
+    final health = ref.watch(stabilityProvider);
+    if (!connected || !health.confirmed || health.outage) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.only(top: 16),
