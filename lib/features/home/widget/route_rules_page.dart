@@ -101,6 +101,7 @@ class _RouteRulesPageState extends ConsumerState<RouteRulesPage> {
     final text = theme.textTheme;
     final connected = ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
     final check = ref.watch(routeCheckProvider);
+    final lineName = ref.watch(Preferences.lastNodeName);
     const green = Color(0xFF3FA372);
 
     Widget chip(String s) => Container(
@@ -193,7 +194,7 @@ class _RouteRulesPageState extends ConsumerState<RouteRulesPage> {
                 title: '国内 · 本地网络直连',
                 chips: const ['微信', 'QQ', '支付宝', '淘宝', '抖音', 'B 站', '网银', '国内游戏'],
                 etc: '等所有国内网站和 App',
-                verdict: '跟没开一样，不会异地登录，不耗流量',
+                verdict: '网站看到的是你自己的 IP，QQ、微信不会提示异地登录；不计入套餐流量',
               ),
               const SizedBox(height: 20),
               block(
@@ -201,7 +202,9 @@ class _RouteRulesPageState extends ConsumerState<RouteRulesPage> {
                 title: '国外 · 光速雷达',
                 chips: const ['谷歌', 'YouTube', 'ChatGPT', 'Netflix', 'Telegram', 'X（推特）'],
                 etc: '等所有国外网站和 App',
-                verdict: '显示你选的地区，换线路跟着换',
+                verdict: lineName.isEmpty
+                    ? '网站看到的是所用线路的地区，换线路会跟着变'
+                    : '网站看到的是所用线路的地区（现在是$lineName），换线路会跟着变',
               ),
               const SizedBox(height: 20),
               block(

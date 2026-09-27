@@ -24,6 +24,7 @@ abstract class Constants {
   static const panelPlanUrl = "https://www.gsldone.com/account/"; // 续费/购买
   static const panelProfileUrl = "https://www.gsldone.com/account/"; // 改密码
   static const panelInviteUrl = "https://www.gsldone.com/i/"; // 邀请好友
+  static const websiteUrl = "https://www.gsldone.com/"; // 首页顶栏「官网」
 
   static const githubUrl = "https://www.gsldone.com/help.html";
   static const licenseUrl = "https://www.gsldone.com/help.html";
