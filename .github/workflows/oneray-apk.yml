@@ -66,6 +66,11 @@ jobs:
       - name: Prepare (pub get / codegen / download core .aar)
         run: make android-apk-prepare
 
+      # 核心写死的国内名单（hiddify-geo）很不全，B 站 / QQ / 微信都不在里面 → 换成源站上
+      # 跟 iOS 同一份的名单。替换不成功会让构建失败，不会带着旧名单出包。
+      - name: Patch core rule-set URLs (国内名单换成自己的)
+        run: python3 tool/patch_core_rules.py android/app/libs/hiddify-core.aar
+
       - name: Regenerate brand launcher icons (OneRay / 光速)
         run: node tool/gen_icons.js
 

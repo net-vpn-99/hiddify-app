@@ -63,6 +63,30 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
     }
   });
 
+  // OneRay 1.1.50：核心的国内名单换成了自己服务器上那份（tool/patch_core_rules.py）。
+  // 核心把下载过的名单缓存在 clash.db 里 5 天、按名字认不看地址，装过 1.1.49 的手机会
+  // 继续用旧的残缺名单 —— 清一次缓存。只清一次（选中的线路 App 自己会再选回来）。
+  await _init("core rule-set cache reset", () async {
+    final prefs = container.read(sharedPreferencesProvider).requireValue;
+    const flag = "oneray_ruleset_cache_reset_v1";
+    if (prefs.getBool(flag) ?? false) return;
+    final dirs = container.read(appDirectoriesProvider).requireValue;
+    for (final dir in {dirs.baseDir.path, dirs.workingDir.path}) {
+      for (final rel in ["data/clash.db", "clash.db"]) {
+        final f = File("$dir/$rel");
+        if (f.existsSync()) {
+          try {
+            await f.delete();
+            Logger.bootstrap.info("deleted ${f.path}");
+          } catch (e) {
+            Logger.bootstrap.warning("delete ${f.path} failed: $e");
+          }
+        }
+      }
+    }
+    await prefs.setBool(flag, true);
+  });
+
   final debug = container.read(debugModeNotifierProvider) || kDebugMode;
 
   if (PlatformUtils.isDesktop) {
