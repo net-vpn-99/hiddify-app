@@ -550,7 +550,7 @@ class _AccountCard extends StatelessWidget {
                   style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.bold),
                 ),
               ),
-              if (knownAccountMask != null || isGuest || !loggedIn)
+              if (knownAccountMask != null || !loggedIn)
                 GestureDetector(
                   onTap: onLogin,
                   child: Text(knownAccountMask != null ? '登录' : '已有账号？登录',

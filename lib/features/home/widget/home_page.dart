@@ -113,14 +113,6 @@ class HomePage extends HookConsumerWidget {
             onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.websiteUrl)),
             child: const Text('官网 ↗'),
           ),
-          Semantics(
-            key: const ValueKey("app_settings"),
-            label: t.pages.settings.general.title,
-            child: IconButton(
-              icon: Icon(Icons.settings_outlined, color: theme.colorScheme.primary),
-              onPressed: () => context.pushNamed('general'),
-            ),
-          ),
           const Gap(8),
         ],
       ),

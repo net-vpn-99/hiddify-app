@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -30,13 +31,40 @@ class LoginPage extends HookConsumerWidget {
     final passCtrl = useTextEditingController();
     final obscure = useState(true);
     final errorText = useState<String?>(null);
+    final errorTick = useState(0);
     final busy = useState(false);
     final notice = useState<String?>(null);
+    final pairMode = useState(true);
+    final badPassword = useState(false);
+    final badPair = useState(false);
+    final passwordFocus = useFocusNode();
+    final pairFocus = useFocusNode();
+
+    void clearError() {
+      errorText.value = null;
+      badPassword.value = false;
+      badPair.value = false;
+    }
+
+    void showError(String message, {required bool pair}) {
+      errorText.value = message;
+      errorTick.value++;
+      if (pair) {
+        badPair.value = true;
+        pairCtrl.clear();
+        pairFocus.requestFocus();
+      } else {
+        badPassword.value = true;
+        passCtrl.clear();
+        passwordFocus.requestFocus();
+      }
+    }
 
     useEffect(() {
       final saved = ref.read(Preferences.lastLoginEmail);
       if (saved.isNotEmpty && emailCtrl.text.isEmpty) emailCtrl.text = saved;
       final mask = ref.read(guestBootstrapProvider).knownAccountMask;
+      pairMode.value = mask == null && saved.isEmpty;
       if (mask != null) {
         notice.value = mask.isEmpty
             ? '这台手机上有账号，输入密码就能登录；忘了密码点「找回密码」'
@@ -91,7 +119,7 @@ class LoginPage extends HookConsumerWidget {
       final result = await ref.read(panelAuthProvider.notifier).loginWithPairCode(code);
       if (!context.mounted) return;
       if (result.error != null) {
-        errorText.value = result.error;
+        showError(result.error!, pair: true);
         busy.value = false;
         return;
       }
@@ -164,7 +192,7 @@ class LoginPage extends HookConsumerWidget {
           .login(emailCtrl.text.trim(), passCtrl.text);
       if (!context.mounted) return;
       if (result.error != null) {
-        errorText.value = result.error;
+        showError(result.error!, pair: false);
         busy.value = false;
         return;
       }
@@ -207,120 +235,136 @@ class LoginPage extends HookConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('用配对码登录', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 6),
-                Text(
-                  '在已经登录的那台设备上：账号 →「在另一台设备上用」，拿到 6 位配对码。',
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: pairCtrl,
-                        keyboardType: TextInputType.number,
-                        maxLength: 6,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        decoration: const InputDecoration(hintText: '6 位数字', counterText: ''),
-                        onChanged: (v) {
-                          if (v.length == 6) submitPair();
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: loading ? null : submitPair,
-                      child: const Text('登录'),
-                    ),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: true, label: Text('配对码')),
+                    ButtonSegment(value: false, label: Text('邮箱 / 账号编号')),
                   ],
-                ),
-                const SizedBox(height: 16),
-                Text('或者用邮箱 / 账号编号登录', textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
-                const SizedBox(height: 12),
-                Text(
-                  '注册过的账号：填邮箱或账号编号，加上密码就能登。',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                ),
-                // 这里原来还有一句「当前的免费试用不会跟过去」——删了。
-                // 用户点进来的入口就叫「登录已有账号」，他清楚自己要干什么；在登录前解释
-                // 一个他不关心的机制（试用归属），只会让人看不懂、还以为有什么风险。
-                // 结果用登录成功后的一条提示交代（「已切换到 xxx」），不在事前吓人。
-                if (notice.value != null) ...[
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      notice.value!,
-                      style: theme.textTheme.titleSmall
-                          ?.copyWith(color: theme.colorScheme.onPrimaryContainer),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 24),
-                CustomTextFormField(
-                  controller: emailCtrl,
-                  maxLines: 1,
-                  // 账号编号和邮箱是同一个账号的两个名字（编号是 uuid 派生的，注册前后
-                  // 不变）。带 @ 走 Xboard 登录，不带走 GslGuest 的 login-by-no。
-                  label: '邮箱 或 账号编号',
-                  hint: 'you@example.com 或 A4K7-P92',
-                  validator: (v) {
-                    final s = v?.trim() ?? '';
-                    if (s.isEmpty) return '请输入邮箱或账号编号';
-                    if (s.contains('@')) return null;
-                    return s.replaceAll('-', '').length < 6 ? '账号编号填完整，像 A4K7-P92' : null;
+                  selected: {pairMode.value},
+                  onSelectionChanged: (next) {
+                    pairMode.value = next.first;
+                    clearError();
                   },
                 ),
                 const SizedBox(height: 16),
-                CustomTextFormField(
-                  controller: passCtrl,
-                  maxLines: 1,
-                  label: '密码',
-                  obscureText: obscure.value,
-                  validator: (v) =>
-                      (v == null || v.isEmpty) ? '请输入密码' : null,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      obscure.value ? Icons.visibility_off : Icons.visibility,
-                    ),
-                    onPressed: () => obscure.value = !obscure.value,
-                  ),
-                ),
-                if (errorText.value != null) ...[
-                  const SizedBox(height: 12),
+                if (pairMode.value) ...[
                   Text(
-                    errorText.value!,
-                    style: TextStyle(color: theme.colorScheme.error),
+                    '在已经登录的那台设备上：账号 →「在另一台设备上用」，拿到 6 位配对码。',
+                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: pairCtrl,
+                    focusNode: pairFocus,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      hintText: '6 位数字',
+                      counterText: '',
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: badPair.value ? theme.colorScheme.error : theme.colorScheme.outline),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(
+                          color: badPair.value ? theme.colorScheme.error : theme.colorScheme.primary,
+                          width: badPair.value ? 2 : 1,
+                        ),
+                      ),
+                    ),
+                    onChanged: (v) {
+                      if (v.isNotEmpty) clearError();
+                      if (v.length == 6) submitPair();
+                    },
+                  ),
+                  if (errorText.value != null) ...[
+                    const SizedBox(height: 12),
+                    _LoginError(text: errorText.value!, tick: errorTick.value),
+                  ],
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: loading ? null : submitPair,
+                    child: loading
+                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('登录'),
+                  ),
+                ] else ...[
+                  if (notice.value != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        notice.value!,
+                        style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.onPrimaryContainer),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  CustomTextFormField(
+                    controller: emailCtrl,
+                    maxLines: 1,
+                    label: '邮箱 或 账号编号',
+                    hint: 'you@example.com 或 A4K7-P92',
+                    onChanged: (_) => clearError(),
+                    validator: (v) {
+                      final s = v?.trim() ?? '';
+                      if (s.isEmpty) return '请输入邮箱或账号编号';
+                      if (s.contains('@')) return null;
+                      return s.replaceAll('-', '').length < 6 ? '账号编号填完整，像 A4K7-P92' : null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: passCtrl,
+                    focusNode: passwordFocus,
+                    obscureText: obscure.value,
+                    decoration: InputDecoration(
+                      labelText: '密码',
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: badPassword.value ? theme.colorScheme.error : theme.colorScheme.outline),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(
+                          color: badPassword.value ? theme.colorScheme.error : theme.colorScheme.primary,
+                          width: badPassword.value ? 2 : 1,
+                        ),
+                      ),
+                      suffixIcon: IconButton(
+                        icon: Icon(obscure.value ? Icons.visibility_off : Icons.visibility),
+                        onPressed: () => obscure.value = !obscure.value,
+                      ),
+                    ),
+                    validator: (v) => (v == null || v.isEmpty) ? '请输入密码' : null,
+                    onChanged: (v) {
+                      if (v.isNotEmpty) clearError();
+                    },
+                  ),
+                  if (errorText.value != null) ...[
+                    const SizedBox(height: 12),
+                    _LoginError(text: errorText.value!, tick: errorTick.value),
+                  ],
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: loading ? null : submit,
+                    child: loading
+                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Text('登录'),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => context.pushNamed(
+                        'resetPassword',
+                        queryParameters: {if (emailCtrl.text.trim().isNotEmpty) 'email': emailCtrl.text.trim()},
+                      ),
+                      child: const Text('找回密码'),
+                    ),
                   ),
                 ],
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: loading ? null : submit,
-                  child: loading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('登录'),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: () => context.pushNamed(
-                      'resetPassword',
-                      queryParameters: {if (emailCtrl.text.trim().isNotEmpty) 'email': emailCtrl.text.trim()},
-                    ),
-                    child: const Text('找回密码'),
-                  ),
-                ),
                 // 退出登录后是 go('/login')，导航栈被清空 = 没有返回箭头。没有这个出口，
                 // 不想登录的人只能杀掉 App 才回得了首页（用户反馈过）。首页本来就不拦人。
                 if (!context.canPop()) ...[
@@ -333,6 +377,50 @@ class LoginPage extends HookConsumerWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LoginError extends HookWidget {
+  const _LoginError({required this.text, required this.tick});
+
+  final String text;
+  final int tick;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ctrl = useAnimationController(duration: const Duration(milliseconds: 180));
+    useEffect(() {
+      if (tick > 0) ctrl.forward(from: 0);
+      return null;
+    }, [tick]);
+    final t = useAnimation(ctrl);
+    final dx = math.sin(t * math.pi * 3) * 6 * (1 - t);
+    return Transform.translate(
+      offset: Offset(dx, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.errorContainer,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: theme.colorScheme.onErrorContainer),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onErrorContainer,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
