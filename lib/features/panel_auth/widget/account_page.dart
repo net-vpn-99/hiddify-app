@@ -84,11 +84,24 @@ class AccountPage extends HookConsumerWidget {
               const SizedBox(height: 4),
               const Text('加个邮箱：手机丢了、卸载重装也能找回这个账号。'),
               const SizedBox(height: 8),
-              FilledButton(onPressed: () => context.pushNamed('bindEmail'), child: const Text('加邮箱')),
-              TextButton(
-                onPressed: () => showAccountKeyDialog(context, ref),
-                child: const Text('或者记下账号编号和密码'),
+              FilledButton(
+                onPressed: () async {
+                  final bound = await context.pushNamed<bool>('bindEmail');
+                  if (bound == true) await load();
+                },
+                child: const Text('加邮箱'),
               ),
+              if (guestOpts?.selfPassword ?? false)
+                TextButton(
+                  onPressed: () {
+                    if (!keySaved && auth.guestPassword != null) {
+                      showAccountKeyDialog(context, ref);
+                    } else {
+                      showSetGuestPasswordDialog(context, ref);
+                    }
+                  },
+                  child: const Text('或者记下账号编号和密码'),
+                ),
             ],
             const SizedBox(height: 12),
             if (loading.value)
@@ -172,40 +185,7 @@ class AccountPage extends HookConsumerWidget {
                 onPressed: () => _askInviteCode(context, ref),
                 child: const Text('有朋友的推荐码？填一下'),
               ),
-            // 钥匙（账号编号 + 密码）。免注册的号才有，而且只在服务端发得出密码时才有。
-            //   - 还没抄走 → 强调色，点开是「记下这两样」
-            //   - 抄走了   → 平常样子，点开是「设置密码」（换成自己记得住的）
-            if (auth.isGuest && (guestOpts?.selfPassword ?? false)) ...[
-              if (!keySaved && auth.guestPassword != null)
-                FilledButton.tonalIcon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: theme.colorScheme.errorContainer,
-                    foregroundColor: theme.colorScheme.onErrorContainer,
-                  ),
-                  icon: const Icon(Icons.key_outlined),
-                  label: const Text('还没记下账号和密码，点这里'),
-                  onPressed: () => showAccountKeyDialog(context, ref),
-                )
-              else
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.password_outlined),
-                  label: const Text('设置密码（换手机时用）'),
-                  onPressed: () => showSetGuestPasswordDialog(context, ref),
-                ),
-              const SizedBox(height: 8),
-            ],
-            // 游客没有密码可改：换成「绑定邮箱」。1.1.28 起绑定不再送时长，卖点改成说
-            // 实话的那两条 —— 换手机能找回、电脑上也能用同一个套餐。
-            if (auth.isGuest)
-              FilledButton.tonalIcon(
-                icon: const Icon(Icons.mark_email_read_outlined),
-                label: const Text('绑定邮箱，换手机也能登录、也能找回密码'),
-                onPressed: () async {
-                  final bound = await context.pushNamed<bool>('bindEmail');
-                  if (bound == true) await load();
-                },
-              )
-            else
+            if (!auth.isGuest)
             OutlinedButton.icon(
               icon: const Icon(Icons.password_outlined),
               label: const Text('找回密码'),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
@@ -92,9 +93,9 @@ class LoginPage extends HookConsumerWidget {
           final choice = await showDialog<String>(
             context: context,
             builder: (ctx) => AlertDialog(
-              content: Text('你现在这个号上有买好的套餐（到 $when）。登录别的账号后，套餐不会跟过去。\n想保住套餐：点「注册」，把邮箱加到现在这个号上。'),
+              content: Text('你现在这个号上有买好的套餐（到 $when）。登录别的账号后，套餐不会跟过去。\n想保住套餐：点「加邮箱」，把邮箱加到现在这个号上。'),
               actions: [
-                TextButton(onPressed: () => Navigator.of(ctx).pop('bind'), child: const Text('去注册')),
+                TextButton(onPressed: () => Navigator.of(ctx).pop('bind'), child: const Text('加邮箱')),
                 FilledButton(onPressed: () => Navigator.of(ctx).pop('login'), child: const Text('仍然登录')),
               ],
             ),
@@ -155,12 +156,12 @@ class LoginPage extends HookConsumerWidget {
             context: context,
             builder: (ctx) => AlertDialog(
               content: Text(
-                '你现在这个号上有买好的套餐（到 $when）。登录别的账号后，套餐不会跟过去。\n想保住套餐：点「注册」，把邮箱加到现在这个号上。',
+                '你现在这个号上有买好的套餐（到 $when）。登录别的账号后，套餐不会跟过去。\n想保住套餐：点「加邮箱」，把邮箱加到现在这个号上。',
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop('bind'),
-                  child: const Text('去注册'),
+                  child: const Text('加邮箱'),
                 ),
                 FilledButton(
                   onPressed: () => Navigator.of(ctx).pop('login'),
@@ -236,14 +237,26 @@ class LoginPage extends HookConsumerWidget {
                   style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(height: 8),
-                TextFormField(
-                  controller: pairCtrl,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                  decoration: const InputDecoration(hintText: '6 位数字', counterText: ''),
-                  onChanged: (v) {
-                    if (v.length == 6) submitPair();
-                  },
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: pairCtrl,
+                        keyboardType: TextInputType.number,
+                        maxLength: 6,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        decoration: const InputDecoration(hintText: '6 位数字', counterText: ''),
+                        onChanged: (v) {
+                          if (v.length == 6) submitPair();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: loading ? null : submitPair,
+                      child: const Text('登录'),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
                 Text('或者用邮箱 / 账号编号登录', textAlign: TextAlign.center, style: theme.textTheme.bodySmall),

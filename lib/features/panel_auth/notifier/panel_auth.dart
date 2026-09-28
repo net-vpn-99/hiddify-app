@@ -141,11 +141,6 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
 
   Future<String?> currentToken() => _secureStorage.read(key: _kTokenKey);
 
-  /// 登录并返回订阅地址。失败时 subscribeUrl 为 null、error 为中文提示。
-  ///
-  /// [identifier] 可以是**邮箱**，也可以是 App 里显示的**账号编号**（`A4K7-P92`）——
-  /// 编号是 uuid 派生的，注册前后不变，所以两者指同一个账号。带 `@` 走 Xboard 的
-  /// 登录接口，不带就走 GslGuest 的 login-by-no。
   Future<PanelLoginResult> _finishToken(String token, String fallbackEmail) async {
     final sub = await _api.getSubscribe(token);
     await _secureStorage.write(key: _kTokenKey, value: token);
@@ -159,6 +154,11 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     return (subscribeUrl: sub.subscribeUrl, error: null);
   }
 
+  /// 登录并返回订阅地址。失败时 subscribeUrl 为 null、error 为中文提示。
+  ///
+  /// [identifier] 可以是**邮箱**，也可以是 App 里显示的**账号编号**（`A4K7-P92`）——
+  /// 编号是 uuid 派生的，注册前后不变，所以两者指同一个账号。带 `@` 走 Xboard 的
+  /// 登录接口，不带就走 GslGuest 的 login-by-no。
   Future<PanelLoginResult> login(String identifier, String password) async {
     if (state.loading) return (subscribeUrl: null, error: null);
     state = state.copyWith(loading: true);

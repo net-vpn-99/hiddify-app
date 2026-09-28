@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:hiddify/core/utils/device_id.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -67,6 +68,8 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
       });
     } on PanelApiException catch (e) {
       if (mounted) setState(() => errorText = e.message);
+    } catch (_) {
+      if (mounted) setState(() => errorText = '网络不好，稍后再试');
     }
   }
 
@@ -83,6 +86,8 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
       });
     } on PanelApiException catch (e) {
       if (mounted) setState(() => errorText = e.message);
+    } catch (_) {
+      if (mounted) setState(() => errorText = '网络不好，稍后再试');
     }
   }
 
@@ -142,7 +147,7 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
             Text(
               limit > 0 && used >= limit
                   ? '这个账号已经在 $used 台设备上用了（最多 $limit 台）。不用的设备 45 天后会自动让出位置，急用请联系客服。'
-                  : '这个账号现在 $used/$limit 台设备。',
+                  : (limit > 0 ? '这个账号现在 $used/$limit 台设备。' : '这个账号现在 $used 台设备。'),
             ),
           ] else ...[
             if (scanText.isNotEmpty)
@@ -150,8 +155,8 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
             const SizedBox(height: 12),
             const Text('① iPhone 上装 Shadowrocket（需要非中国区 Apple ID）② 打开它，点左上角扫码 ③ 对准这个二维码'),
             TextButton(
-              onPressed: () {},
-              child: const Text('详细步骤 https://www.gsldone.com/ios/'),
+              onPressed: () => UriUtils.tryLaunch(Uri.parse('https://www.gsldone.com/ios/')),
+              child: const Text('详细步骤'),
             ),
             if (subUrl.isNotEmpty)
               OutlinedButton(
