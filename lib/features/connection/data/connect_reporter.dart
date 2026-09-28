@@ -225,6 +225,8 @@ class ConnectReporter {
     String? forcedStage,
     String? tunnelVpnPermission,
     String? tunnelNote,
+    bool? appForeground,
+    String? probeLog,
   }) async {
     if (!attemptOpen) return;
     _done = true;
@@ -258,6 +260,8 @@ class ConnectReporter {
     final payload = _basePayload('fail')
       ..['fail_stage'] = failStage
       ..['reached_stage'] = _reached;
+    if (appForeground != null) payload['app_fg'] = appForeground;
+    if (probeLog != null && probeLog.isNotEmpty) payload['probe_n'] = probeLog;
     if (_sub.isNotEmpty) payload['sub'] = _sub;
     if (_tcp != null) payload['tcp'] = _tcp;
 

@@ -16,6 +16,7 @@ import 'package:hiddify/core/router/go_router/go_router_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
 import 'package:hiddify/core/theme/app_theme.dart';
 import 'package:hiddify/core/theme/theme_preferences.dart';
+import 'package:hiddify/features/app/notifier/app_foreground.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
 import 'package:hiddify/features/connection/widget/connection_wrapper.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
@@ -222,12 +223,17 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
     useEffect(() {
       loggy.info("current app state");
       loggy.info(appLifecycleState);
+      if (appLifecycleState == null) return null;
+      final foreground = appLifecycleState == AppLifecycleState.resumed;
+      ref.read(appForegroundProvider.notifier).state = foreground;
       if (appLifecycleState == AppLifecycleState.paused) {
         onPause(ref);
       } else if (appLifecycleState == AppLifecycleState.inactive) {
         onInactive(ref);
-      } else if (appLifecycleState == AppLifecycleState.resumed) {
+      } else if (foreground) {
         onResume(ref);
+      } else {
+        // hidden / detached：同样不算在前台，但不重复走 onPause。
       }
       return null;
     }, [appLifecycleState]);

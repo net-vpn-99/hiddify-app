@@ -7,6 +7,7 @@ import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/app/notifier/app_foreground.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/connection_data_providers.dart';
 import 'package:hiddify/features/connection/data/connection_repository.dart';
@@ -39,6 +40,10 @@ int _connectedSerial = 0;
 
 @Riverpod(keepAlive: true)
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
+  /// 10 秒到了人还在后台：先不断开，回到前台再给 10 秒。
+  bool _deadlineHeld = false;
+  int _heldSerial = 0;
+
   @override
   Stream<ConnectionStatus> build() async* {
     if (Platform.isIOS) {
@@ -89,6 +94,15 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
     });
     ref.watch(coreRestartSignalProvider);
+    ref.listen<bool>(appForegroundProvider, (previous, next) {
+      if (next != true || !_deadlineHeld) return;
+      final serial = _heldSerial;
+      _deadlineHeld = false;
+      if (serial != _connectedSerial) return;
+      if (state.valueOrNull is! Connected) return;
+      if (ref.read(stabilityProvider).confirmed) return;
+      _armUnconfirmedDeadline(serial);
+    });
     ref.onDispose(() {
       _stopQuotaPoll();
       _deviceKeepWarm?.cancel();
@@ -114,39 +128,63 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           _startQuotaPoll();
           _startDeviceKeepWarm();
           ref.read(deadLineProvider.notifier).state = false;
+          _deadlineHeld = false;
+          // 还没确认过的这次必须重计。已经确认过的状态流重放不要打回「连接中」。
+          if (!ref.read(stabilityProvider).confirmed) {
+            ref.read(stabilityProvider.notifier).restart();
+          }
           final serial = ++_connectedSerial;
           // 两端统一（docs/连上但不通-两端统一-手册.md）：10 秒一次都没通 → 断开，首页说
           // 原因和下一步。**不自动换线** —— 换了用户不知道后来连上了、觉得我们慢、可能已经走了。
-          Future<void>.delayed(const Duration(seconds: 10), () async {
-            if (serial != _connectedSerial) return;
-            if (state.valueOrNull is! Connected) return;
-            if (ref.read(stabilityProvider).confirmed) return;
-            if (reporter.attemptOpen) {
-              reporter.captureCoreLogSync();
-              // 连上了但 10 秒没有一次成功的隧道请求 —— 先看是不是这段时间流量用完了。
-              // 是账号原因：sync 会触发上面的 listen，拆隧道并弹窗，这里不要记成节点失败。
-              if (await _accountExhaustedAfterFailure(reporter)) return;
-              // 这就是 proxy_request 阶段失败的定义本身（隧道已建好，只是没有一次请求
-              // 成功穿过去），不用再让 _mapFailStage 去猜字符串——这条消息本来就不含任何
-              // 关键词，猜的话会落进「reached>=tunnelReady 就默认 node_tcp」的兜底，
-              // 明明 TCP 大概率是通的，却被标成"没通"。
-              await reporter.reportFailure(
-                "连接后 10 秒内没有一次通过隧道的请求成功（proxy_request）",
-                forcedStage: 'proxy_request',
-              );
-            }
-            // 等上报的这一会儿里用户可能自己断了 / 重连了，或者恰好通了。
-            if (serial != _connectedSerial || state.valueOrNull is! Connected) return;
-            if (ref.read(stabilityProvider).confirmed) return;
-            ref.read(deadLineProvider.notifier).state = true;
-            await abortConnection();
-          });
+          // 人在后台时先不下这个结论，回到前台再给 10 秒。
+          _armUnconfirmedDeadline(serial);
         case Disconnected() || Disconnecting():
+          _deadlineHeld = false;
           _stopQuotaPoll();
           _stopDeviceKeepWarm();
           reporter.abandon();
       }
       loggy.info("connection status: ${event.format()}");
+    });
+  }
+
+  void _armUnconfirmedDeadline(int serial) {
+    Future<void>.delayed(const Duration(seconds: 10), () async {
+      if (serial != _connectedSerial) return;
+      if (state.valueOrNull is! Connected) return;
+      if (ref.read(stabilityProvider).confirmed) return;
+      if (!ref.read(appForegroundProvider)) {
+        _deadlineHeld = true;
+        _heldSerial = serial;
+        return;
+      }
+      final reporter = ref.read(connectReporterProvider);
+      if (reporter.attemptOpen) {
+        reporter.captureCoreLogSync();
+        // 连上了但 10 秒没有一次成功的隧道请求 —— 先看是不是这段时间流量用完了。
+        // 是账号原因：sync 会触发上面的 listen，拆隧道并弹窗，这里不要记成节点失败。
+        if (await _accountExhaustedAfterFailure(reporter)) return;
+        // 这就是 proxy_request 阶段失败的定义本身（隧道已建好，只是没有一次请求
+        // 成功穿过去），不用再让 _mapFailStage 去猜字符串——这条消息本来就不含任何
+        // 关键词，猜的话会落进「reached>=tunnelReady 就默认 node_tcp」的兜底，
+        // 明明 TCP 大概率是通的，却被标成"没通"。
+        await reporter.reportFailure(
+          "连接后 10 秒内没有一次通过隧道的请求成功（proxy_request）",
+          forcedStage: 'proxy_request',
+          appForeground: ref.read(appForegroundProvider),
+          probeLog: ref.read(stabilityProvider.notifier).probeLog(),
+        );
+      }
+      // 等上报的这一会儿里用户可能自己断了 / 重连了，或者恰好通了，或者切到了后台。
+      if (serial != _connectedSerial || state.valueOrNull is! Connected) return;
+      if (ref.read(stabilityProvider).confirmed) return;
+      if (!ref.read(appForegroundProvider)) {
+        _deadlineHeld = true;
+        _heldSerial = serial;
+        return;
+      }
+      ref.read(deadLineProvider.notifier).state = true;
+      await abortConnection();
     });
   }
 

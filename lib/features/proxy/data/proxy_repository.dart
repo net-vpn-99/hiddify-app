@@ -16,6 +16,9 @@ abstract interface class ProxyRepository {
   TaskEither<ProxyFailure, oldipinfo.IpInfo> getCurrentIpInfo(CancelToken cancelToken);
   TaskEither<ProxyFailure, Unit> selectProxy(String groupTag, String outboundTag);
   TaskEither<ProxyFailure, Unit> urlTest(String groupTag);
+
+  /// 直接测当前选中出站。毫秒；测完不通为 0；没测成（通道断了）为 null。
+  Future<int?> probeActiveDelay();
 }
 
 class ProxyRepositoryImpl with ExceptionHandler, InfraLogger implements ProxyRepository {
@@ -90,6 +93,9 @@ class ProxyRepositoryImpl with ExceptionHandler, InfraLogger implements ProxyRep
       ProxyUnexpectedFailure.new,
     );
   }
+
+  @override
+  Future<int?> probeActiveDelay() => singbox.probeActiveDelay();
 
   static final Map<String, oldipinfo.IpInfo Function(Map<String, dynamic> response)> _ipInfoSources = {
     // "https://geolocation-db.com/json/": IpInfo.fromGeolocationDbComJson, //bug response is not json

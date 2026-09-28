@@ -364,6 +364,67 @@ class HiddifyCoreService with InfraLogger {
     });
   }
 
+  /// 直接对当前选中的出站做一次 URL 测试，不经过界面上那条会断的状态流。
+  ///
+  /// 返回延迟毫秒。测完确认不通返回 0。通道断了、或者等了 2.5 秒还没读到
+  /// 这次的新结果，返回 null（这次没测到，调用方不能当成不通）。
+  Future<int?> probeActiveDelay() async {
+    if (!core.isInitialized()) return null;
+    try {
+      // 读不到旧时间戳时，用「调用这一刻」当下限，避免把上一次的延迟当成这次的结果。
+      var beforeUs = DateTime.now().toUtc().microsecondsSinceEpoch;
+      final previous = await _activeUrlTestStamp();
+      if (previous > 0) beforeUs = previous;
+      final res = await core.bgClient
+          .urlTest(UrlTestRequest(tag: ''))
+          .timeout(const Duration(seconds: 3));
+      if (res.code != ResponseCode.OK) return null;
+      final deadline = DateTime.now().add(const Duration(milliseconds: 2500));
+      while (DateTime.now().isBefore(deadline)) {
+        final info = await _readSelectedOutbound();
+        if (info != null && _urlTestStampUs(info) > beforeUs) {
+          final delay = info.urlTestDelay;
+          if (delay > 0 && delay < 60000) return delay;
+          return 0;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+      return null;
+    } catch (e) {
+      loggy.debug("probeActiveDelay missed: $e");
+      return null;
+    }
+  }
+
+  Future<int> _activeUrlTestStamp() async {
+    try {
+      final info = await _readSelectedOutbound();
+      if (info == null) return 0;
+      return _urlTestStampUs(info);
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<OutboundInfo?> _readSelectedOutbound() async {
+    final list = await core.bgClient.mainOutboundsInfo(Empty()).first.timeout(const Duration(milliseconds: 800));
+    if (list.items.isEmpty) return null;
+    final group = list.items.first;
+    if (group.items.isEmpty) return null;
+    final selected = group.selected;
+    for (final item in group.items) {
+      if (selected.isNotEmpty && item.tag == selected) return item;
+      if (item.isSelected) return item;
+    }
+    return group.items.first;
+  }
+
+  int _urlTestStampUs(OutboundInfo info) {
+    if (!info.hasUrlTestTime()) return 0;
+    final t = info.urlTestTime;
+    return t.seconds.toInt() * 1000000 + t.nanos ~/ 1000;
+  }
+
   List<LogMessage> logBuffer = [];
 
   // SingboxConfigOption? latestOptions;

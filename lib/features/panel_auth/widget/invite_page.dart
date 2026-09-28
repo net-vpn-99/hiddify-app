@@ -1,6 +1,10 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:gal/gal.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -47,6 +51,38 @@ class InvitePage extends HookConsumerWidget {
     final shareText = d == null
         ? ''
         : _buildShareText(texts?.share, bonus, d.link, d.code);
+    final qrKey = useMemoized(GlobalKey.new);
+
+    Future<void> saveQr() async {
+      final boundary = qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) {
+        _toast(context, '二维码还没准备好');
+        return;
+      }
+      try {
+        if (!await Gal.hasAccess(toAlbum: true)) {
+          final granted = await Gal.requestAccess(toAlbum: true);
+          if (!granted) {
+            if (context.mounted) _toast(context, '没有相册权限，去系统设置里打开');
+            return;
+          }
+        }
+        final image = await boundary.toImage(pixelRatio: 3);
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (bytes == null) {
+          if (context.mounted) _toast(context, '保存失败');
+          return;
+        }
+        await Gal.putImageBytes(bytes.buffer.asUint8List(), album: '光速雷达');
+        if (context.mounted) _toast(context, '二维码已保存到相册');
+      } on GalException catch (e) {
+        if (context.mounted) {
+          _toast(context, e.type == GalExceptionType.accessDenied ? '没有相册权限，去系统设置里打开' : '保存失败');
+        }
+      } catch (_) {
+        if (context.mounted) _toast(context, '保存失败');
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('邀请好友')),
@@ -138,11 +174,19 @@ class InvitePage extends HookConsumerWidget {
                         children: [
                           const SizedBox(height: 8),
                           Center(
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                              child: QrImageView(data: d.link, size: 180, backgroundColor: Colors.white),
+                            child: RepaintBoundary(
+                              key: qrKey,
+                              child: Container(
+                                padding: const EdgeInsets.all(12),
+                                color: Colors.white,
+                                child: QrImageView(data: d.link, size: 180, backgroundColor: Colors.white),
+                              ),
                             ),
+                          ),
+                          TextButton.icon(
+                            icon: const Icon(Icons.save_alt, size: 18),
+                            label: const Text('保存二维码图片'),
+                            onPressed: saveQr,
                           ),
                           const SizedBox(height: 12),
                           Center(
