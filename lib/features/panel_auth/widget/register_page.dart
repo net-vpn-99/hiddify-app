@@ -149,7 +149,7 @@ class RegisterPage extends HookConsumerWidget {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '绑定后可以邀请好友，双方各得 ${ref.watch(inviteTextsProvider).valueOrNull?.bonus ?? '1 天不限流量'}，也能在多台设备登录。',
+                          '绑定后可以邀请好友，好友用起来后双方各得 ${ref.watch(inviteTextsProvider).valueOrNull?.bonus ?? '1 天不限流量'}，也能在多台设备登录。',
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant, height: 1.4),
                         ),
                       ] else

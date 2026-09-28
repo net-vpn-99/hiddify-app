@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 /// [inviteFirst]：从邀请入口进来的，把邀请那条放第一行（他就是为这个来的）。
 List<String> accountBenefits({String? inviteBonus, bool inviteFirst = false}) {
   final invite = (inviteBonus != null && inviteBonus.isNotEmpty)
-      ? '可以邀请好友，双方各得 $inviteBonus'
+      ? '可以邀请好友，好友用起来后双方各得 $inviteBonus'
       : '可以邀请好友，双方都有奖励';
   const rest = ['换手机、换电脑，都是同一个账号', '套餐和剩余时间不会丢'];
   return inviteFirst ? [invite, ...rest] : [...rest, invite];

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -34,6 +36,17 @@ class AccountPage extends HookConsumerWidget {
     }, const []);
 
     final a = account.value;
+    final tick = useState(0);
+    final secsLeft = (a == null || a.lifetime || a.expiredAt == null)
+        ? 1 << 30
+        : a.expiredAt! - DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final short = secsLeft > 0 && secsLeft < 86400;
+    useEffect(() {
+      if (!short) return null;
+      final timer = Timer.periodic(const Duration(minutes: 1), (_) => tick.value++);
+      return timer.cancel;
+    }, [short]);
+    final now = DateTime.now().add(Duration(microseconds: tick.value));
 
     return Scaffold(
       appBar: AppBar(title: const Text('账号')),
@@ -96,7 +109,23 @@ class AccountPage extends HookConsumerWidget {
                     ],
                     _row('当前套餐', a.planName ?? '—'),
                     const Divider(height: 1),
-                    _row('剩余时间', a.lifetime ? '长期有效' : _fmtDate(a.expiredAt!)),
+                    _row('剩余时间', _remainLabel(a, now)),
+                    if (a.dailyKnown) ...[
+                      const Divider(height: 1),
+                      ListTile(
+                        dense: true,
+                        title: const Text('今日高速'),
+                        subtitle: Text(
+                          a.dailyThrottled
+                              ? '已用完，现在限速 ${a.dailyThrottleMbps}Mbps，0 点恢复'
+                              : '还剩 ${_dailyAmount((a.dailyQuota - a.dailyUsed).clamp(0, 1 << 62))}（每天 ${_dailyAmount(a.dailyQuota)}，0 点重置）',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: a.dailyThrottled ? theme.colorScheme.error : null,
+                          ),
+                        ),
+                      ),
+                    ],
                     const Divider(height: 1),
                     _row(
                       '剩余流量',
@@ -246,6 +275,20 @@ class AccountPage extends HookConsumerWidget {
       return;
     }
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('推荐码已记下')));
+  }
+
+  static String _remainLabel(PanelAccount a, DateTime now) {
+    if (a.lifetime) return '长期有效';
+    final secs = a.expiredAt! - now.millisecondsSinceEpoch ~/ 1000;
+    if (secs > 0 && secs < 86400) return '剩 ${a.remainingClock(now)}';
+    return _fmtDate(a.expiredAt!);
+  }
+
+  static String _dailyAmount(int bytes) {
+    if (bytes <= 0) return '0 GB';
+    final gb = bytes / 1073741824;
+    if (gb >= 1) return '${gb.toStringAsFixed(1)} GB';
+    return '${(bytes / 1048576).toStringAsFixed(1)} MB';
   }
 
   static String _fmtDate(int unixSec) {

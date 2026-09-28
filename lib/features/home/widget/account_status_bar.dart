@@ -1,7 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
-import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -17,7 +19,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// 颜色也是口径的一部分：**正常会员用低调灰**（_Tone.plain）。付过钱、还没到期
 /// 的人不需要每次开 App 都被一条高亮条提醒「有事要办」。黄（good）只留给还在
 /// 试用、该转化的游客，橙（warn）只留给真出事了 —— 到期 / 流量用完。
-class AccountStatusBar extends ConsumerWidget {
+class AccountStatusBar extends HookConsumerWidget {
   const AccountStatusBar({super.key});
 
   @override
@@ -26,8 +28,20 @@ class AccountStatusBar extends ConsumerWidget {
     final auth = ref.watch(panelAuthProvider);
     final boot = ref.watch(guestBootstrapProvider);
     final loggedIn = ref.watch(Preferences.panelLoggedIn);
+    final tick = useState(0);
+    final acc = auth.account;
+    final secsLeft = (acc == null || acc.lifetime || acc.expiredAt == null)
+        ? 1 << 30
+        : acc.expiredAt! - DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final short = secsLeft > 0 && secsLeft < 86400;
+    useEffect(() {
+      if (!short) return null;
+      final timer = Timer.periodic(const Duration(minutes: 1), (_) => tick.value++);
+      return timer.cancel;
+    }, [short]);
+    final now = DateTime.now().add(Duration(microseconds: tick.value));
 
-    final (text, action, tone, route) = _describe(auth, boot, loggedIn);
+    final (text, action, tone, route) = _describe(auth, boot, loggedIn, now);
 
     final Color bg;
     final Color fg;
@@ -78,6 +92,7 @@ class AccountStatusBar extends ConsumerWidget {
     PanelAuthState auth,
     GuestBootstrapState boot,
     bool loggedIn,
+    DateTime now,
   ) {
     if (!loggedIn) {
       if (boot.working) return ('正在开通免费试用…', '', _Tone.plain, 'purchase');
@@ -102,28 +117,23 @@ class AccountStatusBar extends ConsumerWidget {
         return ('还没有套餐', '去看看', _Tone.plain, 'purchase');
       default:
         if (guest) {
-          final left = _remaining(acc);
+          if (acc.dailyThrottled) {
+            return ('免费试用中 · 今日高速已用完 · 0 点恢复', '看套餐', _Tone.warn, 'purchase');
+          }
+          final left = acc.remainingClock(now);
           return (left == null ? '免费试用中' : '免费试用中 · 剩 $left', '看套餐', _Tone.good, 'purchase');
         }
         // 会员：报套餐名，且第二段（长期有效 / 剩多久）一定要有。
         // 以前长期有效的号算不出剩余时长，整条就只剩「会员」两个字 + 右边「看套餐」，
         // 被读成「去开通会员」的广告 —— 分不清是在说我的状态还是在推销。
         final name = acc.planName?.trim().isNotEmpty == true ? acc.planName!.trim() : '会员';
+        if (acc.dailyThrottled) {
+          return ('$name · 今日高速已用完 · 0 点恢复', acc.lifetime ? '我的套餐' : '续费', _Tone.warn, 'purchase');
+        }
         if (acc.lifetime) return ('$name · 长期有效', '我的套餐', _Tone.plain, 'purchase');
-        final left = _remaining(acc);
+        final left = acc.remainingClock(now);
         return (left == null ? name : '$name · 剩 $left', '续费', _Tone.plain, 'purchase');
     }
-  }
-
-  /// 剩余时长，说人话：超过一天说天，不足一天说小时，不足一小时说分钟。
-  /// 长期有效（expiredAt 为空）返回 null。
-  String? _remaining(PanelAccount acc) {
-    if (acc.lifetime) return null;
-    final secs = acc.expiredAt! - DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    if (secs <= 0) return null;
-    if (secs >= 86400) return '${secs ~/ 86400} 天';
-    if (secs >= 3600) return '${secs ~/ 3600} 小时';
-    return '${(secs ~/ 60).clamp(1, 59)} 分钟';
   }
 }
 

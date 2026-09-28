@@ -21,7 +21,7 @@ class InviteRewardTile extends ConsumerWidget {
             ? '邀请好友，双方再得 $bonus'
             : '邀请好友，双方都能再获得体验')
         : (bonus != null && bonus.isNotEmpty
-            ? '邀请好友注册，双方各得 $bonus'
+            ? '邀请好友，用起来后双方各得 $bonus'
             : '查看邀请奖励');
 
     return Material(

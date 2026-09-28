@@ -21,7 +21,7 @@ class QuotaEndedDialog extends ConsumerWidget {
     final theme = Theme.of(context);
     final slug = account.stateSlug;
     final bonus = ref.watch(inviteTextsProvider).valueOrNull?.bonus;
-    final bonusBit = (bonus != null && bonus.isNotEmpty) ? '双方各得 $bonus' : '双方都能再获得体验';
+    final bonusBit = (bonus != null && bonus.isNotEmpty) ? '好友用起来后双方各得 $bonus' : '双方都能再获得体验';
     final isGuest = ref.watch(panelAuthProvider).isGuest && slug != 'no_plan';
 
     final (title, body) = isGuest

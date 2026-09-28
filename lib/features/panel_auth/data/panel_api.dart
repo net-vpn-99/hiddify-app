@@ -152,6 +152,8 @@ class PanelApi {
   PanelAccount _accountOf(Map<String, dynamic> data) {
     num n(dynamic v) => v is num ? v : num.tryParse('$v') ?? 0;
     final plan = data['plan'];
+    final daily = data['gsl_daily'];
+    final dailyMap = daily is Map ? daily : null;
     return PanelAccount(
       email: (data['email'] as String?)?.trim(),
       uuid: (data['uuid'] as String?)?.trim(),
@@ -160,6 +162,11 @@ class PanelApi {
       transferEnable: n(data['transfer_enable']).toInt(),
       used: (n(data['u']) + n(data['d'])).toInt(),
       deviceLimit: n(data['device_limit']).toInt(),
+      dailyKnown: dailyMap != null,
+      dailyUsed: dailyMap == null ? 0 : n(dailyMap['used']).toInt(),
+      dailyQuota: dailyMap == null ? 0 : n(dailyMap['quota']).toInt(),
+      dailyThrottled: dailyMap != null && dailyMap['throttled'] == true,
+      dailyThrottleMbps: dailyMap == null ? 0 : n(dailyMap['throttle_mbps']).toInt(),
     );
   }
 
@@ -664,6 +671,11 @@ class PanelAccount {
     this.transferEnable = 0,
     this.used = 0,
     this.deviceLimit = 0,
+    this.dailyKnown = false,
+    this.dailyUsed = 0,
+    this.dailyQuota = 0,
+    this.dailyThrottled = false,
+    this.dailyThrottleMbps = 0,
   });
 
   final String? email;
@@ -677,7 +689,30 @@ class PanelAccount {
   final int used; // 已用字节
   final int deviceLimit; // 0 = 不限
 
+  /// getSubscribe 的 gsl_daily。没有这个字段时 dailyKnown 为 false，界面不显示。
+  final bool dailyKnown;
+  final int dailyUsed;
+  final int dailyQuota;
+  final bool dailyThrottled;
+  final int dailyThrottleMbps;
+
   bool get lifetime => expiredAt == null || expiredAt == 0;
+
+  /// ≥1 天「N 天」；不足 1 天「X 小时 Y 分」；不足 1 小时「N 分钟」（最少 1）。
+  /// 长期或已经到期返回 null。
+  String? remainingClock([DateTime? now]) {
+    if (lifetime) return null;
+    final secs = expiredAt! - (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
+    if (secs <= 0) return null;
+    if (secs >= 86400) return '${secs ~/ 86400} 天';
+    if (secs >= 3600) {
+      final hours = secs ~/ 3600;
+      final minutes = (secs % 3600) ~/ 60;
+      return '$hours 小时 $minutes 分';
+    }
+    final minutes = secs ~/ 60;
+    return '${minutes < 1 ? 1 : minutes} 分钟';
+  }
   int get remainingBytes => (transferEnable - used).clamp(0, transferEnable);
 
   /// 2026-09-19 起全部套餐不限流量：Xboard 没有真正的不限（0 = 没流量），后台用
