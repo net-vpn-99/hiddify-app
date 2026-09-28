@@ -258,7 +258,14 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         GoRoute(name: 'login', path: '/login', builder: (_, _) => const LoginPage()),
         GoRoute(name: 'register', path: '/register', builder: (_, _) => const RegisterPage()),
         // 游客绑定邮箱（GslGuest），push 后 pop(true) = 绑定成功
-        GoRoute(name: 'bindEmail', path: '/bind-email', builder: (_, _) => const RegisterPage(bind: true)),
+        GoRoute(
+          name: 'bindEmail',
+          path: '/bind-email',
+          builder: (_, state) => RegisterPage(
+            bind: true,
+            initialEmail: state.uri.queryParameters['email'],
+          ),
+        ),
         GoRoute(name: 'account', path: '/account', builder: (_, _) => const AccountPage()),
         GoRoute(name: 'invite', path: '/invite', builder: (_, _) => const InvitePage()),
         GoRoute(name: 'purchase', path: '/purchase', builder: (_, _) => const PurchasePage()),

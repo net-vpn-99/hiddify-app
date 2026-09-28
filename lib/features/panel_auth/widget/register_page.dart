@@ -17,9 +17,10 @@ typedef _Opts = ({bool emailVerify, bool inviteForce, bool recaptcha});
 /// [bind] = true：游客绑定邮箱（GslGuest）。字段和注册一样，提交后原账号换成这个邮箱，
 /// 订阅不变；成功时 pop(true)，调用方（比如购买页）据此接着往下走。
 class RegisterPage extends HookConsumerWidget {
-  const RegisterPage({super.key, this.bind = false});
+  const RegisterPage({super.key, this.bind = false, this.initialEmail});
 
   final bool bind;
+  final String? initialEmail;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -36,6 +37,8 @@ class RegisterPage extends HookConsumerWidget {
     final cooldown = useState(0);
     final opts = useState<_Opts?>(null);
     useEffect(() {
+      final prefill = initialEmail;
+      if (prefill != null && prefill.isNotEmpty) emailCtrl.text = prefill;
       () async {
         opts.value = await ref.read(panelAuthProvider.notifier).registerOptions();
       }();

@@ -53,6 +53,28 @@ class PanelApi {
     throw PanelApiException(_messageOf(res.data) ?? '账号编号或密码不对');
   }
 
+  /// 当前号有没有付过的订单（status 3 已完成 / 4 已折抵）。
+  /// 失败返回 null，调用方当没买过、不拦登录。
+  Future<bool?> hasPaidOrder(String token) async {
+    try {
+      final res = await _dio.get<dynamic>(
+        '/api/v1/user/order/fetch',
+        options: Options(headers: {'auth_data': token, 'Authorization': token}),
+      );
+      final body = res.data;
+      final list = (body is Map && body['data'] is List) ? body['data'] as List : const [];
+      for (final o in list) {
+        if (o is! Map) continue;
+        final st = o['status'];
+        final n = st is num ? st.toInt() : int.tryParse('$st');
+        if (n == 3 || n == 4) return true;
+      }
+      return false;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 订阅令牌是不是本面板发的：用当前可用的 API 拉一次订阅，200 且有内容即是
   /// （别家机场的令牌在这里是 403）。用来认「链接域名不在已知名单里」的自家订阅——
   /// 换域靠 feed 不发版，所以导入时不能只靠域名名单判断（2026-09-20）。

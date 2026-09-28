@@ -284,6 +284,13 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     }
   }
 
+  /// 当前免注册号有没有买过套餐。null = 查失败，登录页不拦。
+  Future<bool?> guestHasPaidOrder() async {
+    final token = await currentToken();
+    if (token == null || token.isEmpty) return null;
+    return _api.hasPaidOrder(token);
+  }
+
   /// 免注册号自己设一个记得住的密码（GslGuest 1.3.0）。成功返回 null，失败返回中文提示。
   ///
   /// 设完「账号编号 + 这个密码」就是完整的一把钥匙，换手机能登回来。开号时发的那串

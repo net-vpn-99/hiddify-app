@@ -74,6 +74,51 @@ class LoginPage extends HookConsumerWidget {
       errorText.value = null;
       if (!formKey.currentState!.validate()) return;
       busy.value = true;
+      if (ref.read(panelAuthProvider).isGuest) {
+        final paid = await ref.read(panelAuthProvider.notifier).guestHasPaidOrder();
+        if (!context.mounted) return;
+        final exp = ref.read(panelAuthProvider).account?.expiredAt;
+        final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        final stillValid = exp == null || exp == 0 || exp > nowSec;
+        if (paid == true && stillValid) {
+          final when = (exp == null || exp == 0)
+              ? '长期有效'
+              : () {
+                  final d = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+                  final m = d.month.toString().padLeft(2, '0');
+                  final day = d.day.toString().padLeft(2, '0');
+                  return '${d.year}-$m-$day';
+                }();
+          final choice = await showDialog<String>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              content: Text(
+                '你现在这个号上有买好的套餐（到 $when）。登录别的账号后，套餐不会跟过去。\n想保住套餐：点「注册」，把邮箱加到现在这个号上。',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop('bind'),
+                  child: const Text('去注册'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop('login'),
+                  child: const Text('仍然登录'),
+                ),
+              ],
+            ),
+          );
+          if (!context.mounted) return;
+          if (choice == 'bind') {
+            busy.value = false;
+            context.pushNamed('bindEmail', queryParameters: {'email': emailCtrl.text.trim()});
+            return;
+          }
+          if (choice != 'login') {
+            busy.value = false;
+            return;
+          }
+        }
+      }
       final result = await ref
           .read(panelAuthProvider.notifier)
           .login(emailCtrl.text.trim(), passCtrl.text);
