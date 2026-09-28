@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -140,7 +141,7 @@ class AccountStatusBar extends HookConsumerWidget {
         if (guest) {
           if (acc.dailyThrottled && acc.dailyTier == 'trial') {
             final limited = '今日高速已用完，限速 ${acc.dailyThrottleMbps}Mbps';
-            final paid = acc.paidQuota > 0 ? _dailyAmount(acc.paidQuota) : '';
+            final paid = acc.paidQuota > 0 ? formatDailyAmount(acc.paidQuota) : '';
             return (
               paid.isEmpty ? limited : '$limited · 买套餐每天 $paid 高速',
               '看套餐',
@@ -169,10 +170,3 @@ class AccountStatusBar extends HookConsumerWidget {
 }
 
 enum _Tone { good, warn, plain }
-
-String _dailyAmount(int bytes) {
-  if (bytes <= 0) return '0 GB';
-  final gb = bytes / 1073741824;
-  if (gb >= 1) return '${gb.toStringAsFixed(1)} GB';
-  return '${(bytes / 1048576).toStringAsFixed(1)} MB';
-}

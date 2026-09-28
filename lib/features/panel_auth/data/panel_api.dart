@@ -753,6 +753,17 @@ class PanelSubscribe {
   final PanelAccount? account;
 }
 
+/// 每日高速额度。整数不带小数（30 GB），否则留一位（12.4 GB）。
+String formatDailyAmount(int bytes) {
+  if (bytes <= 0) return '0 GB';
+  final gb = bytes / 1073741824;
+  final value = gb >= 1 ? gb : bytes / 1048576;
+  final unit = gb >= 1 ? 'GB' : 'MB';
+  final text = value.toStringAsFixed(1);
+  final shown = text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
+  return '$shown $unit';
+}
+
 class PanelAccount {
   const PanelAccount({
     this.email,

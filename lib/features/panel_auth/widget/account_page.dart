@@ -131,7 +131,7 @@ class AccountPage extends HookConsumerWidget {
                         subtitle: Text(
                           a.dailyThrottled
                               ? '已用完，现在限速 ${a.dailyThrottleMbps}Mbps，0 点恢复'
-                              : '还剩 ${_dailyAmount((a.dailyQuota - a.dailyUsed).clamp(0, 1 << 62))}（每天 ${_dailyAmount(a.dailyQuota)}，0 点重置）',
+                              : '还剩 ${formatDailyAmount((a.dailyQuota - a.dailyUsed).clamp(0, 1 << 62))}（每天 ${formatDailyAmount(a.dailyQuota)}，0 点重置）',
                           style: TextStyle(
                             fontWeight: FontWeight.w600,
                             color: a.dailyThrottled ? theme.colorScheme.error : null,
@@ -245,13 +245,6 @@ class AccountPage extends HookConsumerWidget {
     final secs = a.expiredAt! - now.millisecondsSinceEpoch ~/ 1000;
     if (secs > 0 && secs < 86400) return '剩 ${a.remainingClock(now)}';
     return _fmtDate(a.expiredAt!);
-  }
-
-  static String _dailyAmount(int bytes) {
-    if (bytes <= 0) return '0 GB';
-    final gb = bytes / 1073741824;
-    if (gb >= 1) return '${gb.toStringAsFixed(1)} GB';
-    return '${(bytes / 1048576).toStringAsFixed(1)} MB';
   }
 
   static String _fmtDate(int unixSec) {

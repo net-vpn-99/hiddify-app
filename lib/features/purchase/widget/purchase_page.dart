@@ -196,10 +196,10 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final paidMbps = acc?.paidThrottleMbps ?? 0;
     String? speedLine;
     if (paid > 0 && paidMbps > 0) {
-      speedLine = '每天 ${_dailyAmount(paid)} 高速，超出后 ${paidMbps}Mbps';
+      speedLine = '每天 ${formatDailyAmount(paid)} 高速，超出后 ${paidMbps}Mbps';
       final own = acc?.dailyQuota ?? 0;
       if (acc?.dailyTier == 'trial' && own > 0) {
-        speedLine = '$speedLine（试用是每天 ${_dailyAmount(own)}）';
+        speedLine = '$speedLine（试用是每天 ${formatDailyAmount(own)}）';
       }
     }
     return Wrap(
@@ -220,13 +220,6 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
           Text(speedLine, style: s),
       ],
     );
-  }
-
-  static String _dailyAmount(int bytes) {
-    if (bytes <= 0) return '0 GB';
-    final gb = bytes / 1073741824;
-    if (gb >= 1) return '${gb.toStringAsFixed(1)} GB';
-    return '${(bytes / 1048576).toStringAsFixed(1)} MB';
   }
 
   Widget _rules(PurchaseTokens t, PlanOffer? offer) {
