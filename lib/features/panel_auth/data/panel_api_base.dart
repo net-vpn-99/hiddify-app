@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
+import 'package:hiddify/core/logger/logger.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -190,8 +191,17 @@ class PanelApiBase {
       _avoidedBase == base && _avoidedUntil != null && DateTime.now().isBefore(_avoidedUntil!);
 
   static Future<String> _resolve({required bool force}) async {
+    final sw = Stopwatch()..start();
     final prefs = await SharedPreferences.getInstance();
     await _loadPersistedConfig(prefs);
+    final last = _normalize(prefs.getString(_prefKey));
+    if (!force && last != null && _configOrder.contains(last) && !_skipped(last)) {
+      _cached = last;
+      _cachedAt = DateTime.now();
+      Logger.app.info('api base = $last（缓存 ${sw.elapsedMilliseconds}ms）');
+      unawaited(_backgroundMaintain());
+      return last;
+    }
     if (!force && _inAllFailBackoff()) {
       _configRefreshPending = true;
       return _cached!;
@@ -214,17 +224,17 @@ class PanelApiBase {
     }
 
     final candidates = _probeOrder();
-    for (final base in candidates) {
-      if (_skipped(base)) continue;
-      if (await _probe(base)) {
-        await _latch(prefs, base);
-        return base;
-      }
+    final raced = await _probePreferred(candidates.where((b) => !_skipped(b)).toList());
+    if (raced != null) {
+      await _latch(prefs, raced);
+      Logger.app.info('api base = $raced（探活 ${sw.elapsedMilliseconds}ms）');
+      return raced;
     }
     for (final base in candidates) {
       if (!_skipped(base)) continue;
       if (await _probe(base)) {
         await _latch(prefs, base);
+        Logger.app.info('api base = $base（探活 ${sw.elapsedMilliseconds}ms）');
         return base;
       }
     }
@@ -235,7 +245,41 @@ class PanelApiBase {
     final fallback = _cached ??
         (prefs.getString(_prefKey)?.trim().isNotEmpty == true ? prefs.getString(_prefKey)!.trim() : primary);
     _cached = fallback;
+    Logger.app.info('api base = $fallback（探活 ${sw.elapsedMilliseconds}ms）');
     return fallback;
+  }
+
+  /// 前 3 个同时探。名单更靠前的优先：主地址还在探时，不用先回来的备用顶掉它。
+  static Future<String?> _probePreferred(List<String> candidates) async {
+    if (candidates.isEmpty) return null;
+    final head = candidates.take(3).toList();
+    final done = List<bool?>.filled(head.length, null);
+    final gate = Completer<String?>();
+    void consider() {
+      if (gate.isCompleted) return;
+      for (var i = 0; i < head.length; i++) {
+        if (done[i] == null) return;
+        if (done[i] == true) {
+          gate.complete(head[i]);
+          return;
+        }
+      }
+      gate.complete(null);
+    }
+
+    for (var i = 0; i < head.length; i++) {
+      final index = i;
+      unawaited(_probe(head[i]).then((ok) {
+        done[index] = ok;
+        consider();
+      }));
+    }
+    final winner = await gate.future;
+    if (winner != null) return winner;
+    for (final base in candidates.skip(head.length)) {
+      if (await _probe(base)) return base;
+    }
+    return null;
   }
 
   static List<String> _probeOrder() {
@@ -414,12 +458,8 @@ class PanelApiBase {
     final rescue = <String>[];
     final ownUrls = Constants.ossPointerUrls.where(_isOwnPointer).toList();
     final thirdUrls = Constants.ossPointerUrls.where((u) => !_isOwnPointer(u)).toList();
-    for (final pointer in ownUrls) {
-      final parsed = await _fetchOnePointer(pointer);
-      if (parsed.isEmpty) continue;
-      own.addAll(parsed);
-      break;
-    }
+    final firstOwn = await _firstPointer(ownUrls);
+    if (firstOwn.isNotEmpty) own.addAll(firstOwn);
     if (own.isNotEmpty) {
       unawaited(() async {
         for (final pointer in thirdUrls) {
@@ -443,6 +483,20 @@ class PanelApiBase {
       // 没有自有配置时，安卓用内置列表引导；第三方结果只当救援。
     }
     return (own: own, rescue: rescue);
+  }
+
+  static Future<List<String>> _firstPointer(List<String> urls) async {
+    if (urls.isEmpty) return const [];
+    final gate = Completer<List<String>>();
+    var left = urls.length;
+    for (final pointer in urls) {
+      unawaited(_fetchOnePointer(pointer).then((parsed) {
+        if (!gate.isCompleted && parsed.isNotEmpty) gate.complete(parsed);
+        left -= 1;
+        if (left == 0 && !gate.isCompleted) gate.complete(const []);
+      }));
+    }
+    return gate.future;
   }
 
   static Future<List<String>> _fetchOnePointer(String pointer) async {

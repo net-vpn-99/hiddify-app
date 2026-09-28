@@ -105,8 +105,11 @@ abstract class Preferences {
   // OneRay: 是否已登录光速会员账号（同步可读，用于路由判断；令牌本身在 flutter_secure_storage）
   static final panelLoggedIn = PreferencesNotifier.create<bool, bool>("panel_logged_in", false);
 
-  // OneRay: 主动退出过（游客或正式账号）就不再自动开游客；登录页的「免注册试用」照样能点。
+  // OneRay: 主动退出过就不再自动开游客。免注册号被 probe 认出来时会清掉，直接回去。
   static final guestOptOut = PreferencesNotifier.create<bool, bool>("guest_opt_out", false);
+
+  // OneRay: 上次邮箱登录成功的地址。退出不删，登录页拿来预填。免注册占位邮箱不写。
+  static final lastLoginEmail = PreferencesNotifier.create<String, String>("last_login_email", "");
 
   // OneRay: 免注册号的「钥匙」（账号编号 + 密码）用户已经抄走了。没抄走之前「我的」页
   // 挂红点。默认 true —— 1.3.0 之前开的老号本来就没有待办，别凭空长出一个红点。

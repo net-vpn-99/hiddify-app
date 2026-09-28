@@ -92,9 +92,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final account = acctAsync.asData?.value;
     final auth = ref.watch(panelAuthProvider);
     final boot = ref.watch(guestBootstrapProvider);
-    final knownMask = !auth.loggedIn && boot.reason == GuestBlockReason.hasAccount
-        ? (boot.emailMask ?? '')
-        : null;
+    final knownMask = !auth.loggedIn ? boot.knownAccountMask : null;
 
     return Column(
       children: [
@@ -193,6 +191,17 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final devices = offer?.deviceLimit;
     final deviceText = (devices != null && devices > 0) ? '最多 $devices 台设备同时在线' : '设备数以套餐为准';
     final s = TextStyle(color: t.secondary, fontSize: 11);
+    final acc = ref.watch(panelAuthProvider).account;
+    final paid = acc?.paidQuota ?? 0;
+    final paidMbps = acc?.paidThrottleMbps ?? 0;
+    String? speedLine;
+    if (paid > 0 && paidMbps > 0) {
+      speedLine = '每天 ${_dailyAmount(paid)} 高速，超出后 ${paidMbps}Mbps';
+      final own = acc?.dailyQuota ?? 0;
+      if (acc?.dailyTier == 'trial' && own > 0) {
+        speedLine = '$speedLine（试用是每天 ${_dailyAmount(own)}）';
+      }
+    }
     return Wrap(
       spacing: 16,
       runSpacing: 4,
@@ -207,8 +216,17 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
           const SizedBox(width: 4),
           Text('同一账号共享流量', style: s),
         ]),
+        if (speedLine != null)
+          Text(speedLine, style: s),
       ],
     );
+  }
+
+  static String _dailyAmount(int bytes) {
+    if (bytes <= 0) return '0 GB';
+    final gb = bytes / 1073741824;
+    if (gb >= 1) return '${gb.toStringAsFixed(1)} GB';
+    return '${(bytes / 1048576).toStringAsFixed(1)} MB';
   }
 
   Widget _rules(PurchaseTokens t, PlanOffer? offer) {

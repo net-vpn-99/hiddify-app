@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:hiddify/core/logger/logger.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
@@ -93,8 +94,14 @@ class PanelApi {
     }
   }
 
+  void _logCall(String what, Stopwatch sw, Response<dynamic>? res) {
+    final host = Uri.tryParse(res?.requestOptions.baseUrl ?? '')?.host ?? '';
+    Logger.app.info('$what $host ${sw.elapsedMilliseconds}ms ${res?.statusCode ?? '-'}');
+  }
+
   /// 拉当前账号的订阅地址。需要登录令牌。
   Future<PanelSubscribe> getSubscribe(String token) async {
+    final sw = Stopwatch()..start();
     Response<dynamic> res;
     try {
       res = await _dio.get<dynamic>(
@@ -102,8 +109,10 @@ class PanelApi {
         options: Options(headers: {'auth_data': token, 'Authorization': token}),
       );
     } on DioException catch (e) {
+      _logCall('拉订阅', sw, e.response);
       throw PanelApiException(_networkMessage(e));
     }
+    _logCall('拉订阅', sw, res);
     if (res.statusCode == 401 || res.statusCode == 403) {
       throw PanelApiException('登录已过期，请重新登录', unauthorized: true);
     }
@@ -132,6 +141,7 @@ class PanelApi {
 
   /// 单独拉账号信息（会员页刷新用）。
   Future<PanelAccount> getAccount(String token) async {
+    final sw = Stopwatch()..start();
     Response<dynamic> res;
     try {
       res = await _dio.get<dynamic>(
@@ -139,8 +149,10 @@ class PanelApi {
         options: Options(headers: {'auth_data': token, 'Authorization': token}),
       );
     } on DioException catch (e) {
+      _logCall('读账号', sw, e.response);
       throw PanelApiException(_networkMessage(e));
     }
+    _logCall('读账号', sw, res);
     if (res.statusCode == 401 || res.statusCode == 403) {
       throw PanelApiException('登录已过期，请重新登录', unauthorized: true);
     }
@@ -167,6 +179,9 @@ class PanelApi {
       dailyQuota: dailyMap == null ? 0 : n(dailyMap['quota']).toInt(),
       dailyThrottled: dailyMap != null && dailyMap['throttled'] == true,
       dailyThrottleMbps: dailyMap == null ? 0 : n(dailyMap['throttle_mbps']).toInt(),
+      dailyTier: dailyMap == null || dailyMap['tier'] is! String ? null : dailyMap['tier'] as String,
+      paidQuota: dailyMap == null ? 0 : n(dailyMap['paid_quota']).toInt(),
+      paidThrottleMbps: dailyMap == null ? 0 : n(dailyMap['paid_throttle_mbps']).toInt(),
     );
   }
 
@@ -293,6 +308,7 @@ class PanelApi {
   /// 取回同一个老号时给不出原文。空不是错误，别拿它判断成功失败。
   Future<({String? token, String? hasAccountMask, String? password, bool hasInviter})> guestLogin(
       String deviceId, {String? inviteCode}) async {
+    final sw = Stopwatch()..start();
     Response<dynamic> res;
     try {
       res = await _dio.post<dynamic>(
@@ -304,8 +320,10 @@ class PanelApi {
         },
       );
     } on DioException catch (e) {
+      _logCall('开号', sw, e.response);
       throw PanelApiException(_networkMessage(e));
     }
+    _logCall('开号', sw, res);
     final data = _dataOf(res.data);
     if (data?['status'] == 'has_account') {
       final mask = data?['email_mask'];
@@ -749,6 +767,9 @@ class PanelAccount {
     this.dailyQuota = 0,
     this.dailyThrottled = false,
     this.dailyThrottleMbps = 0,
+    this.dailyTier,
+    this.paidQuota = 0,
+    this.paidThrottleMbps = 0,
   });
 
   final String? email;
@@ -768,6 +789,11 @@ class PanelAccount {
   final int dailyQuota;
   final bool dailyThrottled;
   final int dailyThrottleMbps;
+
+  /// gsl_daily.tier：trial / paid。老服务端没有就是 null。
+  final String? dailyTier;
+  final int paidQuota;
+  final int paidThrottleMbps;
 
   bool get lifetime => expiredAt == null || expiredAt == 0;
 

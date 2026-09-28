@@ -64,7 +64,22 @@ class AccountStatusBar extends HookConsumerWidget {
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () => context.pushNamed(route),
+          onTap: action.isEmpty
+              ? null
+              : () async {
+                  if (route == 'login') {
+                    context.pushNamed('login');
+                  } else if (route == 'retry') {
+                    ref.read(guestBootstrapProvider.notifier).reset();
+                    await ref.read(guestBootstrapProvider.notifier).ensure();
+                  } else if (route == 'trial') {
+                    await ref.read(Preferences.guestOptOut.notifier).update(false);
+                    ref.read(guestBootstrapProvider.notifier).reset();
+                    await ref.read(guestBootstrapProvider.notifier).ensure();
+                  } else {
+                    context.pushNamed(route);
+                  }
+                },
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             child: Row(
@@ -77,9 +92,11 @@ class AccountStatusBar extends HookConsumerWidget {
                     style: theme.textTheme.bodyMedium?.copyWith(color: fg),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(action, style: theme.textTheme.labelMedium?.copyWith(color: fg)),
-                Icon(Icons.chevron_right_rounded, size: 18, color: fg),
+                if (action.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Text(action, style: theme.textTheme.labelMedium?.copyWith(color: fg)),
+                  Icon(Icons.chevron_right_rounded, size: 18, color: fg),
+                ],
               ],
             ),
           ),
@@ -95,11 +112,15 @@ class AccountStatusBar extends HookConsumerWidget {
     DateTime now,
   ) {
     if (!loggedIn) {
-      if (boot.working) return ('正在开通免费试用…', '', _Tone.plain, 'purchase');
-      if (boot.reason == GuestBlockReason.hasAccount) {
-        return (boot.message ?? '这台手机登录过账号', '去登录', _Tone.warn, 'login');
+      if (boot.working) return ('正在开通免费试用…', '', _Tone.plain, '');
+      final mask = boot.knownAccountMask;
+      if (mask != null) {
+        return (mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask', '登录', _Tone.warn, 'login');
       }
-      return (boot.message ?? '还没开通，先看看套餐', '看套餐', _Tone.plain, 'purchase');
+      if (boot.reason == GuestBlockReason.unavailable) {
+        return (boot.message ?? '免费试用暂时开不了，稍后再试', '重试', _Tone.plain, 'retry');
+      }
+      return ('还没有账号', '免费试用', _Tone.plain, 'trial');
     }
 
     final acc = auth.account;
@@ -117,6 +138,16 @@ class AccountStatusBar extends HookConsumerWidget {
         return ('还没有套餐', '去看看', _Tone.plain, 'purchase');
       default:
         if (guest) {
+          if (acc.dailyThrottled && acc.dailyTier == 'trial') {
+            final limited = '今日高速已用完，限速 ${acc.dailyThrottleMbps}Mbps';
+            final paid = acc.paidQuota > 0 ? _dailyAmount(acc.paidQuota) : '';
+            return (
+              paid.isEmpty ? limited : '$limited · 买套餐每天 $paid 高速',
+              '看套餐',
+              _Tone.warn,
+              'purchase',
+            );
+          }
           if (acc.dailyThrottled) {
             return ('免费试用中 · 今日高速已用完 · 0 点恢复', '看套餐', _Tone.warn, 'purchase');
           }
@@ -138,3 +169,10 @@ class AccountStatusBar extends HookConsumerWidget {
 }
 
 enum _Tone { good, warn, plain }
+
+String _dailyAmount(int bytes) {
+  if (bytes <= 0) return '0 GB';
+  final gb = bytes / 1073741824;
+  if (gb >= 1) return '${gb.toStringAsFixed(1)} GB';
+  return '${(bytes / 1048576).toStringAsFixed(1)} MB';
+}

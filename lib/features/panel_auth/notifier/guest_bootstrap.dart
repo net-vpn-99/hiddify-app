@@ -46,6 +46,10 @@ class GuestBootstrapState {
   /// hasAccount 时的打码邮箱，可能是空串。
   final String? emailMask;
 
+  /// 这台手机上有邮箱账号（两条来路：开号被拒 / 退出过后 probe 问出来）。null = 没有。
+  String? get knownAccountMask =>
+      (reason == GuestBlockReason.hasAccount || deviceKind == 'account') ? (emailMask ?? '') : null;
+
   bool get blocked => reason != null;
 
   GuestBootstrapState copyWith({
@@ -114,10 +118,26 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
     // 1.1.40 及以前这里干脆不问，首页只能写一句含糊的「登录后就能连接」，
     // 而服务端其实认得出这台手机上是哪个账号。
     if (ref.read(Preferences.guestOptOut)) {
-      _done = true;
-      state = const GuestBootstrapState(reason: GuestBlockReason.optedOut, message: '登录后就能连接');
+      state = const GuestBootstrapState(reason: GuestBlockReason.optedOut, working: true);
       await _probe();
-      return;
+      if (state.deviceKind == 'guest') {
+        // 老版本退出过的免注册号：这个号只认这台手机，直接认回来，不停在没登录。
+        await ref.read(Preferences.guestOptOut.notifier).update(false);
+      } else {
+        _done = true;
+        if (state.deviceKind == 'account') {
+          final mask = state.emailMask ?? '';
+          state = GuestBootstrapState(
+            reason: GuestBlockReason.optedOut,
+            deviceKind: 'account',
+            emailMask: mask,
+            message: mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask',
+          );
+        } else {
+          state = state.copyWith(working: false);
+        }
+        return;
+      }
     }
 
     state = const GuestBootstrapState(working: true);
@@ -139,7 +159,7 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
         state = GuestBootstrapState(
           reason: GuestBlockReason.hasAccount,
           emailMask: mask,
-          message: mask.isEmpty ? '这台手机登录过账号，登录后继续用' : '这台手机登录过 $mask，登录后继续用',
+          message: mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask',
         );
         return;
       }
@@ -190,14 +210,12 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
         state = state.copyWith(
           deviceKind: 'account',
           emailMask: mask,
-          message: mask.isEmpty ? '这台手机上有账号，登录后继续用' : '这台手机上是 $mask，登录后继续用',
+          message: mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask',
         );
       } else if (r.kind == 'guest') {
-        final no = r.accountNo ?? '';
         state = state.copyWith(
           deviceKind: 'guest',
-          deviceAccountNo: no,
-          message: no.isEmpty ? '这台手机上有一个免注册的账号，点一下就能回去' : '这台手机上是账号 $no，点一下就能回去',
+          deviceAccountNo: r.accountNo ?? '',
         );
       } else {
         state = state.copyWith(deviceKind: 'none');

@@ -157,7 +157,11 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
   Future<PanelLoginResult> _finishToken(String token, String fallbackEmail) async {
     final sub = await _api.getSubscribe(token);
     await _secureStorage.write(key: _kTokenKey, value: token);
-    await _secureStorage.write(key: _kEmailKey, value: sub.email ?? fallbackEmail);
+    final savedEmail = sub.email ?? fallbackEmail;
+    await _secureStorage.write(key: _kEmailKey, value: savedEmail);
+    if (savedEmail.contains('@') && !savedEmail.toLowerCase().endsWith(PanelApi.guestEmailSuffix)) {
+      await ref.read(Preferences.lastLoginEmail.notifier).update(savedEmail);
+    }
     await ref.read(Preferences.panelLoggedIn.notifier).update(true);
     // 登进来了 = 「他自己退出过」这件事翻篇了。不擦掉的话这台手机永远卡在
     // 「不自动开号」那条路上，以后哪天没登录态又回到那一屏（1.1.40 及以前只有
@@ -167,7 +171,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     _paidHintStarted = false;
     state = state.copyWith(
       loading: false,
-      email: sub.email ?? fallbackEmail,
+      email: savedEmail,
       account: sub.account,
       setGuestPaidReminder: true,
     );
