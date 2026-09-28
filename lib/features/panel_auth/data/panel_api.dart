@@ -324,6 +324,73 @@ class PanelApi {
     throw PanelApiException(_messageOf(res.data) ?? '免注册试用暂时不可用，请注册账号');
   }
 
+  Future<({String code, int expiresIn, String accountNo, int used, int limit})> createPairCode(String token) async {
+    final res = await _dio.post<dynamic>(
+      '/api/v1/user/gsl_guest/pair',
+      data: {'platform': 'android'},
+      options: Options(headers: {'auth_data': token, 'Authorization': token}),
+    );
+    final data = _dataOf(res.data);
+    if (data == null || data['code'] == null) {
+      throw PanelApiException(_messageOf(res.data) ?? '暂时发不出配对码，请再试一次');
+    }
+    num n(dynamic v) => v is num ? v : num.tryParse('$v') ?? 0;
+    final devices = data['devices'];
+    return (
+      code: '${data['code']}',
+      expiresIn: n(data['expires_in']).toInt(),
+      accountNo: '${data['account_no'] ?? ''}',
+      used: devices is Map ? n(devices['used']).toInt() : 0,
+      limit: devices is Map ? n(devices['limit']).toInt() : 0,
+    );
+  }
+
+  Future<String> redeemPairCode(String code, String deviceId) async {
+    Response<dynamic> res;
+    try {
+      res = await _dio.post<dynamic>(
+        '/api/v1/guest/gsl_guest/pair/redeem',
+        data: {'code': code, 'platform': 'android', 'device_id': deviceId},
+      );
+    } on DioException catch (e) {
+      throw PanelApiException(_networkMessage(e));
+    }
+    final token = _extractToken(res.data);
+    if (token != null && token.isNotEmpty) return token;
+    throw PanelApiException(_messageOf(res.data) ?? '配对码不对或已过期，在原来那台设备上换一个再试');
+  }
+
+  Future<({List<Map<String, dynamic>> devices, int used, int limit})> fetchDevices(String token) async {
+    final res = await _dio.get<dynamic>(
+      '/api/v1/user/gsl_guest/devices',
+      options: Options(headers: {'auth_data': token, 'Authorization': token}),
+    );
+    final data = _dataOf(res.data) ?? const {};
+    num n(dynamic v) => v is num ? v : num.tryParse('$v') ?? 0;
+    final raw = data['devices'];
+    final list = <Map<String, dynamic>>[];
+    if (raw is List) {
+      for (final row in raw) {
+        if (row is Map) list.add(Map<String, dynamic>.from(row));
+      }
+    }
+    return (devices: list, used: n(data['used']).toInt(), limit: n(data['limit']).toInt());
+  }
+
+  Future<({String scanText, String subUrl, String svg})> fetchIphoneQr(String token) async {
+    final res = await _dio.get<dynamic>(
+      '/api/v1/user/gsl_guest/iphone-qr',
+      options: Options(headers: {'auth_data': token, 'Authorization': token}),
+    );
+    final data = _dataOf(res.data);
+    if (data == null) throw PanelApiException(_messageOf(res.data) ?? '暂时拿不到二维码');
+    return (
+      scanText: '${data['scan_text'] ?? ''}',
+      subUrl: '${data['sub_url'] ?? ''}',
+      svg: '${data['svg'] ?? ''}',
+    );
+  }
+
   /// 只问「这台设备上是谁」，**不发 token、不开号**（GslGuest 1.3.0 的 probe）。
   ///
   /// 用户主动退出过之后走这条路：既不能偷偷再塞一个免费号给他，也不该像 1.1.40

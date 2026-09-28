@@ -111,26 +111,21 @@ class AccountCard extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(10),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(10),
-                  onTap: () => context.pushNamed('bindEmail'),
+                  onTap: () => context.pushNamed('addDevice'),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     child: Row(
                       children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(color: theme.colorScheme.error, shape: BoxShape.circle),
-                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            '还没注册，换台手机就用不了了',
+                            '换手机也能用：在新手机上输配对码',
                             style: theme.textTheme.bodySmall
                                 ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
                           ),
                         ),
                         Text(
-                          '去注册',
+                          '在另一台设备上用',
                           style: theme.textTheme.labelMedium
                               ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
                         ),
@@ -142,6 +137,13 @@ class AccountCard extends ConsumerWidget {
                 ),
               ),
             ],
+            if (loggedIn && !auth.isGuest)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('在另一台设备上用'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.pushNamed('addDevice'),
+              ),
           ],
         ),
       ),

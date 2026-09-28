@@ -23,7 +23,6 @@ import 'package:hiddify/features/home/widget/line_bar.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
-import 'package:hiddify/features/panel_auth/widget/account_key_dialog.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/active/auto_line_fixer.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
@@ -74,15 +73,7 @@ class HomePage extends HookConsumerWidget {
       return null;
     }, const []);
 
-    // 刚开出一个免注册的号：把「账号编号 + 密码」摆一次让他抄走。服务端只发这一次，
-    // 见 account_key_dialog.dart。「我的」页会一直挂红点，这次没看到也跑不掉。
-    ref.listen(panelAuthProvider.select((s) => s.guestPassword), (prev, next) {
-      if (next == null || next.isEmpty) return;
-      if (ref.read(Preferences.guestKeySaved)) return;
-      Future(() {
-        if (context.mounted) showAccountKeyDialog(context, ref);
-      });
-    });
+    // 开号时不再自动弹「记下这两样」。密码仍存在本地，从账号页「防丢」打开。
 
     // OneRay: 记住当前线路名，断开时首页也能显示
     ref.listen(activeProxyNotifierProvider, (_, next) {

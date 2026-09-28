@@ -11,6 +11,7 @@ import 'package:hiddify/features/home/widget/home_page.dart';
 import 'package:hiddify/features/home/widget/route_rules_page.dart';
 import 'package:hiddify/features/log/overview/logs_page.dart';
 import 'package:hiddify/features/panel_auth/widget/account_page.dart';
+import 'package:hiddify/features/panel_auth/widget/add_device_page.dart';
 import 'package:hiddify/features/panel_auth/widget/invite_page.dart';
 import 'package:hiddify/features/panel_auth/widget/login_page.dart';
 import 'package:hiddify/features/panel_auth/widget/register_page.dart';
@@ -267,6 +268,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
           ),
         ),
         GoRoute(name: 'account', path: '/account', builder: (_, _) => const AccountPage()),
+        GoRoute(name: 'addDevice', path: '/add-device', builder: (_, _) => const AddDevicePage()),
         GoRoute(name: 'invite', path: '/invite', builder: (_, _) => const InvitePage()),
         GoRoute(name: 'purchase', path: '/purchase', builder: (_, _) => const PurchasePage()),
         GoRoute(name: 'supportChat', path: '/support-chat', builder: (_, _) => const SupportChatPage()),

@@ -25,6 +25,7 @@ class LoginPage extends HookConsumerWidget {
     final auth = ref.watch(panelAuthProvider);
     final formKey = useMemoized(() => GlobalKey<FormState>());
     final emailCtrl = useTextEditingController();
+    final pairCtrl = useTextEditingController();
     final passCtrl = useTextEditingController();
     final obscure = useState(true);
     final errorText = useState<String?>(null);
@@ -69,6 +70,67 @@ class LoginPage extends HookConsumerWidget {
       });
       return null;
     }, const []);
+
+    Future<void> submitPair() async {
+      final code = pairCtrl.text.trim();
+      if (code.length != 6 || busy.value) return;
+      errorText.value = null;
+      busy.value = true;
+      if (ref.read(panelAuthProvider).isGuest) {
+        final paid = await ref.read(panelAuthProvider.notifier).guestHasPaidOrder();
+        if (!context.mounted) return;
+        final exp = ref.read(panelAuthProvider).account?.expiredAt;
+        final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+        final stillValid = exp == null || exp == 0 || exp > nowSec;
+        if (paid == true && stillValid) {
+          final when = (exp == null || exp == 0)
+              ? '长期有效'
+              : () {
+                  final d = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+                  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+                }();
+          final choice = await showDialog<String>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              content: Text('你现在这个号上有买好的套餐（到 $when）。登录别的账号后，套餐不会跟过去。\n想保住套餐：点「注册」，把邮箱加到现在这个号上。'),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(ctx).pop('bind'), child: const Text('去注册')),
+                FilledButton(onPressed: () => Navigator.of(ctx).pop('login'), child: const Text('仍然登录')),
+              ],
+            ),
+          );
+          if (!context.mounted) return;
+          if (choice == 'bind') {
+            busy.value = false;
+            context.pushNamed('bindEmail');
+            return;
+          }
+          if (choice != 'login') {
+            busy.value = false;
+            return;
+          }
+        }
+      }
+      final result = await ref.read(panelAuthProvider.notifier).loginWithPairCode(code);
+      if (!context.mounted) return;
+      if (result.error != null) {
+        errorText.value = result.error;
+        busy.value = false;
+        return;
+      }
+      final url = result.subscribeUrl;
+      if (url != null && url.isNotEmpty) {
+        await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
+      }
+      try {
+        await ref.read(connectionNotifierProvider.notifier).abortConnection();
+      } catch (_) {}
+      if (!context.mounted) return;
+      busy.value = false;
+      final who = ref.read(panelAuthProvider).accountNo ?? ref.read(panelAuthProvider).email ?? '';
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text('已登录 账号 $who')));
+      context.go('/home');
+    }
 
     Future<void> submit() async {
       errorText.value = null;
@@ -167,8 +229,25 @@ class LoginPage extends HookConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 第一次打开这页的人要先知道「这页是给谁用的」。原来写的是
-                // 「…自动导入订阅」——「订阅」是我们内部的说法，客户不懂。
+                Text('用配对码登录', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Text(
+                  '在已经登录的那台设备上：账号 →「在另一台设备上用」，拿到 6 位配对码。',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: pairCtrl,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  decoration: const InputDecoration(hintText: '6 位数字', counterText: ''),
+                  onChanged: (v) {
+                    if (v.length == 6) submitPair();
+                  },
+                ),
+                const SizedBox(height: 16),
+                Text('或者用邮箱 / 账号编号登录', textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+                const SizedBox(height: 12),
                 Text(
                   '注册过的账号：填邮箱或账号编号，加上密码就能登。',
                   style: theme.textTheme.bodyMedium

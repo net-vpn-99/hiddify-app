@@ -146,6 +146,19 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
   /// [identifier] 可以是**邮箱**，也可以是 App 里显示的**账号编号**（`A4K7-P92`）——
   /// 编号是 uuid 派生的，注册前后不变，所以两者指同一个账号。带 `@` 走 Xboard 的
   /// 登录接口，不带就走 GslGuest 的 login-by-no。
+  Future<PanelLoginResult> _finishToken(String token, String fallbackEmail) async {
+    final sub = await _api.getSubscribe(token);
+    await _secureStorage.write(key: _kTokenKey, value: token);
+    await _secureStorage.write(key: _kEmailKey, value: sub.email ?? fallbackEmail);
+    await ref.read(Preferences.panelLoggedIn.notifier).update(true);
+    // 登进来了 = 「他自己退出过」这件事翻篇了。不擦掉的话这台手机永远卡在
+    // 「不自动开号」那条路上，以后哪天没登录态又回到那一屏（1.1.40 及以前只有
+    // 走「免注册试用」才擦，普通登录不擦 —— 这是病根）。
+    await ref.read(Preferences.guestOptOut.notifier).update(false);
+    state = state.copyWith(loading: false, email: sub.email ?? fallbackEmail, account: sub.account);
+    return (subscribeUrl: sub.subscribeUrl, error: null);
+  }
+
   Future<PanelLoginResult> login(String identifier, String password) async {
     if (state.loading) return (subscribeUrl: null, error: null);
     state = state.copyWith(loading: true);
@@ -154,22 +167,30 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       final token = id.contains('@')
           ? await _api.login(id, password)
           : await _api.loginByAccountNo(id, password);
-      final sub = await _api.getSubscribe(token);
-      await _secureStorage.write(key: _kTokenKey, value: token);
-      await _secureStorage.write(key: _kEmailKey, value: sub.email ?? id);
-      await ref.read(Preferences.panelLoggedIn.notifier).update(true);
-      // 登进来了 = 「他自己退出过」这件事翻篇了。不擦掉的话这台手机永远卡在
-      // 「不自动开号」那条路上，以后哪天没登录态又回到那一屏（1.1.40 及以前只有
-      // 走「免注册试用」才擦，普通登录不擦 —— 这是病根）。
-      await ref.read(Preferences.guestOptOut.notifier).update(false);
-      state = state.copyWith(loading: false, email: sub.email ?? id, account: sub.account);
-      return (subscribeUrl: sub.subscribeUrl, error: null);
+      return await _finishToken(token, id);
     } on PanelApiException catch (e) {
       state = state.copyWith(loading: false);
       return (subscribeUrl: null, error: e.message);
     } catch (e) {
       state = state.copyWith(loading: false);
       return (subscribeUrl: null, error: '登录出错：$e');
+    }
+  }
+
+  Future<PanelLoginResult> loginWithPairCode(String code) async {
+    if (state.loading) return (subscribeUrl: null, error: null);
+    final deviceId = await DeviceId.read();
+    if (deviceId == null) return (subscribeUrl: null, error: '读不到本机设备信息');
+    state = state.copyWith(loading: true);
+    try {
+      final token = await _api.redeemPairCode(code, deviceId);
+      return await _finishToken(token, '');
+    } on PanelApiException catch (e) {
+      state = state.copyWith(loading: false);
+      return (subscribeUrl: null, error: e.message);
+    } catch (e) {
+      state = state.copyWith(loading: false);
+      return (subscribeUrl: null, error: '配对码登录出错：$e');
     }
   }
 

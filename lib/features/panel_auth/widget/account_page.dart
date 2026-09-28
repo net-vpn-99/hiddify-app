@@ -67,13 +67,30 @@ class AccountPage extends HookConsumerWidget {
                         auth.accountLabel,
                         style: theme.textTheme.titleMedium,
                       ),
-                      Text(auth.isGuest ? '还没注册，换手机前记得注册' : '光速雷达会员', style: theme.textTheme.bodySmall),
+                      Text(auth.isGuest ? '免注册账号 · 在别的设备上用配对码登录' : '光速雷达会员', style: theme.textTheme.bodySmall),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('在另一台设备上用'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.pushNamed('addDevice'),
+            ),
+            if (auth.isGuest) ...[
+              const Text('防丢', style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              const Text('加个邮箱：手机丢了、卸载重装也能找回这个账号。'),
+              const SizedBox(height: 8),
+              FilledButton(onPressed: () => context.pushNamed('bindEmail'), child: const Text('加邮箱')),
+              TextButton(
+                onPressed: () => showAccountKeyDialog(context, ref),
+                child: const Text('或者记下账号编号和密码'),
+              ),
+            ],
+            const SizedBox(height: 12),
             if (loading.value)
               const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
             else if (a == null)
