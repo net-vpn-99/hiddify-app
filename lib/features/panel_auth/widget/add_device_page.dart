@@ -20,6 +20,7 @@ class AddDevicePage extends ConsumerStatefulWidget {
 
 class _AddDevicePageState extends ConsumerState<AddDevicePage> {
   bool iphone = false;
+  bool codeIssued = false;
   String code = '';
   int secondsLeft = 0;
   int used = 0;
@@ -53,24 +54,48 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
       mineHash = sha256.convert(utf8.encode('gsl_guest|$id')).toString().substring(0, 16);
     }
     if (token == null || token.isEmpty) return;
+    await Future.wait([_loadPair(token), _loadDevices(token)]);
+  }
+
+  Future<void> _loadPair(String token) async {
     try {
-      final api = PanelApi();
-      final pair = await api.createPairCode(token);
-      final list = await api.fetchDevices(token);
+      final pair = await PanelApi().createPairCode(token);
       if (!mounted) return;
       setState(() {
+        codeIssued = true;
         code = pair.code;
         secondsLeft = pair.expiresIn > 0 ? pair.expiresIn : 600;
-        used = list.used;
-        limit = list.limit;
-        devices = list.devices;
         errorText = '';
       });
     } on PanelApiException catch (e) {
-      if (mounted) setState(() => errorText = e.message);
+      if (!mounted) return;
+      setState(() {
+        codeIssued = false;
+        code = '';
+        secondsLeft = 0;
+        errorText = e.message;
+      });
     } catch (_) {
-      if (mounted) setState(() => errorText = '网络不好，稍后再试');
+      if (!mounted) return;
+      setState(() {
+        codeIssued = false;
+        code = '';
+        secondsLeft = 0;
+        errorText = '网络不好，稍后再试';
+      });
     }
+  }
+
+  Future<void> _loadDevices(String token) async {
+    try {
+      final list = await PanelApi().fetchDevices(token);
+      if (!mounted) return;
+      setState(() {
+        used = list.used;
+        limit = list.limit;
+        devices = list.devices;
+      });
+    } catch (_) {}
   }
 
   Future<void> _loadIphone() async {
@@ -134,11 +159,21 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
           ),
           const SizedBox(height: 20),
           if (!iphone) ...[
-            Text(grouped, textAlign: TextAlign.center, style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w700, letterSpacing: 2)),
-            const SizedBox(height: 8),
-            Text(_clock, textAlign: TextAlign.center),
-            if (secondsLeft <= 0)
-              TextButton(onPressed: _load, child: const Text('换一个')),
+            if (codeIssued) ...[
+              Text(grouped, textAlign: TextAlign.center, style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w700, letterSpacing: 2)),
+              const SizedBox(height: 8),
+              Text(_clock, textAlign: TextAlign.center),
+            ],
+            if (codeIssued && secondsLeft <= 0)
+              TextButton(onPressed: () async {
+                final token = await ref.read(panelAuthProvider.notifier).currentToken();
+                if (token != null && token.isNotEmpty) await _loadPair(token);
+              }, child: const Text('换一个')),
+            if (!codeIssued && errorText.isNotEmpty)
+              TextButton(onPressed: () async {
+                final token = await ref.read(panelAuthProvider.notifier).currentToken();
+                if (token != null && token.isNotEmpty) await _loadPair(token);
+              }, child: const Text('再试一次')),
             const SizedBox(height: 12),
             const Text('在那台设备上打开光速雷达，点「已有账号？」，输入上面这 6 位数。'),
             const SizedBox(height: 8),

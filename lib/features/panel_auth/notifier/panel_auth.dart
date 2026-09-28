@@ -30,7 +30,13 @@ const _secureStorage = FlutterSecureStorage(
 );
 
 class PanelAuthState {
-  const PanelAuthState({this.loading = false, this.email, this.account, this.guestPassword});
+  const PanelAuthState({
+    this.loading = false,
+    this.email,
+    this.account,
+    this.guestPassword,
+    this.guestPaidReminder,
+  });
 
   final bool loading;
 
@@ -39,6 +45,9 @@ class PanelAuthState {
 
   /// 已登录账号的邮箱；null = 未登录。
   final String? email;
+
+  /// 买过套餐、还在有效期、还没加邮箱。null = 这次打开还没查。
+  final bool? guestPaidReminder;
 
   /// 最近一次拉到的账号信息（登录 / 启动刷订阅 / 会员页 / 连接前都会更新）。
   /// 连接流程用它判断流量是否用完，避免发起注定失败的连接。
@@ -89,15 +98,18 @@ class PanelAuthState {
     String? email,
     PanelAccount? account,
     String? guestPassword,
+    bool? guestPaidReminder,
     bool clearEmail = false,
     bool clearAccount = false,
     bool clearGuestPassword = false,
+    bool setGuestPaidReminder = false,
   }) {
     return PanelAuthState(
       loading: loading ?? this.loading,
       email: clearEmail ? null : (email ?? this.email),
       account: clearAccount ? null : (account ?? this.account),
       guestPassword: clearGuestPassword ? null : (guestPassword ?? this.guestPassword),
+      guestPaidReminder: setGuestPaidReminder ? guestPaidReminder : this.guestPaidReminder,
     );
   }
 }
@@ -123,6 +135,7 @@ final inviteTextsProvider =
 class PanelAuthNotifier extends Notifier<PanelAuthState> {
   final PanelApi _api = PanelApi();
   Future<PanelAccount?>? _accountInflight;
+  bool _paidHintStarted = false;
 
   @override
   PanelAuthState build() {
@@ -150,7 +163,14 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     // 「不自动开号」那条路上，以后哪天没登录态又回到那一屏（1.1.40 及以前只有
     // 走「免注册试用」才擦，普通登录不擦 —— 这是病根）。
     await ref.read(Preferences.guestOptOut.notifier).update(false);
-    state = state.copyWith(loading: false, email: sub.email ?? fallbackEmail, account: sub.account);
+    // 换号了：上一个号的「加个邮箱」查询作废，新号进来再查一次。
+    _paidHintStarted = false;
+    state = state.copyWith(
+      loading: false,
+      email: sub.email ?? fallbackEmail,
+      account: sub.account,
+      setGuestPaidReminder: true,
+    );
     return (subscribeUrl: sub.subscribeUrl, error: null);
   }
 
@@ -303,6 +323,20 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     } on PanelApiException catch (e) {
       return e.message;
     }
+  }
+
+  /// 这次打开查一次：买过、还在有效期、还没加邮箱，才在账号卡片上提醒。
+  Future<void> refreshGuestPaidHint() async {
+    if (_paidHintStarted || !state.isGuest || state.account == null) return;
+    _paidHintStarted = true;
+    final paid = await guestHasPaidOrder();
+    final exp = state.account?.expiredAt;
+    final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final stillValid = exp == null || exp == 0 || exp > nowSec;
+    state = state.copyWith(
+      guestPaidReminder: paid == true && stillValid && state.isGuest,
+      setGuestPaidReminder: true,
+    );
   }
 
   /// 当前免注册号有没有买过套餐。null = 查失败，登录页不拦。

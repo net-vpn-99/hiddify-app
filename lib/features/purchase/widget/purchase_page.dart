@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
+import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/purchase/data/purchase_service.dart';
 import 'package:hiddify/features/purchase/model/plan_offer.dart';
@@ -90,6 +91,10 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final acctAsync = ref.watch(purchaseAccountProvider);
     final account = acctAsync.asData?.value;
     final auth = ref.watch(panelAuthProvider);
+    final boot = ref.watch(guestBootstrapProvider);
+    final knownMask = !auth.loggedIn && boot.reason == GuestBlockReason.hasAccount
+        ? (boot.emailMask ?? '')
+        : null;
 
     return Column(
       children: [
@@ -104,6 +109,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                 isGuest: auth.isGuest,
                 loggedIn: auth.loggedIn,
                 label: auth.accountLabel,
+                knownAccountMask: knownMask,
                 onLogin: () => context.pushNamed('login'),
               ),
               const SizedBox(height: 16),
@@ -159,7 +165,10 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
         _CheckoutBar(
           t: t,
           offer: selected,
-          onPay: selected == null ? null : () => _confirm(t, selected),
+          onPay: knownMask != null
+              ? () => context.pushNamed('login')
+              : (selected == null ? null : () => _confirm(t, selected)),
+          payLabel: knownMask != null ? '登录后购买' : '去支付',
           expiryHint: _expiryHint(account, selected),
         ),
       ],
@@ -477,6 +486,7 @@ class _AccountCard extends StatelessWidget {
     required this.isGuest,
     required this.loggedIn,
     required this.label,
+    required this.knownAccountMask,
     required this.onLogin,
   });
 
@@ -486,6 +496,7 @@ class _AccountCard extends StatelessWidget {
   final bool isGuest;
   final bool loggedIn;
   final String label;
+  final String? knownAccountMask;
   final VoidCallback onLogin;
 
   @override
@@ -513,20 +524,25 @@ class _AccountCard extends StatelessWidget {
           // 「购买给」，他们真正要确认的正是这笔钱落到哪个号上。
           Row(
             children: [
-              Text(loggedIn && !isGuest ? '当前账号 ' : '购买给 ',
+              Text(
+                  knownAccountMask != null
+                      ? ''
+                      : (loggedIn && !isGuest ? '当前账号 ' : '购买给 '),
                   style: TextStyle(color: t.secondary, fontSize: 11)),
               Expanded(
                 child: Text(
-                  loggedIn ? label : '还没有账号（付款时自动创建）',
+                  knownAccountMask != null
+                      ? (knownAccountMask!.isEmpty ? '先登录你的账号' : '先登录 $knownAccountMask')
+                      : (loggedIn ? label : '还没有账号（付款时自动创建）'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.bold),
                 ),
               ),
-              if (isGuest || !loggedIn)
+              if (knownAccountMask != null || isGuest || !loggedIn)
                 GestureDetector(
                   onTap: onLogin,
-                  child: Text('已有账号？登录',
+                  child: Text(knownAccountMask != null ? '登录' : '已有账号？登录',
                       style: TextStyle(color: t.primary, fontSize: 11, fontWeight: FontWeight.w600)),
                 ),
             ],
@@ -723,12 +739,14 @@ class _CheckoutBar extends StatelessWidget {
     required this.t,
     required this.offer,
     required this.onPay,
+    required this.payLabel,
     required this.expiryHint,
   });
 
   final PurchaseTokens t;
   final PlanOffer? offer;
   final VoidCallback? onPay;
+  final String payLabel;
 
   /// 「买完用到哪天」。付钱之前最想知道的一件事，原来这页从头到尾没写过，
   /// 用户得自己拿当前到期时间加上档位天数去算。
@@ -787,7 +805,7 @@ class _CheckoutBar extends StatelessWidget {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                     ),
                     onPressed: onPay,
-                    child: const Text('去支付', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                    child: Text(payLabel, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),

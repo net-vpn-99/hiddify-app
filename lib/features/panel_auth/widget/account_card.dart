@@ -17,6 +17,9 @@ class AccountCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final loggedIn = ref.watch(Preferences.panelLoggedIn);
     final auth = ref.watch(panelAuthProvider);
+    if (auth.isGuest && auth.account != null && auth.guestPaidReminder == null) {
+      Future.microtask(() => ref.read(panelAuthProvider.notifier).refreshGuestPaidHint());
+    }
 
     final String title;
     final String subtitle;
@@ -42,6 +45,25 @@ class AccountCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (auth.isGuest && auth.guestPaidReminder == true) ...[
+              Material(
+                color: theme.colorScheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => context.pushNamed('bindEmail'),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    child: Text(
+                      '加个邮箱，方便找回账号 ›',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             InkWell(
               onTap: () => context.pushNamed(loggedIn ? 'account' : 'login'),
               child: Row(

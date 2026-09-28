@@ -30,7 +30,7 @@ class PanelApi {
     final token = _extractToken(res.data);
     if (token != null && token.isNotEmpty) return token;
 
-    final msg = _messageOf(res.data) ?? '登录失败，请检查邮箱和密码';
+    final msg = _messageOf(res.data, res.statusCode) ?? '登录失败，请检查邮箱和密码';
     throw PanelApiException(msg);
   }
 
@@ -50,7 +50,7 @@ class PanelApi {
     }
     final token = _extractToken(res.data);
     if (token != null && token.isNotEmpty) return token;
-    throw PanelApiException(_messageOf(res.data) ?? '账号编号或密码不对');
+    throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '账号编号或密码不对');
   }
 
   /// 当前号有没有付过的订单（status 3 已完成 / 4 已折抵）。
@@ -109,7 +109,7 @@ class PanelApi {
     }
     final data = _dataOf(res.data);
     if (data == null) {
-      throw PanelApiException(_messageOf(res.data) ?? '获取订阅失败');
+      throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '获取订阅失败');
     }
     var url = (data['subscribe_url'] as String?)?.trim() ?? '';
     final subToken = (data['token'] as String?)?.trim() ?? '';
@@ -145,7 +145,7 @@ class PanelApi {
       throw PanelApiException('登录已过期，请重新登录', unauthorized: true);
     }
     final data = _dataOf(res.data);
-    if (data == null) throw PanelApiException(_messageOf(res.data) ?? '获取账号信息失败');
+    if (data == null) throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '获取账号信息失败');
     return _accountOf(data);
   }
 
@@ -183,7 +183,7 @@ class PanelApi {
     }
     final data = _dataOf(res.data);
     if (data != null || res.statusCode == 200) return;
-    throw PanelApiException(_messageOf(res.data) ?? '验证码发送失败，请稍后再试');
+    throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '验证码发送失败，请稍后再试');
   }
 
   /// 注册选项（站点是否要邮箱验证 / 是否强制邀请码 / 是否有人机验证）。
@@ -223,7 +223,7 @@ class PanelApi {
     if (token != null && token.isNotEmpty) return token;
     // 注册成功但没返回令牌：账号已建好，调用方用密码登录一次即可。
     if (_dataOf(res.data) != null || res.statusCode == 200) return null;
-    throw PanelApiException(_messageOf(res.data) ?? '注册失败，请检查信息后重试');
+    throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '注册失败，请检查信息后重试');
   }
 
   /// 游客试用开关 / 文案（GslGuest 插件，走 guest/comm/config）。拿不到 gsl_guest 对象
@@ -321,7 +321,7 @@ class PanelApi {
         hasInviter: data?['has_inviter'] == true,
       );
     }
-    throw PanelApiException(_messageOf(res.data) ?? '免注册试用暂时不可用，请注册账号');
+    throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '免注册试用暂时不可用，请注册账号');
   }
 
   Future<({String code, int expiresIn, String accountNo, int used, int limit})> createPairCode(String token) async {
@@ -332,7 +332,7 @@ class PanelApi {
     );
     final data = _dataOf(res.data);
     if (data == null || data['code'] == null) {
-      throw PanelApiException(_messageOf(res.data) ?? '暂时发不出配对码，请再试一次');
+      throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '暂时发不出配对码，请再试一次');
     }
     num n(dynamic v) => v is num ? v : num.tryParse('$v') ?? 0;
     final devices = data['devices'];
@@ -357,7 +357,7 @@ class PanelApi {
     }
     final token = _extractToken(res.data);
     if (token != null && token.isNotEmpty) return token;
-    throw PanelApiException(_messageOf(res.data) ?? '配对码不对或已过期，在原来那台设备上换一个再试');
+    throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '配对码不对或已过期，在原来那台设备上换一个再试');
   }
 
   Future<({List<Map<String, dynamic>> devices, int used, int limit})> fetchDevices(String token) async {
@@ -383,7 +383,7 @@ class PanelApi {
       options: Options(headers: {'auth_data': token, 'Authorization': token}),
     );
     final data = _dataOf(res.data);
-    if (data == null) throw PanelApiException(_messageOf(res.data) ?? '暂时拿不到二维码');
+    if (data == null) throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '暂时拿不到二维码');
     return (
       scanText: '${data['scan_text'] ?? ''}',
       subUrl: '${data['sub_url'] ?? ''}',
@@ -456,7 +456,7 @@ class PanelApi {
       throw PanelApiException(_networkMessage(e));
     }
     if (res.statusCode != null && res.statusCode! >= 400) {
-      throw PanelApiException(_messageOf(res.data) ?? '邀请码没记上，稍后再试');
+      throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '邀请码没记上，稍后再试');
     }
     final data = _dataOf(res.data);
     final status = data?['status'];
@@ -478,7 +478,7 @@ class PanelApi {
     }
     if (res.statusCode == 401) throw PanelApiException('登录已过期，请重新打开 App', unauthorized: true);
     if (res.statusCode != null && res.statusCode! >= 400) {
-      throw PanelApiException(_messageOf(res.data) ?? '设置密码失败，请稍后再试');
+      throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '设置密码失败，请稍后再试');
     }
   }
 
@@ -509,7 +509,7 @@ class PanelApi {
     final data = _dataOf(res.data);
     final bound = data?['email'];
     if (res.statusCode == 200 && bound is String && bound.isNotEmpty) return bound;
-    throw PanelApiException(_messageOf(res.data) ?? '注册失败，请稍后再试');
+    throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '注册失败，请稍后再试');
   }
 
   /// 用邮箱验证码重置密码。
@@ -524,7 +524,7 @@ class PanelApi {
       throw PanelApiException(_networkMessage(e));
     }
     if (_dataOf(res.data) != null || res.statusCode == 200) return;
-    throw PanelApiException(_messageOf(res.data) ?? '重置失败，请检查验证码');
+    throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '重置失败，请检查验证码');
   }
 
   /// 拿邀请码（没有就让面板生成一个），返回 (code, link)。
@@ -651,10 +651,10 @@ class PanelApi {
       return (used: used, limit: limit);
     }
     if (res.statusCode == 401) {
-      throw PanelApiException(_messageOf(res.data) ?? '登录已过期，请重新登录', unauthorized: true);
+      throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '登录已过期，请重新登录', unauthorized: true);
     }
     if (res.statusCode == 403) {
-      throw PanelApiException(_messageOf(res.data) ?? '设备数已满（按电脑/手机计，不是按宽带）');
+      throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '设备数已满（按电脑/手机计，不是按宽带）');
     }
     // 400（缺字段，理论上不会发生）/ 404（这套 www 还没配闸）/ 5xx：不是网关的
     // 决定性拒绝，fail-open，别拦用户连接。
@@ -700,10 +700,15 @@ class PanelApi {
     return null;
   }
 
-  String? _messageOf(dynamic body) {
+  String? _messageOf(dynamic body, [int? statusCode]) {
+    if (statusCode == 429) return '操作太频繁，等一分钟再试';
     if (body is Map) {
       final m = body['message'] ?? body['error'];
-      if (m is String && m.trim().isNotEmpty) return m.trim();
+      if (m is String && m.trim().isNotEmpty) {
+        final t = m.trim();
+        if (t.toLowerCase().startsWith('too many attempts')) return '操作太频繁，等一分钟再试';
+        return t;
+      }
     }
     return null;
   }
@@ -711,6 +716,7 @@ class PanelApi {
   String? _str(dynamic v) => (v is String && v.isNotEmpty) ? v : null;
 
   String _networkMessage(DioException e) {
+    if (e.response?.statusCode == 429) return '操作太频繁，等一分钟再试';
     switch (e.type) {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:

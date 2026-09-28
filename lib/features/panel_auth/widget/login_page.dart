@@ -90,13 +90,16 @@ class LoginPage extends HookConsumerWidget {
                   final d = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
                   return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
                 }();
+          final dated = exp != null && exp != 0;
           final choice = await showDialog<String>(
             context: context,
             builder: (ctx) => AlertDialog(
-              content: Text('你现在这个号上有买好的套餐（到 $when）。登录别的账号后，套餐不会跟过去。\n想保住套餐：点「加邮箱」，把邮箱加到现在这个号上。'),
+              content: Text(dated
+                  ? '这个号上还有套餐（到 $when），先加个邮箱再登录别的账号。'
+                  : '这个号上还有套餐，先加个邮箱再登录别的账号。'),
               actions: [
-                TextButton(onPressed: () => Navigator.of(ctx).pop('bind'), child: const Text('加邮箱')),
-                FilledButton(onPressed: () => Navigator.of(ctx).pop('login'), child: const Text('仍然登录')),
+                TextButton(onPressed: () => Navigator.of(ctx).pop('login'), child: const Text('直接登录')),
+                FilledButton(onPressed: () => Navigator.of(ctx).pop('bind'), child: const Text('加邮箱')),
               ],
             ),
           );
@@ -152,20 +155,21 @@ class LoginPage extends HookConsumerWidget {
                   final day = d.day.toString().padLeft(2, '0');
                   return '${d.year}-$m-$day';
                 }();
+          final dated = exp != null && exp != 0;
           final choice = await showDialog<String>(
             context: context,
             builder: (ctx) => AlertDialog(
-              content: Text(
-                '你现在这个号上有买好的套餐（到 $when）。登录别的账号后，套餐不会跟过去。\n想保住套餐：点「加邮箱」，把邮箱加到现在这个号上。',
-              ),
+              content: Text(dated
+                  ? '这个号上还有套餐（到 $when），先加个邮箱再登录别的账号。'
+                  : '这个号上还有套餐，先加个邮箱再登录别的账号。'),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(ctx).pop('bind'),
-                  child: const Text('加邮箱'),
+                  onPressed: () => Navigator.of(ctx).pop('login'),
+                  child: const Text('直接登录'),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop('login'),
-                  child: const Text('仍然登录'),
+                  onPressed: () => Navigator.of(ctx).pop('bind'),
+                  child: const Text('加邮箱'),
                 ),
               ],
             ),

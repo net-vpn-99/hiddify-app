@@ -3,17 +3,16 @@ import 'package:flutter/services.dart';
 
 abstract class Constants {
   static const appName = "光速雷达";
-  // OneRay: 会员系统 API（登录 / 拉订阅），对接 Xboard，与桌面版同一套接口
-  static const panelApiBase = "https://api.quarrybell.com"; // 香港中转（主入口，2026-09-19）
+  // OneRay: 会员系统 API（登录 / 拉订阅），对接 Xboard，与桌面版同一套接口。
+  // 内置只放稳定地址；中转名字（经常被墙要换）只在服务器下发的指针 / feed 里，换它不用发版。
+  static const panelApiBase = "https://api-hk.inkspindle.com";
   // 自有指针在前，第三方阿里 OSS 只当救援。跟 Windows panel.json ossPointerUrls 同一份。
   static const ossPointerUrls = [
-    "https://api.quarrybell.com/dengta/d9b21c47e0a8f315.txt",
     "https://api-hk.inkspindle.com/rules/d9b21c47e0a8f315.txt",
     "https://www.gsldone.com/dengta/d9b21c47e0a8f315.txt",
     "https://surrr.oss-cn-hangzhou.aliyuncs.com/f20025155414474.txt",
   ];
   static const panelApiFallbacks = [
-    "https://api.quarrybell.com",
     "https://api-hk.inkspindle.com",
     "https://api.gsldone.com",
     "https://api.inkspindle.com",
