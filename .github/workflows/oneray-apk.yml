@@ -147,7 +147,7 @@ jobs:
               "assets": [
                 {
                   "name": "oneray.apk",
-                  "browser_download_url": "https://api.quarrybell.com/dengta/android/oneray.apk",
+                  "browser_download_url": "https://api.oakpelican.stream/dengta/android/oneray.apk",
                   "mirrors": [
                     "https://dl.inkspindle.com/dengta/android/oneray.apk",
                     "https://www.gsldone.com/dengta/android/oneray.apk"
