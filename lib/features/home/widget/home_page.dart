@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/app_update/data/apk_installer.dart';
@@ -56,6 +57,14 @@ class HomePage extends HookConsumerWidget {
     final t = ref.watch(translationsProvider).requireValue;
     // 连接后自动把默认的 balance/lowest 均衡组切成真实线路
     ref.watch(autoLineFixerProvider);
+
+    final telegramGroup = useState<Uri?>(RemoteSiteConfig.telegramGroupUri);
+    useEffect(() {
+      RemoteSiteConfig.ensureLoaded().then((_) {
+        if (context.mounted) telegramGroup.value = RemoteSiteConfig.telegramGroupUri;
+      });
+      return null;
+    }, const []);
 
     useEffect(() {
       final code = pendingInviteFromLink;
@@ -108,10 +117,13 @@ class HomePage extends HookConsumerWidget {
           ],
         ),
         actions: [
-          // 回官网：买套餐、看教程、邀请都在官网上，客户端里原来没有入口（两端同时加）。
+          // 有交流群链接时这里是「交流群 ↗」；没有就仍是「官网 ↗」。官网入口挪到「我的」。
           TextButton(
-            onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.websiteUrl)),
-            child: const Text('官网 ↗'),
+            onPressed: () {
+              final group = telegramGroup.value;
+              UriUtils.tryLaunch(group ?? Uri.parse(Constants.websiteUrl));
+            },
+            child: Text(telegramGroup.value != null ? '交流群 ↗' : '官网 ↗'),
           ),
           const Gap(8),
         ],

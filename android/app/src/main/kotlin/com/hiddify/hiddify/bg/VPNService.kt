@@ -66,6 +66,31 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
         }
     }
 
+    // Dedicated downloaders and BitTorrent apps. Traffic from these never
+    // enters the tunnel, so it uses the phone's own network. Browsers are not
+    // listed. Missing packages throw NameNotFoundException and are ignored.
+    private val downloaderPackages = listOf(
+        "com.xunlei.downloadprovider",
+        "com.pikcloud.pikpak",
+        "com.dv.adm",
+        "com.dv.adm.pay",
+        "idm.internet.download.manager",
+        "idm.internet.download.manager.plus",
+        "com.bittorrent.client",
+        "com.utorrent.client",
+        "org.proninyaroslav.libretorrent",
+        "com.frostwire.android",
+        "com.biglybt.android.client",
+        "com.gopeed.gopeed",
+    )
+
+    private fun excludeDownloaders(builder: Builder) {
+        downloaderPackages.forEach { pkg ->
+            Log.d("VpnService", "Excluding downloader $pkg")
+            addExcludePackage(builder, pkg)
+        }
+    }
+
     fun addExcludePackage(builder: Builder, packageName: String) {
         try {     
             Log.d("VpnService","Excluding $packageName")
@@ -163,7 +188,9 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
             if (Settings.perAppProxyEnabled) {
                 val appList = Settings.perAppProxyList
                 if (Settings.perAppProxyMode == PerAppProxyMode.INCLUDE) {
-                    appList.forEach {
+                    // Cannot mix allow and disallow. Drop downloaders from the
+                    // allow-list instead of calling addDisallowedApplication.
+                    appList.filter { it !in downloaderPackages }.forEach {
                         addIncludePackage(builder,it)
                     }
 //                    addIncludePackage(builder,packageName)
@@ -171,13 +198,17 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
                     appList.forEach {
                         addExcludePackage(builder,it)
                     }
+                    excludeDownloaders(builder)
                     addExcludePackage(builder,packageName)
                 }
             } else {
                 val includePackage = options.includePackage
                 if (includePackage.hasNext()) {
                     while (includePackage.hasNext()) {
-                        addIncludePackage(builder,includePackage.next())
+                        val pkg = includePackage.next()
+                        if (pkg !in downloaderPackages) {
+                            addIncludePackage(builder, pkg)
+                        }
                     }
                     //                    addIncludePackage(builder,packageName)
                 }else {
@@ -188,6 +219,7 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
                         }
                     }
 
+                    excludeDownloaders(builder)
                     addExcludePackage(builder, packageName)
                 }
                 

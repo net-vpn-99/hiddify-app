@@ -56,6 +56,13 @@ class SettingsPage extends HookConsumerWidget {
         children: [
           const AccountCard(),
           const _ActionGrid(),
+          const _TelegramGroupRow(),
+          _row(
+            context,
+            icon: Icons.open_in_new_rounded,
+            title: '官网 ↗',
+            onTap: () => UriUtils.tryLaunch(Uri.parse(Constants.websiteUrl)),
+          ),
           const SizedBox(height: 4),
           const Divider(height: 1),
           _row(
@@ -142,6 +149,45 @@ class SettingsPage extends HookConsumerWidget {
         title: Text(title),
         trailing: const Icon(Icons.chevron_right_rounded),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// 交流群链接来自 `gsl_invite.support_telegram_group`。没配就不占一行。
+class _TelegramGroupRow extends StatefulWidget {
+  const _TelegramGroupRow();
+
+  @override
+  State<_TelegramGroupRow> createState() => _TelegramGroupRowState();
+}
+
+class _TelegramGroupRowState extends State<_TelegramGroupRow> {
+  String? _url;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    await RemoteSiteConfig.ensureLoaded();
+    if (!mounted) return;
+    final uri = RemoteSiteConfig.telegramGroupUri;
+    setState(() => _url = uri?.toString());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _url;
+    if (url == null) return const SizedBox.shrink();
+    return Material(
+      child: ListTile(
+        leading: const Icon(Icons.forum_outlined),
+        title: const Text('加入交流群'),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: () => UriUtils.tryLaunch(Uri.parse(url)),
       ),
     );
   }

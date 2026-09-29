@@ -14,10 +14,12 @@ class RemoteSiteConfig {
   static const _deviceApiKey = 'oneray_site_device_api';
   static const _accountUrlKey = 'oneray_site_account_url';
   static const _helpUrlKey = 'oneray_site_help_url';
+  static const _tgGroupKey = 'oneray_site_tg_group';
 
   static String? _deviceApi;
   static String? _accountUrl;
   static String? _helpUrl;
+  static String? _tgGroup;
   static Duration _quotaPoll = const Duration(seconds: 45);
   static Duration _nodesPoll = const Duration(seconds: 720);
   static DateTime? _fetchedAt;
@@ -32,6 +34,19 @@ class RemoteSiteConfig {
   /// 会员中心 / 帮助页地址，`fallback` 是内置默认值（`Constants` 里那些）。
   static String accountUrlOr(String fallback) => _accountUrl ?? fallback;
   static String helpUrlOr(String fallback) => _helpUrl ?? fallback;
+
+  /// Telegram 交流群。后台没配或清空就是 null，入口整行不显示。
+  static String? get telegramGroup => _tgGroup;
+
+  /// 只接受 https 的 t.me / telegram.me。别的写法当没配。
+  static Uri? get telegramGroupUri {
+    final raw = _tgGroup;
+    if (raw == null) return null;
+    final uri = Uri.tryParse(raw);
+    if (uri == null || uri.scheme != 'https') return null;
+    if (uri.host != 't.me' && uri.host != 'telegram.me') return null;
+    return uri;
+  }
 
   /// 连着时查额度的间隔（插件 `poll_quota_secs`，已夹在 20–90 秒）。
   static Duration get quotaPoll => _quotaPoll;
@@ -53,6 +68,7 @@ class RemoteSiteConfig {
       _deviceApi ??= _nonEmpty(prefs.getString(_deviceApiKey));
       _accountUrl ??= _nonEmpty(prefs.getString(_accountUrlKey));
       _helpUrl ??= _nonEmpty(prefs.getString(_helpUrlKey));
+      _tgGroup ??= _nonEmpty(prefs.getString(_tgGroupKey));
     } catch (_) {
       // 读本地缓存失败不影响去问服务器
     }
@@ -72,6 +88,8 @@ class RemoteSiteConfig {
         _deviceApi = _nonEmpty(field('device_api')) ?? _deviceApi;
         _accountUrl = _nonEmpty(field('account_url')) ?? _accountUrl;
         _helpUrl = _nonEmpty(field('help_url')) ?? _helpUrl;
+        final tg = field('support_telegram_group');
+        if (tg != null) _tgGroup = _nonEmpty(tg);
         _quotaPoll = _clampSecs(gsl['poll_quota_secs'], 45, 20, 90);
         _nodesPoll = _clampSecs(gsl['poll_nodes_secs'], 720, 300, 1800);
         unawaited(_persist(prefs));
@@ -88,6 +106,11 @@ class RemoteSiteConfig {
       if (_deviceApi != null) await prefs.setString(_deviceApiKey, _deviceApi!);
       if (_accountUrl != null) await prefs.setString(_accountUrlKey, _accountUrl!);
       if (_helpUrl != null) await prefs.setString(_helpUrlKey, _helpUrl!);
+      if (_tgGroup != null) {
+        await prefs.setString(_tgGroupKey, _tgGroup!);
+      } else {
+        await prefs.remove(_tgGroupKey);
+      }
     } catch (_) {}
   }
 

@@ -371,7 +371,11 @@ abstract class ConfigOptions {
 
   static final singboxConfigOptions = Provider<SingboxConfigOption>((ref) {
     // final region = ref.watch(Preferences.region);
-    final rules = <SingboxRule>[];
+    // Fixed ahead of any user rules. hiddify-core 4.1.0 currently ignores this
+    // list (setRoutingOptions comments out opt.Rules); sniff itself is on.
+    final rules = <SingboxRule>[
+      const SingboxRule(protocol: 'bittorrent', outbound: RuleOutbound.bypass),
+    ];
     // final rules = switch (region) {
     //   Region.ir => [
     //       const SingboxRule(
