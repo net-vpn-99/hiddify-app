@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:hiddify/core/logger/logger.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
+import 'package:hiddify/features/panel_auth/data/altcha.dart';
 import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
@@ -187,18 +188,38 @@ class PanelApi {
 
   /// 发邮箱验证码（注册 / 找回密码用）。
   Future<void> sendEmailCode(String email) async {
-    Response<dynamic> res;
-    try {
-      res = await _dio.post<dynamic>(
+    Future<Response<dynamic>> post(String? altcha) {
+      return _dio.post<dynamic>(
         '/api/v1/passport/comm/sendEmailVerify',
-        data: {'email': email.trim()},
+        data: {
+          'email': email.trim(),
+          if (altcha != null && altcha.isNotEmpty) 'altcha': altcha,
+        },
       );
-    } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
     }
-    final data = _dataOf(res.data);
-    if (data != null || res.statusCode == 200) return;
-    throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '验证码发送失败，请稍后再试');
+
+    Future<void> once(String? altcha) async {
+      Response<dynamic> res;
+      try {
+        res = await post(altcha);
+      } on DioException catch (e) {
+        throw PanelApiException(_messageOf(e.response?.data, e.response?.statusCode) ?? _networkMessage(e));
+      }
+      final data = _dataOf(res.data);
+      if (data != null || res.statusCode == 200) return;
+      throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '验证码发送失败，请稍后再试');
+    }
+
+    final answer = await solveAltcha(_dio);
+    try {
+      await once(answer);
+    } on PanelApiException catch (e) {
+      if (answer != null && e.message.contains('验证失败')) {
+        await once(await solveAltcha(_dio));
+        return;
+      }
+      rethrow;
+    }
   }
 
   /// 注册选项（站点是否要邮箱验证 / 是否强制邀请码 / 是否有人机验证）。
@@ -311,12 +332,14 @@ class PanelApi {
     final sw = Stopwatch()..start();
     Response<dynamic> res;
     try {
+      final altcha = await solveAltcha(_dio);
       res = await _dio.post<dynamic>(
         '/api/v1/guest/gsl_guest/login',
         data: {
           'device_id': deviceId,
           'platform': 'android',
           if (inviteCode != null && inviteCode.trim().isNotEmpty) 'invite_code': inviteCode.trim(),
+          if (altcha != null && altcha.isNotEmpty) 'altcha': altcha,
         },
       );
     } on DioException catch (e) {
@@ -421,9 +444,15 @@ class PanelApi {
       probeDevice(String deviceId) async {
     Response<dynamic> res;
     try {
+      final altcha = await solveAltcha(_dio);
       res = await _dio.post<dynamic>(
         '/api/v1/guest/gsl_guest/login',
-        data: {'device_id': deviceId, 'platform': 'android', 'probe': true},
+        data: {
+          'device_id': deviceId,
+          'platform': 'android',
+          'probe': true,
+          if (altcha != null && altcha.isNotEmpty) 'altcha': altcha,
+        },
       );
     } on DioException catch (e) {
       throw PanelApiException(_networkMessage(e));
