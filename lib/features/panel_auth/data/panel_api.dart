@@ -330,10 +330,9 @@ class PanelApi {
   Future<({String? token, String? hasAccountMask, String? password, bool hasInviter})> guestLogin(
       String deviceId, {String? inviteCode}) async {
     final sw = Stopwatch()..start();
-    Response<dynamic> res;
-    try {
-      final altcha = await solveAltcha(_dio);
-      res = await _dio.post<dynamic>(
+    // 绝大多数 IP 没被封，服务端不看答案。先不带答案发；只有 400 才算题，再发一次。
+    Future<Response<dynamic>> post(String? altcha) {
+      return _dio.post<dynamic>(
         '/api/v1/guest/gsl_guest/login',
         data: {
           'device_id': deviceId,
@@ -342,9 +341,27 @@ class PanelApi {
           if (altcha != null && altcha.isNotEmpty) 'altcha': altcha,
         },
       );
+    }
+
+    Response<dynamic> res;
+    try {
+      res = await post(null);
     } on DioException catch (e) {
-      _logCall('开号', sw, e.response);
-      throw PanelApiException(_networkMessage(e));
+      if (e.response?.statusCode != 400) {
+        _logCall('开号', sw, e.response);
+        throw PanelApiException(_networkMessage(e));
+      }
+      final altcha = await solveAltcha(_dio);
+      if (altcha == null || altcha.isEmpty) {
+        _logCall('开号', sw, e.response);
+        throw PanelApiException(_networkMessage(e));
+      }
+      try {
+        res = await post(altcha);
+      } on DioException catch (again) {
+        _logCall('开号', sw, again.response);
+        throw PanelApiException(_networkMessage(again));
+      }
     }
     _logCall('开号', sw, res);
     final data = _dataOf(res.data);
@@ -448,14 +465,12 @@ class PanelApi {
       probeDevice(String deviceId) async {
     Response<dynamic> res;
     try {
-      final altcha = await solveAltcha(_dio);
       res = await _dio.post<dynamic>(
         '/api/v1/guest/gsl_guest/login',
         data: {
           'device_id': deviceId,
           'platform': 'android',
           'probe': true,
-          if (altcha != null && altcha.isNotEmpty) 'altcha': altcha,
         },
       );
     } on DioException catch (e) {
