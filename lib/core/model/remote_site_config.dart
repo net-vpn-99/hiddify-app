@@ -72,10 +72,10 @@ class RemoteSiteConfig {
   /// 线路列表里这些地区名字后面的小灰字。空 = 不显示。
   static String? get aiTipTag => _aiTipTag;
 
-  /// 「专属定制」网页。只接受 https。还要 [customEnabled] 才显示入口。
+  /// 「定制线路」网页。只接受 https。还要 [customEnabled] 才显示入口。
   static String? get customUrl => _customUrl;
 
-  /// GslShop 的总开关。关着时不显示专属定制入口。
+  /// GslShop 的总开关。关着时不显示定制线路入口。
   static bool get customEnabled => _customEnabled;
 
   /// 连着时查额度的间隔（插件 `poll_quota_secs`，已夹在 20–90 秒）。
