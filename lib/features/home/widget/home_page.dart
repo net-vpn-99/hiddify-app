@@ -41,6 +41,9 @@ import 'package:hiddify/utils/number_formatters.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+/// 常用网站快捷一排是否正在显示。测试谷歌和这一排共用，避免各算一遍。
+final homeQuickSitesVisibleProvider = StateProvider<bool>((ref) => false);
+
 /// 首页（1.1.28 重做）。
 ///
 /// 从上到下只有四样东西：顶栏（logo + 设置）、连接按钮、线路条、状态条。往下不用滑。
@@ -65,14 +68,10 @@ class HomePage extends HookConsumerWidget {
     ref.watch(autoLineFixerProvider);
 
     final telegramGroup = useState<Uri?>(RemoteSiteConfig.telegramGroupUri);
-    final customUrl = useState<String?>(RemoteSiteConfig.customUrl);
-    final customOn = useState(RemoteSiteConfig.customEnabled);
     useEffect(() {
       RemoteSiteConfig.ensureLoaded().then((_) {
         if (!context.mounted) return;
         telegramGroup.value = RemoteSiteConfig.telegramGroupUri;
-        customUrl.value = RemoteSiteConfig.customUrl;
-        customOn.value = RemoteSiteConfig.customEnabled;
       });
       return null;
     }, const []);
@@ -128,24 +127,9 @@ class HomePage extends HookConsumerWidget {
           ],
         ),
         actions: [
-          // 专属定制要开关和网址都有才出现。360 宽放不下时，交流群收成图标，文字留给专属定制。
-          if (customOn.value && (customUrl.value ?? '').isNotEmpty)
-            TextButton(
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                visualDensity: VisualDensity.compact,
-              ),
-              onPressed: () => UriUtils.tryLaunch(Uri.parse(customUrl.value!)),
-              child: const Text('专属定制'),
-            ),
-          // 有交流群链接时这里是「交流群 ↗」；没有就仍是「官网 ↗」。官网入口挪到「我的」。
-          _HomeLink(
-            group: telegramGroup.value,
-            iconOnly: customOn.value &&
-                (customUrl.value ?? '').isNotEmpty &&
-                telegramGroup.value != null &&
-                MediaQuery.sizeOf(context).width < 400,
-          ),
+          // 有交流群链接时这里是「交流群 ↗」；没有就仍是「官网 ↗」。官网入口在「我的」。
+          // 定制线路不放顶栏，跟「查看分流规则」同一排。
+          _HomeLink(group: telegramGroup.value),
           const Gap(8),
         ],
       ),
@@ -219,25 +203,14 @@ class _SpeedLine extends ConsumerWidget {
   }
 }
 
-/// 连上之后给新用户一个「下一步」：点一下用默认浏览器打开谷歌搜索，看到结果就知道网通了。
-/// 搜「今天天气」是因为谷歌会直接出天气卡片，最直观。没连上时什么都不画。
-/// 顶栏右边那个链接。没群时是官网；有群时是交流群。窄屏且旁边有「专属定制」时只留图标。
+/// 顶栏右边那个链接。没群时是官网；有群时是交流群，始终是文字。
 class _HomeLink extends StatelessWidget {
-  const _HomeLink({required this.group, required this.iconOnly});
+  const _HomeLink({required this.group});
 
   final Uri? group;
-  final bool iconOnly;
 
   @override
   Widget build(BuildContext context) {
-    if (iconOnly && group != null) {
-      return IconButton(
-        tooltip: '交流群',
-        visualDensity: VisualDensity.compact,
-        onPressed: () => UriUtils.tryLaunch(group!),
-        icon: const Icon(Icons.forum_outlined),
-      );
-    }
     return TextButton(
       style: TextButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -264,12 +237,18 @@ class _SitesBlock extends HookConsumerWidget {
     final configTick = useState(0);
 
     useEffect(() {
-      if (!show) return null;
+      if (!show) {
+        Future(() {
+          if (context.mounted) ref.read(homeQuickSitesVisibleProvider.notifier).state = false;
+        });
+        return null;
+      }
       () async {
         await RemoteSiteConfig.ensureLoaded();
         await SitesCatalog.ensureLoaded();
         if (!context.mounted) return;
         links.value = List<SiteLink>.of(SitesCatalog.quick);
+        ref.read(homeQuickSitesVisibleProvider.notifier).state = links.value.isNotEmpty;
         configTick.value++;
       }();
       return null;
@@ -481,8 +460,10 @@ class _GoogleTestButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final connected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
     // 真通了才给（还在「连接中」或中途断了时点了也打不开，只会让人更慌）。
+    // 常用网站一排已经有 Google 时，不再单独放这个按钮。
     final health = ref.watch(stabilityProvider);
-    if (!connected || !health.confirmed || health.outage) return const SizedBox.shrink();
+    final quickSites = ref.watch(homeQuickSitesVisibleProvider);
+    if (!connected || !health.confirmed || health.outage || quickSites) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.only(top: 16),
@@ -531,24 +512,49 @@ class AppVersionLabel extends HookConsumerWidget {
 /// 首页「查看分流规则」入口：一直都在（用户最常在连接之前犹豫「QQ 会不会变美国登录」）。
 /// 实测出异常时前面亮一个橙点。watch 一下 routeCheckProvider 也让它从首页起就活着，
 /// 连上第一次测通时能自动测。
-class _RouteRulesEntry extends ConsumerWidget {
+class _RouteRulesEntry extends HookConsumerWidget {
   const _RouteRulesEntry();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final warn = ref.watch(routeCheckProvider.select((s) => s.warning.isNotEmpty));
+    final customUrl = useState<String?>(null);
+    useEffect(() {
+      RemoteSiteConfig.ensureLoaded().then((_) {
+        if (!context.mounted) return;
+        final url = RemoteSiteConfig.customUrl;
+        customUrl.value = RemoteSiteConfig.customEnabled && url != null && url.isNotEmpty ? url : null;
+      });
+      return null;
+    }, const []);
+    final linkStyle = TextButton.styleFrom(
+      foregroundColor: theme.colorScheme.onSurfaceVariant,
+      minimumSize: const Size(48, 40),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      visualDensity: VisualDensity.compact,
+    );
     return Center(
-      child: TextButton.icon(
-        style: TextButton.styleFrom(
-          foregroundColor: theme.colorScheme.onSurfaceVariant,
-          minimumSize: const Size(48, 40),
-        ),
-        onPressed: () => context.pushNamed('routeRules'),
-        icon: warn
-            ? const Icon(Icons.circle, size: 8, color: Color(0xFFCF8A3B))
-            : const Icon(Icons.help_outline, size: 16),
-        label: const Text('查看分流规则'),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton.icon(
+            style: linkStyle,
+            onPressed: () => context.pushNamed('routeRules'),
+            icon: warn
+                ? const Icon(Icons.circle, size: 8, color: Color(0xFFCF8A3B))
+                : const Icon(Icons.help_outline, size: 16),
+            label: const Text('查看分流规则'),
+          ),
+          if (customUrl.value != null) ...[
+            Container(width: 1, height: 12, color: theme.colorScheme.outlineVariant),
+            TextButton(
+              style: linkStyle,
+              onPressed: () => UriUtils.tryLaunch(Uri.parse(customUrl.value!)),
+              child: const Text('定制线路'),
+            ),
+          ],
+        ],
       ),
     );
   }

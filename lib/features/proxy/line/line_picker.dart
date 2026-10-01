@@ -7,6 +7,7 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/proxy/model/node_flag.dart';
+import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 export 'package:hiddify/features/proxy/line/line_source.dart' show LineOption, activeProfileLinesProvider;
@@ -122,6 +123,22 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                 connected: connected,
                 onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
               ),
+            if (_customLineUrl() != null) ...[
+              const Divider(height: 1),
+              ListTile(
+                title: const Text('定制我的专属线路'),
+                subtitle: Text(
+                  '可独享或拼车',
+                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  final url = _customLineUrl()!;
+                  Navigator.of(context).pop();
+                  UriUtils.tryLaunch(Uri.parse(url));
+                },
+              ),
+            ],
           ],
         ),
       );
@@ -177,6 +194,12 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     }
     await ref.read(dialogNotifierProvider.notifier).showNeedAccount();
   }
+}
+
+String? _customLineUrl() {
+  final url = RemoteSiteConfig.customUrl;
+  if (!RemoteSiteConfig.customEnabled || url == null || url.isEmpty) return null;
+  return url;
 }
 
 Widget? _lineSubtitle(ThemeData theme, LineOption option) {

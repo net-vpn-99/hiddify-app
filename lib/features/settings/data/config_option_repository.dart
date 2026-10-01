@@ -371,11 +371,10 @@ abstract class ConfigOptions {
 
   static final singboxConfigOptions = Provider<SingboxConfigOption>((ref) {
     // final region = ref.watch(Preferences.region);
-    // Fixed ahead of any user rules. hiddify-core 4.1.0 currently ignores this
-    // list (setRoutingOptions comments out opt.Rules); sniff itself is on.
-    final rules = <SingboxRule>[
-      const SingboxRule(protocol: 'bittorrent', outbound: RuleOutbound.bypass),
-    ];
+    // 别往这里加规则：hiddify-core 4.1.0 不按它分流，而且会解析整份 JSON，
+    // SingboxRule.network 序列化成字符串 "" 会让核心报 config.Network 解析错误、连不上。
+    // 下载 App 不走 VPN 靠 VPNService.kt 的包名排除。
+    final rules = <SingboxRule>[];
     // final rules = switch (region) {
     //   Region.ir => [
     //       const SingboxRule(
