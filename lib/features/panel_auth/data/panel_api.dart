@@ -343,24 +343,23 @@ class PanelApi {
       );
     }
 
+    // 这个 Dio 把任何 HTTP 状态都当成正常返回，400 不会进 DioException。
     Response<dynamic> res;
     try {
       res = await post(null);
     } on DioException catch (e) {
-      if (e.response?.statusCode != 400) {
-        _logCall('开号', sw, e.response);
-        throw PanelApiException(_networkMessage(e));
-      }
+      _logCall('开号', sw, e.response);
+      throw PanelApiException(_networkMessage(e));
+    }
+    if (res.statusCode == 400) {
       final altcha = await solveAltcha(_dio);
-      if (altcha == null || altcha.isEmpty) {
-        _logCall('开号', sw, e.response);
-        throw PanelApiException(_networkMessage(e));
-      }
-      try {
-        res = await post(altcha);
-      } on DioException catch (again) {
-        _logCall('开号', sw, again.response);
-        throw PanelApiException(_networkMessage(again));
+      if (altcha != null && altcha.isNotEmpty) {
+        try {
+          res = await post(altcha);
+        } on DioException catch (e) {
+          _logCall('开号', sw, e.response);
+          throw PanelApiException(_networkMessage(e));
+        }
       }
     }
     _logCall('开号', sw, res);
