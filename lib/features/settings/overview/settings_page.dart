@@ -56,6 +56,7 @@ class SettingsPage extends HookConsumerWidget {
         children: [
           const AccountCard(),
           const _ActionGrid(),
+          const _SitesLinkRow(),
           const _TelegramGroupRow(),
           _row(
             context,
@@ -149,6 +150,44 @@ class SettingsPage extends HookConsumerWidget {
         title: Text(title),
         trailing: const Icon(Icons.chevron_right_rounded),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// 常用网站页。`sites_url` 为空就不占一行。
+class _SitesLinkRow extends StatefulWidget {
+  const _SitesLinkRow();
+
+  @override
+  State<_SitesLinkRow> createState() => _SitesLinkRowState();
+}
+
+class _SitesLinkRowState extends State<_SitesLinkRow> {
+  String? _url;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    await RemoteSiteConfig.ensureLoaded();
+    if (!mounted) return;
+    setState(() => _url = RemoteSiteConfig.sitesUrl);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _url;
+    if (url == null) return const SizedBox.shrink();
+    return Material(
+      child: ListTile(
+        leading: const Icon(Icons.language_rounded),
+        title: const Text('常用网站 ↗'),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: () => UriUtils.tryLaunch(Uri.parse(url)),
       ),
     );
   }

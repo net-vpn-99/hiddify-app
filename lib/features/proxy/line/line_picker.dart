@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -27,6 +28,8 @@ export 'package:hiddify/features/proxy/line/line_source.dart' show LineOption, a
 ///    喊推荐就是噪音，他又不会照着换；
 ///  - 打开时自动滚到自己那条：线路十几条，不滚它经常在屏幕外。
 Future<void> showLinePicker(BuildContext context, WidgetRef ref) async {
+  await RemoteSiteConfig.ensureLoaded();
+  if (!context.mounted) return;
   await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
@@ -175,6 +178,24 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
   }
 }
 
+Widget? _lineSubtitle(ThemeData theme, LineOption option) {
+  final code = countryCodeFromLineName(option.name);
+  final tag = RemoteSiteConfig.aiTipTag;
+  final showTag = tag != null && code != null && RemoteSiteConfig.aiTipRegions.contains(code);
+  if (option.desc.isEmpty && !showTag) return null;
+  if (!showTag) return Text(option.desc);
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (option.desc.isNotEmpty) Text(option.desc),
+      Text(
+        tag,
+        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      ),
+    ],
+  );
+}
+
 class _LineTile extends StatelessWidget {
   const _LineTile({
     super.key,
@@ -225,7 +246,7 @@ class _LineTile extends StatelessWidget {
           ],
         ],
       ),
-      subtitle: option.desc.isEmpty ? null : Text(option.desc),
+      subtitle: _lineSubtitle(theme, option),
       trailing: locked ? Icon(Icons.lock_outline_rounded, size: 18, color: theme.colorScheme.outline) : null,
       selected: current,
       onTap: onTap,

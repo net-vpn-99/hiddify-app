@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:dartx/dartx.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -7,8 +10,10 @@ import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
+import 'package:hiddify/core/model/sites_catalog.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
 import 'package:hiddify/features/app_update/data/apk_installer.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_state.dart';
@@ -23,10 +28,11 @@ import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/home/widget/line_bar.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
-import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/active/auto_line_fixer.dart';
+import 'package:hiddify/features/proxy/line/line_picker.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
+import 'package:hiddify/features/proxy/model/node_flag.dart';
 import 'package:hiddify/features/stats/notifier/stats_notifier.dart';
 import 'package:hiddify/features/support/widget/support_failure_link.dart';
 import 'package:hiddify/gen/assets.gen.dart';
@@ -59,9 +65,14 @@ class HomePage extends HookConsumerWidget {
     ref.watch(autoLineFixerProvider);
 
     final telegramGroup = useState<Uri?>(RemoteSiteConfig.telegramGroupUri);
+    final customUrl = useState<String?>(RemoteSiteConfig.customUrl);
+    final customOn = useState(RemoteSiteConfig.customEnabled);
     useEffect(() {
       RemoteSiteConfig.ensureLoaded().then((_) {
-        if (context.mounted) telegramGroup.value = RemoteSiteConfig.telegramGroupUri;
+        if (!context.mounted) return;
+        telegramGroup.value = RemoteSiteConfig.telegramGroupUri;
+        customUrl.value = RemoteSiteConfig.customUrl;
+        customOn.value = RemoteSiteConfig.customEnabled;
       });
       return null;
     }, const []);
@@ -117,13 +128,23 @@ class HomePage extends HookConsumerWidget {
           ],
         ),
         actions: [
+          // 专属定制要开关和网址都有才出现。360 宽放不下时，交流群收成图标，文字留给专属定制。
+          if (customOn.value && (customUrl.value ?? '').isNotEmpty)
+            TextButton(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
+              ),
+              onPressed: () => UriUtils.tryLaunch(Uri.parse(customUrl.value!)),
+              child: const Text('专属定制'),
+            ),
           // 有交流群链接时这里是「交流群 ↗」；没有就仍是「官网 ↗」。官网入口挪到「我的」。
-          TextButton(
-            onPressed: () {
-              final group = telegramGroup.value;
-              UriUtils.tryLaunch(group ?? Uri.parse(Constants.websiteUrl));
-            },
-            child: Text(telegramGroup.value != null ? '交流群 ↗' : '官网 ↗'),
+          _HomeLink(
+            group: telegramGroup.value,
+            iconOnly: customOn.value &&
+                (customUrl.value ?? '').isNotEmpty &&
+                telegramGroup.value != null &&
+                MediaQuery.sizeOf(context).width < 400,
           ),
           const Gap(8),
         ],
@@ -143,10 +164,10 @@ class HomePage extends HookConsumerWidget {
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 600),
-              child: Column(
+              child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -154,15 +175,16 @@ class HomePage extends HookConsumerWidget {
                         ConnectionButton(),
                         _SpeedLine(),
                         StabilityIndicator(),
+                        _SitesBlock(),
                         _GoogleTestButton(),
                         ConnectIssueCard(),
                         SupportFailureLink(),
                       ],
                     ),
                   ),
-                  const _RouteRulesEntry(),
-                  const LineBar(),
-                  const AccountStatusBar(),
+                  _RouteRulesEntry(),
+                  LineBar(),
+                  AccountStatusBar(),
                 ],
               ),
             ),
@@ -199,6 +221,254 @@ class _SpeedLine extends ConsumerWidget {
 
 /// 连上之后给新用户一个「下一步」：点一下用默认浏览器打开谷歌搜索，看到结果就知道网通了。
 /// 搜「今天天气」是因为谷歌会直接出天气卡片，最直观。没连上时什么都不画。
+/// 顶栏右边那个链接。没群时是官网；有群时是交流群。窄屏且旁边有「专属定制」时只留图标。
+class _HomeLink extends StatelessWidget {
+  const _HomeLink({required this.group, required this.iconOnly});
+
+  final Uri? group;
+  final bool iconOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    if (iconOnly && group != null) {
+      return IconButton(
+        tooltip: '交流群',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => UriUtils.tryLaunch(group!),
+        icon: const Icon(Icons.forum_outlined),
+      );
+    }
+    return TextButton(
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        visualDensity: VisualDensity.compact,
+      ),
+      onPressed: () => UriUtils.tryLaunch(group ?? Uri.parse(Constants.websiteUrl)),
+      child: Text(group != null ? '交流群 ↗' : '官网 ↗'),
+    );
+  }
+}
+
+/// 连上并且网通了才出现：香港等地区一行提示，下面是常用网站。服务器没给就不占高度。
+class _SitesBlock extends HookConsumerWidget {
+  const _SitesBlock();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final connected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
+    final health = ref.watch(stabilityProvider);
+    final active = ref.watch(activeProxyNotifierProvider).valueOrNull?.tagDisplay ?? '';
+    final stored = ref.watch(Preferences.lastNodeName);
+    final show = connected && health.confirmed && !health.outage;
+    final links = useState<List<SiteLink>>(SitesCatalog.quick);
+    final configTick = useState(0);
+
+    useEffect(() {
+      if (!show) return null;
+      () async {
+        await RemoteSiteConfig.ensureLoaded();
+        await SitesCatalog.ensureLoaded();
+        if (!context.mounted) return;
+        links.value = List<SiteLink>.of(SitesCatalog.quick);
+        configTick.value++;
+      }();
+      return null;
+    }, [show]);
+
+    if (!show) return const SizedBox.shrink();
+
+    final lineName = active.isNotEmpty ? splitNodeName(active).name : stored;
+    final code = countryCodeFromLineName(lineName);
+    // 读一次，配置拉回来后 useState 变化会重建，提示和名单才能出现。
+    configTick.value;
+    final tip = RemoteSiteConfig.aiTipText;
+    final showTip = tip != null && code != null && RemoteSiteConfig.aiTipRegions.contains(code);
+
+    if (!showTip && links.value.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        children: [
+          if (showTip)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 4, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      tip,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                    onPressed: () => showLinePicker(context, ref),
+                    child: const Text('换线路'),
+                  ),
+                ],
+              ),
+            ),
+          if (links.value.isNotEmpty) _QuickSites(links: links.value),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickSites extends StatelessWidget {
+  const _QuickSites({required this.links});
+
+  final List<SiteLink> links;
+
+  double _textWidth(String text, double fontSize) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: TextStyle(fontSize: fontSize)),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    return math.max(36, painter.width);
+  }
+
+  double _rowWidth(int count, double fontSize, double gap) {
+    final n = math.min(count, links.length);
+    var width = _textWidth('更多', fontSize);
+    for (var i = 0; i < n; i++) {
+      width += _textWidth(links[i].name, fontSize);
+    }
+    return width + gap * n;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        var count = math.min(5, links.length);
+        var fontSize = 11.0;
+        var gap = 8.0;
+        if (_rowWidth(count, fontSize, gap) > maxWidth) fontSize = 10;
+        if (_rowWidth(count, fontSize, gap) > maxWidth && count > 4) count = math.min(4, links.length);
+        if (_rowWidth(count, fontSize, gap) > maxWidth) gap = 4;
+        final shown = links.take(count).toList();
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                for (var i = 0; i < shown.length; i++) ...[
+                  if (i > 0) SizedBox(width: gap),
+                  _SiteButton(link: shown[i], fontSize: fontSize),
+                ],
+                SizedBox(width: gap),
+                _MoreSitesButton(fontSize: fontSize),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SiteButton extends StatelessWidget {
+  const _SiteButton({required this.link, required this.fontSize});
+
+  final SiteLink link;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final path = link.iconPath;
+    return InkWell(
+      onTap: () => UriUtils.tryLaunch(Uri.parse(link.url)),
+      customBorder: const CircleBorder(),
+      child: SizedBox(
+        width: math.max(36, _labelWidth(link.name)),
+        child: Column(
+          children: [
+            if (path != null && File(path).existsSync())
+              ClipOval(
+                child: Image.file(File(path), width: 36, height: 36, fit: BoxFit.cover),
+              )
+            else
+              Container(
+                    width: 36,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      link.name.isEmpty ? '?' : link.name.characters.first,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+            const SizedBox(height: 2),
+            Text(
+              link.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: fontSize, color: theme.colorScheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double _labelWidth(String text) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: TextStyle(fontSize: fontSize)),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    return painter.width;
+  }
+}
+
+class _MoreSitesButton extends StatelessWidget {
+  const _MoreSitesButton({required this.fontSize});
+
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final url = RemoteSiteConfig.sitesUrl;
+    return InkWell(
+      onTap: url == null ? null : () => UriUtils.tryLaunch(Uri.parse(url)),
+      customBorder: const CircleBorder(),
+      child: Column(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHighest,
+              shape: BoxShape.circle,
+            ),
+            child: const Text('⋯', style: TextStyle(fontSize: 16)),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '更多',
+            style: TextStyle(fontSize: fontSize, color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _GoogleTestButton extends ConsumerWidget {
   const _GoogleTestButton();
 
