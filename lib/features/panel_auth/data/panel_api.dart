@@ -365,7 +365,7 @@ class PanelApi {
     throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '免注册试用暂时不可用，请注册账号');
   }
 
-  Future<({String code, int expiresIn, String accountNo, int used, int limit})> createPairCode(String token) async {
+  Future<({String code, int expiresIn, String accountNo, int used, int limit, bool guest, bool full, int? limitAfterBind})> createPairCode(String token) async {
     final res = await _dio.post<dynamic>(
       '/api/v1/user/gsl_guest/pair',
       data: {'platform': 'android'},
@@ -377,12 +377,16 @@ class PanelApi {
     }
     num n(dynamic v) => v is num ? v : num.tryParse('$v') ?? 0;
     final devices = data['devices'];
+    final rawAfter = data['limit_after_bind'];
     return (
       code: '${data['code']}',
       expiresIn: n(data['expires_in']).toInt(),
       accountNo: '${data['account_no'] ?? ''}',
       used: devices is Map ? n(devices['used']).toInt() : 0,
       limit: devices is Map ? n(devices['limit']).toInt() : 0,
+      guest: data['guest'] == true,
+      full: data['full'] == true,
+      limitAfterBind: rawAfter is num ? rawAfter.toInt() : null,
     );
   }
 

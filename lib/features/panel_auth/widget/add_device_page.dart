@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/utils/device_id.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
@@ -21,6 +22,9 @@ class AddDevicePage extends ConsumerStatefulWidget {
 class _AddDevicePageState extends ConsumerState<AddDevicePage> {
   bool iphone = false;
   bool codeIssued = false;
+  bool pairFull = false;
+  bool pairGuest = false;
+  int? limitAfterBind;
   String code = '';
   int secondsLeft = 0;
   int used = 0;
@@ -62,15 +66,21 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
       final pair = await PanelApi().createPairCode(token);
       if (!mounted) return;
       setState(() {
-        codeIssued = true;
-        code = pair.code;
-        secondsLeft = pair.expiresIn > 0 ? pair.expiresIn : 600;
+        pairFull = pair.full;
+        pairGuest = pair.guest;
+        limitAfterBind = pair.limitAfterBind;
+        used = pair.used;
+        limit = pair.limit;
+        codeIssued = !pair.full;
+        code = pair.full ? '' : pair.code;
+        secondsLeft = pair.full ? 0 : (pair.expiresIn > 0 ? pair.expiresIn : 600);
         errorText = '';
       });
     } on PanelApiException catch (e) {
       if (!mounted) return;
       setState(() {
         codeIssued = false;
+        pairFull = false;
         code = '';
         secondsLeft = 0;
         errorText = e.message;
@@ -79,6 +89,7 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
       if (!mounted) return;
       setState(() {
         codeIssued = false;
+        pairFull = false;
         code = '';
         secondsLeft = 0;
         errorText = '网络不好，稍后再试';
@@ -159,31 +170,55 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
           ),
           const SizedBox(height: 20),
           if (!iphone) ...[
-            if (codeIssued) ...[
-              Text(grouped, textAlign: TextAlign.center, style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w700, letterSpacing: 2)),
+            if (pairFull && pairGuest) ...[
+              const Text('这个账号还不能在第二台设备上用', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
-              Text(_clock, textAlign: TextAlign.center),
+              Text(limitAfterBind != null
+                  ? '免注册号只能在 1 台设备上用。你绑定邮箱后，这个账号最多可以用 $limitAfterBind 台设备，绑定不花钱。'
+                  : '免注册号只能在 1 台设备上用。你绑定邮箱后，这个账号可以用多台设备，绑定不花钱。'),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () async {
+                  final bound = await context.pushNamed<bool>('bindEmail');
+                  if (bound == true && mounted) {
+                    final token = await ref.read(panelAuthProvider.notifier).currentToken();
+                    if (token != null && token.isNotEmpty) await _loadPair(token);
+                  }
+                },
+                child: const Text('绑定邮箱'),
+              ),
+            ] else if (pairFull) ...[
+              Text('这个账号已经在 $used 台设备上用了（最多 $limit 台）。不用的设备 45 天后会自动让出位置；你急用，请联系客服。'),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () => UriUtils.tryLaunch(Uri.parse('https://www.gsldone.com/support.html')),
+                child: const Text('联系客服'),
+              ),
+            ] else ...[
+              if (codeIssued) ...[
+                Text(grouped, textAlign: TextAlign.center, style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w700, letterSpacing: 2)),
+                const SizedBox(height: 8),
+                Text(_clock, textAlign: TextAlign.center),
+              ],
+              if (codeIssued && secondsLeft <= 0)
+                TextButton(onPressed: () async {
+                  final token = await ref.read(panelAuthProvider.notifier).currentToken();
+                  if (token != null && token.isNotEmpty) await _loadPair(token);
+                }, child: const Text('换一个')),
+              if (!codeIssued && errorText.isNotEmpty)
+                TextButton(onPressed: () async {
+                  final token = await ref.read(panelAuthProvider.notifier).currentToken();
+                  if (token != null && token.isNotEmpty) await _loadPair(token);
+                }, child: const Text('再试一次')),
+              const SizedBox(height: 12),
+              const Text('在那台设备上打开光速雷达，点「已有账号？」，输入上面这 6 位数。'),
+              const SizedBox(height: 8),
+              const SelectableText('还没装？到 www.gsldone.com 下载'),
+              if (limit > 0) ...[
+                const SizedBox(height: 8),
+                Text('这个账号现在 $used/$limit 台设备。'),
+              ],
             ],
-            if (codeIssued && secondsLeft <= 0)
-              TextButton(onPressed: () async {
-                final token = await ref.read(panelAuthProvider.notifier).currentToken();
-                if (token != null && token.isNotEmpty) await _loadPair(token);
-              }, child: const Text('换一个')),
-            if (!codeIssued && errorText.isNotEmpty)
-              TextButton(onPressed: () async {
-                final token = await ref.read(panelAuthProvider.notifier).currentToken();
-                if (token != null && token.isNotEmpty) await _loadPair(token);
-              }, child: const Text('再试一次')),
-            const SizedBox(height: 12),
-            const Text('在那台设备上打开光速雷达，点「已有账号？」，输入上面这 6 位数。'),
-            const SizedBox(height: 8),
-            const SelectableText('还没装？到 www.gsldone.com 下载'),
-            const SizedBox(height: 8),
-            Text(
-              limit > 0 && used >= limit
-                  ? '这个账号已经在 $used 台设备上用了（最多 $limit 台）。不用的设备 45 天后会自动让出位置，急用请联系客服。'
-                  : (limit > 0 ? '这个账号现在 $used/$limit 台设备。' : '这个账号现在 $used 台设备。'),
-            ),
           ] else ...[
             if (scanText.isNotEmpty)
               Center(child: QrImageView(data: scanText, size: 200, backgroundColor: Colors.white)),
