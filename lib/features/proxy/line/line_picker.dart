@@ -28,7 +28,8 @@ export 'package:hiddify/features/proxy/line/line_source.dart' show LineOption, a
 ///    喊推荐就是噪音，他又不会照着换；
 ///  - 打开时自动滚到自己那条：线路十几条，不滚它经常在屏幕外。
 Future<void> showLinePicker(BuildContext context, WidgetRef ref) async {
-  await RemoteSiteConfig.ensureLoaded();
+  // 灰字用得到配置，但抽屉必须马上弹。300 毫秒内回来就带上，回不来先开抽屉。
+  await RemoteSiteConfig.ensureLoaded().timeout(const Duration(milliseconds: 300), onTimeout: () {});
   if (!context.mounted) return;
   await showModalBottomSheet<void>(
     context: context,
