@@ -138,9 +138,23 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               for (final entry in byPlan.entries) ...[
                 if (multiPlan)
                   Padding(
-                    padding: const EdgeInsets.only(top: 6, bottom: 6),
-                    child: Text(entry.value.first.name,
-                        style: TextStyle(color: t.secondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                    padding: const EdgeInsets.only(top: 10, bottom: 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(entry.value.first.name,
+                            style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w700)),
+                        Text(
+                          entry.value.first.name.contains('优化')
+                              ? '晚高峰也不卡 · 含全部标准线路'
+                              : '晚高峰可能变慢 · 标准线路',
+                          style: TextStyle(
+                            color: entry.value.first.name.contains('优化') ? t.primary : t.secondary,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 for (final o in entry.value)
                   Padding(
