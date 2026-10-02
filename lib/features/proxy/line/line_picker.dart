@@ -10,6 +10,7 @@ import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/proxy/line/line_tier.dart';
 import 'package:hiddify/features/proxy/model/node_flag.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
+import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -409,10 +410,18 @@ class _TieredLinesState extends State<_TieredLines> {
     return head.isEmpty ? '其它' : head;
   }
 
+  String _shortName(String country, String name) {
+    final trimmed = name.trim();
+    if (!trimmed.startsWith(country)) return trimmed;
+    final rest = trimmed.substring(country.length).trim();
+    return rest.isEmpty ? trimmed : rest;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final proNames = widget.tiers;
+    final tokens = PurchaseTokens.of(context);
+    final ink3 = tokens.secondary.withValues(alpha: 0.7);
+    final okDeep = Theme.of(context).brightness == Brightness.dark ? tokens.remaining : const Color(0xFF1F6F59);
     final pro = <String, List<LineOption>>{};
     final std = <String, List<LineOption>>{};
     final proOrder = <String>[];
@@ -420,7 +429,7 @@ class _TieredLinesState extends State<_TieredLines> {
     String? usingSeg;
     String? usingCountry;
     for (final o in widget.options) {
-      final isPro = proNames.isProName(o.name);
+      final isPro = widget.tiers.isProName(o.name);
       final bucket = isPro ? pro : std;
       final order = isPro ? proOrder : stdOrder;
       final country = _country(o);
@@ -443,113 +452,427 @@ class _TieredLinesState extends State<_TieredLines> {
       if (usingSeg != null && usingCountry != null) _openKey = '$usingSeg|$usingCountry';
     }
     final proLocked = widget.tiers.trial != 'pro' && widget.tiers.trial != 'active';
+    final recommended = widget.pickedName.isEmpty && widget.options.isNotEmpty ? widget.options.first.name : '';
     final children = <Widget>[];
+
     void addSeg(String seg, List<String> order, Map<String, List<LineOption>> bucket) {
       if (order.isEmpty) return;
       final open = seg == 'pro' ? _proOpen : _stdOpen;
-      final title = seg == 'pro' ? '优化线路' : '标准线路';
-      final hint = seg == 'pro' ? '晚高峰也不卡' : '晚高峰可能变慢';
-      children.add(ListTile(
-        dense: true,
-        title: Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: seg == 'pro' ? const Color(0xFF2A9477) : null)),
-        subtitle: Text('$hint · ${order.join(' · ')}', maxLines: 2, overflow: TextOverflow.ellipsis),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (seg == 'pro' && proLocked)
-              TextButton(onPressed: widget.onUpgrade, child: const Text('升级优化版')),
-            Icon(open ? Icons.expand_more : Icons.chevron_right),
-          ],
-        ),
-        onTap: () => setState(() {
-          if (seg == 'pro') {
-            _proOpen = !_proOpen;
-          } else {
-            _stdOpen = !_stdOpen;
-          }
-        }),
-      ));
-      if (seg == 'pro' && widget.tiers.trial == 'active') {
-        final mins = (widget.tiers.seconds / 60).ceil().clamp(1, 9999);
-        children.add(ListTile(
-          dense: true,
-          title: Text('优化线路体验中 · 还剩 $mins 分钟'),
-          trailing: FilledButton(onPressed: widget.onUpgrade, child: const Text('升级优化版')),
-        ));
-      } else if (seg == 'pro' && !open && proLocked) {
-        final offer = widget.tiers.trial == 'offer';
-        final label = offer
-            ? (widget.tiers.minutes == 60 ? '您可领取 1 小时优化线路体验' : '您可领取 ${widget.tiers.minutes} 分钟优化线路体验')
-            : '想晚高峰更快？';
-        children.add(ListTile(
-          dense: true,
-          title: Text(label),
-          trailing: offer
-              ? FilledButton(onPressed: widget.onClaim, child: const Text('领取'))
-              : TextButton(onPressed: widget.onUpgrade, child: const Text('升级优化版')),
-        ));
-      }
-      if (!open) return;
-      for (final country in order) {
-        final key = '$seg|$country';
-        final expanded = _openKey == key;
-        final blocked = seg == 'pro' && proLocked;
-        final lines = bucket[country]!;
-        final usingHere = lines.any((o) => o.name == widget.currentName);
-        children.add(ListTile(
-          leading: Opacity(opacity: blocked ? 0.5 : 1, child: LineFlag(lines.first.name, size: 32)),
-          title: Text(country, style: TextStyle(color: blocked ? theme.colorScheme.outline : null)),
-          subtitle: Text(
-            '${lines.length} 条线路${usingHere ? ' · 正在用这里的' : ''}',
-            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      final isPro = seg == 'pro';
+      final title = isPro ? '优化线路' : '标准线路';
+      final hint = isPro ? '晚高峰也不卡' : '晚高峰可能变慢';
+      final promo = _promo(isPro, open, proLocked, tokens, okDeep);
+      children.add(Padding(
+        padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: tokens.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: isPro ? tokens.okBorder : tokens.border),
           ),
-          trailing: blocked
-              ? TextButton(onPressed: widget.onUpgrade, child: const Text('升级优化版 ›'))
-              : Icon(expanded ? Icons.expand_more : Icons.chevron_right),
-          onTap: blocked
-              ? widget.onUpgrade
-              : () => setState(() => _openKey = expanded ? '' : key),
-        ));
-        if (!expanded || blocked) continue;
-        for (final o in bucket[country]!) {
-          final current = o.name == widget.currentName;
-          final short = o.name.trim().startsWith(country)
-              ? o.name.trim().substring(country.length).trim()
-              : o.name;
-          children.add(ListTile(
-            key: current ? _currentLineKey : null,
-            contentPadding: const EdgeInsets.only(left: 44, right: 16),
-            title: Text(short.isEmpty ? o.name : short),
-            subtitle: o.desc.isEmpty
-                ? null
-                : Text(o.desc, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            trailing: current
-                ? Text(widget.connected ? '使用中' : '上次用的')
-                : (o == bucket[country]!.first && widget.pickedName.isEmpty && !current
-                    ? const Text('推荐')
-                    : null),
-            onTap: () => widget.onPick(o),
-          ));
-        }
-      }
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                  hoverColor: isPro ? tokens.okSoft : tokens.fill,
+                  highlightColor: isPro ? tokens.okSoft : tokens.fill,
+                  splashColor: isPro ? tokens.okSoft : tokens.fill,
+                  onTap: () => setState(() {
+                    if (isPro) {
+                      _proOpen = !_proOpen;
+                    } else {
+                      _stdOpen = !_stdOpen;
+                    }
+                  }),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: isPro ? okDeep : tokens.text,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '$hint · ${order.join(' · ')}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11, color: ink3),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (isPro && proLocked) ...[
+                          const SizedBox(width: 8),
+                          _GoldButton(label: '升级优化版', onTap: widget.onUpgrade, tokens: tokens),
+                        ],
+                        const SizedBox(width: 6),
+                        Transform.rotate(
+                          angle: open ? 1.5708 : 0,
+                          child: Text('›', style: TextStyle(fontSize: 16, height: 1, color: ink3)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (promo != null) promo,
+              if (open)
+                for (final country in order)
+                  _countryBlock(
+                    seg: seg,
+                    country: country,
+                    lines: bucket[country]!,
+                    blocked: isPro && proLocked,
+                    tokens: tokens,
+                    ink3: ink3,
+                    recommended: recommended,
+                  ),
+            ],
+          ),
+        ),
+      ));
     }
 
     addSeg('pro', proOrder, pro);
     addSeg('std', stdOrder, std);
-    if (_customLineUrl() != null) {
-      children.add(const Divider(height: 1));
-      children.add(ListTile(
-        leading: const _ServerMark(),
-        title: const Text('定制我的专属线路'),
-        subtitle: const Text('可独享或拼车'),
-        trailing: const Icon(Icons.chevron_right_rounded),
+    final custom = _customLineUrl();
+    if (custom != null) {
+      children.add(_CustomLineRow(
+        tokens: tokens,
         onTap: () {
-          final url = _customLineUrl()!;
           Navigator.of(context).pop();
-          UriUtils.tryLaunch(Uri.parse(url));
+          UriUtils.tryLaunch(Uri.parse(custom));
         },
       ));
     }
-    return ListView(children: children);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+      children: children,
+    );
+  }
+
+  Widget? _promo(bool isPro, bool open, bool proLocked, PurchaseTokens tokens, Color okDeep) {
+    if (!isPro) return null;
+    if (widget.tiers.trial == 'active') {
+      final mins = (widget.tiers.seconds / 60).ceil().clamp(1, 9999);
+      return _PromoRow(
+        label: '优化线路体验中 · 还剩 $mins 分钟',
+        action: '升级优化版',
+        warm: false,
+        tokens: tokens,
+        okDeep: okDeep,
+        onTap: widget.onUpgrade,
+      );
+    }
+    if (open || !proLocked) return null;
+    final offer = widget.tiers.trial == 'offer';
+    final label = offer
+        ? (widget.tiers.minutes == 60 ? '您可领取 1 小时优化线路体验' : '您可领取 ${widget.tiers.minutes} 分钟优化线路体验')
+        : '想晚高峰更快？';
+    return _PromoRow(
+      label: label,
+      action: offer ? '领取' : '升级优化版',
+      warm: !offer,
+      tokens: tokens,
+      okDeep: okDeep,
+      onTap: offer ? widget.onClaim : widget.onUpgrade,
+    );
+  }
+
+  Widget _countryBlock({
+    required String seg,
+    required String country,
+    required List<LineOption> lines,
+    required bool blocked,
+    required PurchaseTokens tokens,
+    required Color ink3,
+    required String recommended,
+  }) {
+    final key = '$seg|$country';
+    final expanded = _openKey == key;
+    final usingHere = lines.any((o) => o.name == widget.currentName);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            hoverColor: tokens.fill,
+            highlightColor: tokens.fill,
+            onTap: blocked ? widget.onUpgrade : () => setState(() => _openKey = expanded ? '' : key),
+            child: SizedBox(
+              height: 52,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    Opacity(
+                      opacity: blocked ? 0.5 : 1,
+                      child: SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Stack(
+                          children: [
+                            LineFlag(lines.first.name, size: 32),
+                            Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(color: tokens.border),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Opacity(
+                        opacity: blocked ? 0.5 : 1,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              country,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text),
+                            ),
+                            Text(
+                              '${lines.length} 条线路${usingHere ? ' · 正在用这里的' : ''}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 10, color: ink3),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // 线路只有名字，没有接入响应测量（不做 urltest、不显示延迟数字）。
+                    // 跟 Windows 一样：没有测量结果就不画响应圆点。
+                    if (blocked)
+                      Text('升级优化版 ›', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.primary))
+                    else ...[
+                      Transform.rotate(
+                        angle: expanded ? 1.5708 : 0,
+                        child: Text('›', style: TextStyle(fontSize: 16, height: 1, color: ink3)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (expanded && !blocked)
+          Padding(
+            padding: const EdgeInsets.only(left: 44),
+            child: DecoratedBox(
+              decoration: BoxDecoration(border: Border(left: BorderSide(color: tokens.border))),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Column(
+                  children: [
+                    for (final o in lines)
+                      _lineRow(o, country, tokens, o.name == recommended),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _lineRow(LineOption o, String country, PurchaseTokens tokens, bool recommended) {
+    final current = o.name == widget.currentName;
+    final short = _shortName(country, o.name);
+    return Material(
+      key: current ? _currentLineKey : null,
+      color: current ? tokens.selected : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        hoverColor: tokens.fill,
+        highlightColor: tokens.fill,
+        onTap: () => widget.onPick(o),
+        child: SizedBox(
+          height: 40,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    short,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: tokens.text),
+                  ),
+                ),
+                if (current)
+                  Text(
+                    widget.connected ? '使用中' : '上次用的',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: widget.connected ? tokens.remaining : tokens.secondary,
+                    ),
+                  )
+                else if (recommended)
+                  Text('推荐', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.primary)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GoldButton extends StatelessWidget {
+  const _GoldButton({required this.label, required this.onTap, required this.tokens});
+
+  final String label;
+  final VoidCallback onTap;
+  final PurchaseTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: tokens.primary,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          alignment: Alignment.center,
+          child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.onPrimary)),
+        ),
+      ),
+    );
+  }
+}
+
+class _PromoRow extends StatelessWidget {
+  const _PromoRow({
+    required this.label,
+    required this.action,
+    required this.warm,
+    required this.tokens,
+    required this.okDeep,
+    required this.onTap,
+  });
+
+  final String label;
+  final String action;
+  final bool warm;
+  final PurchaseTokens tokens;
+  final Color okDeep;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: warm ? tokens.selected : tokens.okSoft,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(fontSize: 12, color: warm ? tokens.text : okDeep),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onTap,
+                child: Container(
+                  height: 28,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: warm ? tokens.primary : tokens.remaining,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    action,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: warm ? tokens.onPrimary : Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CustomLineRow extends StatelessWidget {
+  const _CustomLineRow({required this.tokens, required this.onTap});
+
+  final PurchaseTokens tokens;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 2, 2, 2),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          hoverColor: tokens.fill,
+          highlightColor: tokens.fill,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                const _ServerMark(),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('定制我的专属线路', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text)),
+                      Text('可独享或拼车', style: TextStyle(fontSize: 11, color: tokens.secondary.withValues(alpha: 0.7))),
+                    ],
+                  ),
+                ),
+                Text('›', style: TextStyle(fontSize: 16, color: tokens.secondary.withValues(alpha: 0.7))),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

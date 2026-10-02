@@ -21,6 +21,8 @@ class PurchaseTokens {
     required this.remaining,
     required this.warning,
     required this.empty,
+    required this.okSoft,
+    required this.okBorder,
   });
 
   final Color background;
@@ -37,6 +39,8 @@ class PurchaseTokens {
   final Color remaining;
   final Color warning;
   final Color empty;
+  final Color okSoft;
+  final Color okBorder;
 
   static const light = PurchaseTokens._(
     background: Color(0xFFF5F4EF),
@@ -53,6 +57,8 @@ class PurchaseTokens {
     remaining: Color(0xFF2A9477),
     warning: Color(0xFFA66116),
     empty: Color(0xFFB34435),
+    okSoft: Color(0xFFE7F4EF),
+    okBorder: Color(0xFFB9DFD2),
   );
 
   static const dark = PurchaseTokens._(
@@ -70,6 +76,8 @@ class PurchaseTokens {
     remaining: Color(0xFF70D8B8),
     warning: Color(0xFFE4AE69),
     empty: Color(0xFFEC9A8B),
+    okSoft: Color(0xFF18302A),
+    okBorder: Color(0xFF365D51),
   );
 
   static PurchaseTokens of(BuildContext context) =>

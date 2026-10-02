@@ -26,6 +26,7 @@ import 'package:hiddify/features/home/widget/account_status_bar.dart';
 import 'package:hiddify/features/home/widget/connect_issue_card.dart';
 import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/home/widget/line_bar.dart';
+import 'package:hiddify/features/notice/notice_sheet.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
@@ -130,6 +131,7 @@ class HomePage extends HookConsumerWidget {
           // 有交流群链接时这里是「交流群 ↗」；没有就仍是「官网 ↗」。官网入口在「我的」。
           // 定制线路不放顶栏，跟「查看分流规则」同一排。
           _HomeLink(group: telegramGroup.value),
+          if (ref.watch(panelAuthProvider).loggedIn) const NoticeBell(),
           const Gap(8),
         ],
       ),
@@ -151,6 +153,7 @@ class HomePage extends HookConsumerWidget {
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  NoticeStrip(),
                   Expanded(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,

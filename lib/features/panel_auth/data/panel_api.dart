@@ -55,6 +55,27 @@ class PanelApi {
     throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '账号编号或密码不对');
   }
 
+  /// 公告。这个接口不包 status，`data` 在最外层。失败返回 null，调用方留着上次的结果。
+  Future<List<Map<String, dynamic>>?> fetchNotices(String token) async {
+    try {
+      final res = await _dio.get<dynamic>(
+        '/api/v1/user/notice/fetch',
+        queryParameters: const {'current': 1},
+        options: Options(headers: {'auth_data': token, 'Authorization': token}),
+      );
+      final body = res.data;
+      if (body is! Map) return const [];
+      final data = body['data'];
+      if (data is! List) return const [];
+      return [
+        for (final row in data)
+          if (row is Map) Map<String, dynamic>.from(row),
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 当前号有没有付过的订单（status 3 已完成 / 4 已折抵）。
   /// 失败返回 null，调用方当没买过、不拦登录。
   Future<bool?> hasPaidOrder(String token) async {
