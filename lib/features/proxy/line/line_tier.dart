@@ -7,6 +7,7 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
+import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class ProLine {
@@ -152,6 +153,8 @@ class LineTierNotifier extends Notifier<LineTierState> {
         return msg is String && msg.isNotEmpty ? msg : '领不了';
       }
       await refresh();
+      // 线路列表读的是本地订阅文件。领完不重拉的话，优化线路既不出现也连不上。
+      await refreshAccountSubscription(ref);
       return null;
     } catch (_) {
       return '领不了';

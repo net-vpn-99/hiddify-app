@@ -549,30 +549,34 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
     state = state.copyWith(refreshing: false, refreshFailed: !ok);
   }
 
-  /// 拿到订阅 URL 只是一半 —— 节点 / 权益真同步过来（profile 更新成功）才算成功，
-  /// 之前这里 catch(_) 吞掉了 profile 更新失败，会误报「已刷新」。
-  ///
-  /// 这里只探一次「账号还能不能拿到订阅地址」用来判断成功与否，**不要**把拿到的
-  /// url 提前 copyWith 进 profile 再传给 `updateProfile()`——那样 `updateProfile`
-  /// 内部的 `freshAccountSubscribeUrlIfChanged` 会拿这个已经是新值的 url 去跟
-  /// "新地址"比较，判断成"没变"，从而退回按 URL 查找的旧路径（数据库里那条记录
-  /// 还是旧 url，按新 url 查找不到，会新建一条、丢失账号订阅的身份标记——正是
-  /// `updateProfile` 本来要避免的问题）。传原始 `profile`，让 `updateProfile`
-  /// 自己去问新地址、自己发现"变了"、自己按 ID 更新，两边逻辑不要重复判断。
-  Future<bool> _refreshSubscription() async {
-    try {
-      final url = await ref.read(panelAuthProvider.notifier).refreshSubscribeUrl();
-      if (url == null) return false;
-      final profile = await ref.read(activeProfileProvider.future);
-      if (profile is RemoteProfileEntity) {
-        return await ref.read(updateProfileNotifierProvider(profile.id).notifier).updateProfile(profile);
-      }
-      // 还一条订阅都没有 —— 免登录看套餐直接买的人就是这样（1.1.28 起有这条路）。
-      // 付完得把订阅导进来，不然回首页照样连不上。
-      await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
-      return ref.read(addProfileNotifierProvider) is! AsyncError;
-    } catch (_) {
-      return false;
+  Future<bool> _refreshSubscription() => refreshAccountSubscription(ref);
+}
+
+/// 把账号订阅重新拉一遍。购买成功和领完优化线路体验都走这里。
+///
+/// 拿到订阅 URL 只是一半 —— 节点 / 权益真同步过来（profile 更新成功）才算成功，
+/// 之前这里 catch(_) 吞掉了 profile 更新失败，会误报「已刷新」。
+///
+/// 这里只探一次「账号还能不能拿到订阅地址」用来判断成功与否，**不要**把拿到的
+/// url 提前 copyWith 进 profile 再传给 `updateProfile()`——那样 `updateProfile`
+/// 内部的 `freshAccountSubscribeUrlIfChanged` 会拿这个已经是新值的 url 去跟
+/// "新地址"比较，判断成"没变"，从而退回按 URL 查找的旧路径（数据库里那条记录
+/// 还是旧 url，按新 url 查找不到，会新建一条、丢失账号订阅的身份标记——正是
+/// `updateProfile` 本来要避免的问题）。传原始 `profile`，让 `updateProfile`
+/// 自己去问新地址、自己发现"变了"、自己按 ID 更新，两边逻辑不要重复判断。
+Future<bool> refreshAccountSubscription(Ref ref) async {
+  try {
+    final url = await ref.read(panelAuthProvider.notifier).refreshSubscribeUrl();
+    if (url == null) return false;
+    final profile = await ref.read(activeProfileProvider.future);
+    if (profile is RemoteProfileEntity) {
+      return await ref.read(updateProfileNotifierProvider(profile.id).notifier).updateProfile(profile);
     }
+    // 还一条订阅都没有 —— 免登录看套餐直接买的人就是这样（1.1.28 起有这条路）。
+    // 付完得把订阅导进来，不然回首页照样连不上。
+    await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
+    return ref.read(addProfileNotifierProvider) is! AsyncError;
+  } catch (_) {
+    return false;
   }
 }
