@@ -100,9 +100,10 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     final locked = value?.locked ?? false;
     final tiers = ref.watch(lineTierProvider);
 
+    final tiered = options.isNotEmpty && tiers.proLines.isNotEmpty;
     Widget body;
-    if (options.isNotEmpty && tiers.proLines.isNotEmpty) {
-      body = Flexible(
+    if (tiered) {
+      body = Expanded(
         child: _TieredLines(
           options: options,
           locked: locked,
@@ -178,26 +179,33 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
       );
     }
 
-    return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final sheet = Column(
+      mainAxisSize: tiered ? MainAxisSize.max : MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Text('选择线路', style: theme.textTheme.titleMedium),
+        ),
+        if (locked && options.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text('选择线路', style: theme.textTheme.titleMedium),
-          ),
-          if (locked && options.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-              child: Text(
-                '这些是我们现有的线路，买套餐后就能选着用。',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: Text(
+              '这些是我们现有的线路，买套餐后就能选着用。',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
-          body,
-          const Gap(8),
-        ],
+          ),
+        body,
+        const Gap(8),
+      ],
+    );
+    if (!tiered) {
+      return SafeArea(child: sheet);
+    }
+    return SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.85,
+        child: sheet,
       ),
     );
   }
@@ -379,6 +387,22 @@ class _TieredLinesState extends State<_TieredLines> {
   bool _proOpen = false;
   bool _stdOpen = true;
   String _openKey = '';
+  final _currentLineKey = GlobalKey();
+  bool _revealed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _revealCurrent());
+  }
+
+  void _revealCurrent() {
+    if (_revealed || !mounted) return;
+    final ctx = _currentLineKey.currentContext;
+    if (ctx == null) return;
+    _revealed = true;
+    Scrollable.ensureVisible(ctx, alignment: 0.4, duration: const Duration(milliseconds: 220));
+  }
 
   String _country(LineOption o) {
     final head = o.name.split(RegExp(r'\s+')).first.trim();
@@ -493,6 +517,7 @@ class _TieredLinesState extends State<_TieredLines> {
               ? o.name.trim().substring(country.length).trim()
               : o.name;
           children.add(ListTile(
+            key: current ? _currentLineKey : null,
             contentPadding: const EdgeInsets.only(left: 44, right: 16),
             title: Text(short.isEmpty ? o.name : short),
             subtitle: o.desc.isEmpty
@@ -525,6 +550,6 @@ class _TieredLinesState extends State<_TieredLines> {
         },
       ));
     }
-    return ListView(shrinkWrap: true, children: children);
+    return ListView(children: children);
   }
 }
