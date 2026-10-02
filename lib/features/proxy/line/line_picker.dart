@@ -423,14 +423,20 @@ class _TieredLinesState extends State<_TieredLines> {
     void addSeg(String seg, List<String> order, Map<String, List<LineOption>> bucket) {
       if (order.isEmpty) return;
       final open = seg == 'pro' ? _proOpen : _stdOpen;
-      final title = seg == 'pro' ? '优化线路 · 晚高峰也不卡' : '标准线路 · 晚高峰可能变慢';
+      final title = seg == 'pro' ? '优化线路' : '标准线路';
+      final hint = seg == 'pro' ? '晚高峰也不卡' : '晚高峰可能变慢';
       children.add(ListTile(
         dense: true,
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-        subtitle: open ? null : Text(order.join('、'), maxLines: 1, overflow: TextOverflow.ellipsis),
-        trailing: seg == 'pro' && proLocked
-            ? TextButton(onPressed: widget.onUpgrade, child: const Text('升级优化版'))
-            : Icon(open ? Icons.expand_less : Icons.expand_more),
+        title: Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: seg == 'pro' ? const Color(0xFF2A9477) : null)),
+        subtitle: Text('$hint · ${order.join(' · ')}', maxLines: 2, overflow: TextOverflow.ellipsis),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (seg == 'pro' && proLocked)
+              TextButton(onPressed: widget.onUpgrade, child: const Text('升级优化版')),
+            Icon(open ? Icons.expand_more : Icons.chevron_right),
+          ],
+        ),
         onTap: () => setState(() {
           if (seg == 'pro') {
             _proOpen = !_proOpen;
@@ -464,11 +470,18 @@ class _TieredLinesState extends State<_TieredLines> {
         final key = '$seg|$country';
         final expanded = _openKey == key;
         final blocked = seg == 'pro' && proLocked;
+        final lines = bucket[country]!;
+        final usingHere = lines.any((o) => o.name == widget.currentName);
         children.add(ListTile(
+          leading: Opacity(opacity: blocked ? 0.5 : 1, child: LineFlag(lines.first.name, size: 32)),
           title: Text(country, style: TextStyle(color: blocked ? theme.colorScheme.outline : null)),
+          subtitle: Text(
+            '${lines.length} 条线路${usingHere ? ' · 正在用这里的' : ''}',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
           trailing: blocked
               ? TextButton(onPressed: widget.onUpgrade, child: const Text('升级优化版 ›'))
-              : Icon(expanded ? Icons.expand_less : Icons.chevron_right),
+              : Icon(expanded ? Icons.expand_more : Icons.chevron_right),
           onTap: blocked
               ? widget.onUpgrade
               : () => setState(() => _openKey = expanded ? '' : key),
@@ -476,9 +489,15 @@ class _TieredLinesState extends State<_TieredLines> {
         if (!expanded || blocked) continue;
         for (final o in bucket[country]!) {
           final current = o.name == widget.currentName;
+          final short = o.name.trim().startsWith(country)
+              ? o.name.trim().substring(country.length).trim()
+              : o.name;
           children.add(ListTile(
-            contentPadding: const EdgeInsets.only(left: 28, right: 16),
-            title: Text(o.desc.isEmpty ? o.name : o.desc),
+            contentPadding: const EdgeInsets.only(left: 44, right: 16),
+            title: Text(short.isEmpty ? o.name : short),
+            subtitle: o.desc.isEmpty
+                ? null
+                : Text(o.desc, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
             trailing: current
                 ? Text(widget.connected ? '使用中' : '上次用的')
                 : (o == bucket[country]!.first && widget.pickedName.isEmpty && !current
