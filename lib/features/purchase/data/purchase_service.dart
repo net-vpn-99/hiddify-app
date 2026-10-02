@@ -86,7 +86,7 @@ class PurchaseService {
     return (kDefaultRecommendedPeriod, kDefaultRecommendedBadge);
   }
 
-  /// 版本卡片走免登录配置。登录后再拉 line_tiers 里的 me（含服务端报价）。
+  /// 版本卡片：订阅里的 gsl_tier.tiers 优先，没有再用免登录配置。两边都没有就是旧购买页。
   Future<(List<ShopTier>, ShopMe?)> fetchShop(String? token) async {
     var tiers = const <ShopTier>[];
     try {
@@ -99,9 +99,19 @@ class PurchaseService {
     ShopMe? me;
     if (token != null && token.isNotEmpty) {
       try {
-        final res = await _dio.get<dynamic>('/api/v1/gsl_shop/line_tiers', options: _opt(token));
-        me = ShopMe.from(_data(res.data)?['me']);
+        final sub = await _dio.get<dynamic>('/api/v1/user/getSubscribe', options: _opt(token));
+        final tier = _data(sub.data)?['gsl_tier'];
+        if (tier is Map && tier.containsKey('tiers')) {
+          tiers = ShopTier.listFrom(tier['tiers']);
+        }
+        me = ShopMe.from(tier);
       } catch (_) {}
+      if (me == null) {
+        try {
+          final res = await _dio.get<dynamic>('/api/v1/gsl_shop/line_tiers', options: _opt(token));
+          me = ShopMe.from(_data(res.data)?['me']);
+        } catch (_) {}
+      }
     }
     return (tiers, me);
   }
