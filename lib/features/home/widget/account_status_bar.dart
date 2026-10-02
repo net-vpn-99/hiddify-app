@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/proxy/line/line_tier.dart';
+import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 首页最下面那条状态条：一眼知道自己是什么身份、还剩多久、下一步点哪。
@@ -41,8 +44,12 @@ class AccountStatusBar extends HookConsumerWidget {
       return timer.cancel;
     }, [short]);
     final now = DateTime.now().add(Duration(microseconds: tick.value));
+    final tier = ref.watch(lineTierProvider);
+    final connected = ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
 
-    final (text, action, tone, route) = _describe(auth, boot, loggedIn, now);
+    final (text, action, tone, route) = tier.trialEnded && !connected
+        ? ('优化线路体验已结束，可以选一条标准线路继续用，或者升级优化版', '升级优化版', _Tone.warn, 'purchase')
+        : _describe(auth, boot, loggedIn, now);
 
     final Color bg;
     final Color fg;
@@ -78,6 +85,9 @@ class AccountStatusBar extends HookConsumerWidget {
                     ref.read(guestBootstrapProvider.notifier).reset();
                     await ref.read(guestBootstrapProvider.notifier).ensure();
                   } else {
+                    if (route == 'purchase' && tier.trialEnded) {
+                      ref.read(purchasePreferTierProvider.notifier).state = 'pro';
+                    }
                     context.pushNamed(route);
                   }
                 },
@@ -88,7 +98,7 @@ class AccountStatusBar extends HookConsumerWidget {
                 Expanded(
                   child: Text(
                     text,
-                    maxLines: 1,
+                    maxLines: tier.trialEnded && !connected ? 3 : 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium?.copyWith(color: fg),
                   ),

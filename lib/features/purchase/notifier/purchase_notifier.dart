@@ -22,6 +22,8 @@ class PurchaseState {
   const PurchaseState({
     this.plansLoading = true,
     this.plans = const [],
+    this.tiers = const [],
+    this.me,
     this.plansError,
     this.selected,
     this.stage = PurchaseStage.browsing,
@@ -36,6 +38,8 @@ class PurchaseState {
 
   final bool plansLoading;
   final List<PlanOffer> plans;
+  final List<ShopTier> tiers;
+  final ShopMe? me;
   final String? plansError;
 
   /// 当前选中的价格档（底栏「去支付」用）。plans 加载完自动选推荐档。
@@ -63,6 +67,8 @@ class PurchaseState {
   PurchaseState copyWith({
     bool? plansLoading,
     List<PlanOffer>? plans,
+    List<ShopTier>? tiers,
+    Object? me = _keep,
     Object? plansError = _keep,
     Object? selected = _keep,
     PurchaseStage? stage,
@@ -77,6 +83,8 @@ class PurchaseState {
     return PurchaseState(
       plansLoading: plansLoading ?? this.plansLoading,
       plans: plans ?? this.plans,
+      tiers: tiers ?? this.tiers,
+      me: me == _keep ? this.me : me as ShopMe?,
       plansError: plansError == _keep ? this.plansError : plansError as String?,
       selected: selected == _keep ? this.selected : selected as PlanOffer?,
       stage: stage ?? this.stage,
@@ -95,6 +103,9 @@ class PurchaseState {
 
 final purchaseNotifierProvider =
     NotifierProvider.autoDispose<PurchaseNotifier, PurchaseState>(PurchaseNotifier.new);
+
+/// 线路列表点「升级优化版」时，购买页打开后选中优化版。
+final purchasePreferTierProvider = StateProvider<String?>((ref) => null);
 
 /// 购买页顶部「账户 + 剩余流量」卡片用。拉最新订阅信息，失败 / 未登录返回 null。
 final purchaseAccountProvider = FutureProvider.autoDispose<PanelAccount?>(
@@ -170,22 +181,30 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
     // 没账号也要看得到套餐 —— 走 GslGuest 的免登录清单（1.1.28）。真下单时才需要账号。
     if (token == null || token.isEmpty) {
       final offers = await _service.fetchPublicPlans();
+      final shop = await _service.fetchShop(null);
       state = state.copyWith(
         plansLoading: false,
         plans: offers,
+        tiers: shop.$1,
+        me: null,
         plansError: offers.isEmpty ? '暂时读不到套餐，检查一下网络' : null,
-        selected: _pickDefault(offers),
+        selected: _pickDefault(offers, shop.$1, null),
       );
+      _applyPrefer();
       return;
     }
     try {
       final plans = await _service.fetchPlans(token);
+      final shop = await _service.fetchShop(token);
       state = state.copyWith(
         plansLoading: false,
         plans: plans,
+        tiers: shop.$1,
+        me: shop.$2,
         plansError: plans.isEmpty ? '暂时没有可购买的套餐' : null,
-        selected: _pickDefault(plans),
+        selected: _pickDefault(plans, shop.$1, shop.$2),
       );
+      _applyPrefer();
     } on PurchaseException catch (e) {
       state = state.copyWith(plansLoading: false, plansError: e.message);
     } catch (_) {
@@ -195,8 +214,21 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
     unawaited(_refreshPendingOrder());
   }
 
-  static PlanOffer? _pickDefault(List<PlanOffer> plans) {
+  static PlanOffer? _pickDefault(List<PlanOffer> plans, List<ShopTier> tiers, ShopMe? me) {
     if (plans.isEmpty) return null;
+    if (tiers.length >= 2) {
+      final want = me?.tier == 'pro' ? 'pro' : 'std';
+      ShopTier? tier;
+      for (final t in tiers) {
+        if (t.tier == want) tier = t;
+      }
+      tier ??= tiers.first;
+      final ofPlan = plans.where((o) => o.planId == tier!.planId).toList();
+      for (final o in ofPlan) {
+        if (o.recommended) return o;
+      }
+      if (ofPlan.isNotEmpty) return ofPlan.first;
+    }
     for (final o in plans) {
       if (o.recommended) return o;
     }
@@ -204,6 +236,34 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
   }
 
   void select(PlanOffer offer) => state = state.copyWith(selected: offer);
+
+  void _applyPrefer() {
+    final prefer = ref.read(purchasePreferTierProvider);
+    if (prefer == null || prefer.isEmpty) return;
+    ref.read(purchasePreferTierProvider.notifier).state = null;
+    for (final tier in state.tiers) {
+      if (tier.tier == prefer) {
+        selectTier(tier);
+        return;
+      }
+    }
+  }
+
+  void selectTier(ShopTier tier) {
+    final mine = state.me?.tier == 'pro';
+    if (tier.full && !mine) return;
+    final ofPlan = state.plans.where((o) => o.planId == tier.planId).toList();
+    if (ofPlan.isEmpty) return;
+    final currentPeriod = state.selected?.period;
+    PlanOffer? next;
+    if (currentPeriod != null) {
+      for (final o in ofPlan) {
+        if (o.period == currentPeriod) next = o;
+      }
+    }
+    next ??= ofPlan.where((o) => o.recommended).firstOrNull ?? ofPlan.first;
+    state = state.copyWith(selected: next);
+  }
 
   Future<void> _refreshPendingOrder() async {
     if (state.stage != PurchaseStage.browsing) return;

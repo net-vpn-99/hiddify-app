@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
+import 'package:hiddify/features/proxy/line/line_tier.dart';
 import 'package:hiddify/features/proxy/model/node_flag.dart';
+import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -95,9 +98,32 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     final value = set.valueOrNull;
     final options = value?.lines ?? const <LineOption>[];
     final locked = value?.locked ?? false;
+    final tiers = ref.watch(lineTierProvider);
 
     Widget body;
-    if (options.isNotEmpty) {
+    if (options.isNotEmpty && tiers.proLines.isNotEmpty) {
+      body = Flexible(
+        child: _TieredLines(
+          options: options,
+          locked: locked,
+          currentName: currentName,
+          pickedName: pickedName,
+          connected: connected,
+          tiers: tiers,
+          onPick: (o) => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
+          onUpgrade: () {
+            ref.read(purchasePreferTierProvider.notifier).state = 'pro';
+            Navigator.of(context).pop();
+            context.pushNamed('purchase');
+          },
+          onClaim: () async {
+            final msg = await ref.read(lineTierProvider.notifier).claim();
+            if (!context.mounted || msg == null) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+          },
+        ),
+      );
+    } else if (options.isNotEmpty) {
       final currentIndex =
           (locked || currentName.isEmpty) ? -1 : options.indexWhere((o) => o.name == currentName);
       // 前两条本来就在视口里，不用滚。
@@ -126,6 +152,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
             if (_customLineUrl() != null) ...[
               const Divider(height: 1),
               ListTile(
+                leading: const _ServerMark(),
                 title: const Text('定制我的专属线路'),
                 subtitle: Text(
                   '可独享或拼车',
@@ -275,5 +302,210 @@ class _LineTile extends StatelessWidget {
       selected: current,
       onTap: onTap,
     );
+  }
+}
+
+class _ServerMark extends StatelessWidget {
+  const _ServerMark();
+
+  @override
+  Widget build(BuildContext context) {
+    const gold = Color(0xFF8D6C32);
+    const fill = Color(0xFFFBF4DD);
+    return Container(
+      width: 36,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: gold),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 18,
+            height: 6,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(2),
+              border: Border.all(color: gold, width: 1),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Container(
+            width: 18,
+            height: 6,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(2),
+              border: Border.all(color: gold, width: 1),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TieredLines extends StatefulWidget {
+  const _TieredLines({
+    required this.options,
+    required this.locked,
+    required this.currentName,
+    required this.pickedName,
+    required this.connected,
+    required this.tiers,
+    required this.onPick,
+    required this.onUpgrade,
+    required this.onClaim,
+  });
+
+  final List<LineOption> options;
+  final bool locked;
+  final String currentName;
+  final String pickedName;
+  final bool connected;
+  final LineTierState tiers;
+  final void Function(LineOption) onPick;
+  final VoidCallback onUpgrade;
+  final VoidCallback onClaim;
+
+  @override
+  State<_TieredLines> createState() => _TieredLinesState();
+}
+
+class _TieredLinesState extends State<_TieredLines> {
+  bool _ready = false;
+  bool _proOpen = false;
+  bool _stdOpen = true;
+  String _openKey = '';
+
+  String _country(LineOption o) {
+    final head = o.name.split(RegExp(r'\s+')).first.trim();
+    return head.isEmpty ? '其它' : head;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final proNames = widget.tiers;
+    final pro = <String, List<LineOption>>{};
+    final std = <String, List<LineOption>>{};
+    final proOrder = <String>[];
+    final stdOrder = <String>[];
+    String? usingSeg;
+    String? usingCountry;
+    for (final o in widget.options) {
+      final isPro = proNames.isProName(o.name);
+      final bucket = isPro ? pro : std;
+      final order = isPro ? proOrder : stdOrder;
+      final country = _country(o);
+      if (!bucket.containsKey(country)) {
+        bucket[country] = [];
+        order.add(country);
+      }
+      bucket[country]!.add(o);
+      if (o.name == widget.currentName) {
+        usingSeg = isPro ? 'pro' : 'std';
+        usingCountry = country;
+      }
+    }
+    if (!_ready) {
+      _ready = true;
+      final preferPro = widget.tiers.trial == 'pro' || widget.tiers.trial == 'active';
+      final usingPro = usingSeg == 'pro';
+      _proOpen = preferPro || usingPro;
+      _stdOpen = !preferPro || (widget.currentName.isNotEmpty && !usingPro);
+      if (usingSeg != null && usingCountry != null) _openKey = '$usingSeg|$usingCountry';
+    }
+    final proLocked = widget.tiers.trial != 'pro' && widget.tiers.trial != 'active';
+    final children = <Widget>[];
+    void addSeg(String seg, List<String> order, Map<String, List<LineOption>> bucket) {
+      if (order.isEmpty) return;
+      final open = seg == 'pro' ? _proOpen : _stdOpen;
+      final title = seg == 'pro' ? '优化线路 · 晚高峰也不卡' : '标准线路 · 晚高峰可能变慢';
+      children.add(ListTile(
+        dense: true,
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: open ? null : Text(order.join('、'), maxLines: 1, overflow: TextOverflow.ellipsis),
+        trailing: seg == 'pro' && proLocked
+            ? TextButton(onPressed: widget.onUpgrade, child: const Text('升级优化版'))
+            : Icon(open ? Icons.expand_less : Icons.expand_more),
+        onTap: () => setState(() {
+          if (seg == 'pro') {
+            _proOpen = !_proOpen;
+          } else {
+            _stdOpen = !_stdOpen;
+          }
+        }),
+      ));
+      if (seg == 'pro' && widget.tiers.trial == 'active') {
+        final mins = (widget.tiers.seconds / 60).ceil().clamp(1, 9999);
+        children.add(ListTile(
+          dense: true,
+          title: Text('优化线路体验中 · 还剩 $mins 分钟'),
+          trailing: FilledButton(onPressed: widget.onUpgrade, child: const Text('升级优化版')),
+        ));
+      } else if (seg == 'pro' && !open && proLocked) {
+        final offer = widget.tiers.trial == 'offer';
+        final label = offer
+            ? (widget.tiers.minutes == 60 ? '您可领取 1 小时优化线路体验' : '您可领取 ${widget.tiers.minutes} 分钟优化线路体验')
+            : '想晚高峰更快？';
+        children.add(ListTile(
+          dense: true,
+          title: Text(label),
+          trailing: offer
+              ? FilledButton(onPressed: widget.onClaim, child: const Text('领取'))
+              : TextButton(onPressed: widget.onUpgrade, child: const Text('升级优化版')),
+        ));
+      }
+      if (!open) return;
+      for (final country in order) {
+        final key = '$seg|$country';
+        final expanded = _openKey == key;
+        final blocked = seg == 'pro' && proLocked;
+        children.add(ListTile(
+          title: Text(country, style: TextStyle(color: blocked ? theme.colorScheme.outline : null)),
+          trailing: blocked
+              ? TextButton(onPressed: widget.onUpgrade, child: const Text('升级优化版 ›'))
+              : Icon(expanded ? Icons.expand_less : Icons.chevron_right),
+          onTap: blocked
+              ? widget.onUpgrade
+              : () => setState(() => _openKey = expanded ? '' : key),
+        ));
+        if (!expanded || blocked) continue;
+        for (final o in bucket[country]!) {
+          final current = o.name == widget.currentName;
+          children.add(ListTile(
+            contentPadding: const EdgeInsets.only(left: 28, right: 16),
+            title: Text(o.desc.isEmpty ? o.name : o.desc),
+            trailing: current
+                ? Text(widget.connected ? '使用中' : '上次用的')
+                : (o == bucket[country]!.first && widget.pickedName.isEmpty && !current
+                    ? const Text('推荐')
+                    : null),
+            onTap: () => widget.onPick(o),
+          ));
+        }
+      }
+    }
+
+    addSeg('pro', proOrder, pro);
+    addSeg('std', stdOrder, std);
+    if (_customLineUrl() != null) {
+      children.add(const Divider(height: 1));
+      children.add(ListTile(
+        leading: const _ServerMark(),
+        title: const Text('定制我的专属线路'),
+        subtitle: const Text('可独享或拼车'),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: () {
+          final url = _customLineUrl()!;
+          Navigator.of(context).pop();
+          UriUtils.tryLaunch(Uri.parse(url));
+        },
+      ));
+    }
+    return ListView(shrinkWrap: true, children: children);
   }
 }

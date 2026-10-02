@@ -128,44 +128,63 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               Row(
                 children: [
                   Expanded(
-                    child: Text('选择使用时长',
+                    child: Text(state.tiers.length >= 2 ? '先选版本，再选时长' : '选择使用时长',
                         style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.bold)),
                   ),
                   Text('以下价格均为整期金额', style: TextStyle(color: t.secondary, fontSize: 11)),
                 ],
               ),
-              const SizedBox(height: 10),
-              for (final entry in byPlan.entries) ...[
-                if (multiPlan)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10, bottom: 6),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(entry.value.first.name,
-                            style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w700)),
-                        Text(
-                          entry.value.first.name.contains('优化')
-                              ? '晚高峰也不卡 · 含全部标准线路'
-                              : '晚高峰可能变慢 · 标准线路',
-                          style: TextStyle(
-                            color: entry.value.first.name.contains('优化') ? t.primary : t.secondary,
-                            fontSize: 13,
+              if (state.me != null && state.me!.planName.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '你现在的套餐是 ${state.me!.planName}，还能用 ${state.me!.daysLeft} 天'
+                  '${state.me!.expiresOn.isEmpty ? '' : '（${state.me!.expiresOn} 到期）'}',
+                  style: TextStyle(color: t.secondary, fontSize: 12),
+                ),
+              ],
+              if (state.tiers.length >= 2) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    for (final tier in state.tiers)
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(right: tier == state.tiers.last ? 0 : 8),
+                          child: _TierCard(
+                            t: t,
+                            tier: tier,
+                            picked: selected?.planId == tier.planId,
+                            current: state.me?.tier == tier.tier,
+                            blocked: tier.full && state.me?.tier != 'pro',
+                            onTap: () => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
                           ),
                         ),
-                      ],
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 10),
+              for (final entry in byPlan.entries) ...[
+                if (state.tiers.length >= 2 && selected != null && entry.key != selected.planId)
+                  const SizedBox.shrink()
+                else ...[
+                  if (multiPlan && state.tiers.length < 2)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10, bottom: 6),
+                      child: Text(entry.value.first.name,
+                          style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w700)),
                     ),
-                  ),
-                for (final o in entry.value)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _OfferCard(
-                      t: t,
-                      offer: o,
-                      selected: selected != null && selected.planId == o.planId && selected.period == o.period,
-                      onTap: () => ref.read(purchaseNotifierProvider.notifier).select(o),
+                  for (final o in entry.value)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _OfferCard(
+                        t: t,
+                        offer: o,
+                        selected: selected != null && selected.planId == o.planId && selected.period == o.period,
+                        onTap: () => ref.read(purchaseNotifierProvider.notifier).select(o),
+                      ),
                     ),
-                  ),
+                ],
               ],
               const SizedBox(height: 4),
               _benefits(t, selected),
@@ -180,16 +199,31 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
           onPay: knownMask != null
               ? () => context.pushNamed('login')
               : (selected == null ? null : () => _confirm(t, selected)),
-          payLabel: knownMask != null ? '登录后购买' : '去支付',
-          expiryHint: _expiryHint(account, selected),
+          payLabel: _payLabel(knownMask, selected, state.me),
+          expiryHint: _expiryHint(account, selected, state.me),
         ),
       ],
     );
   }
 
-  /// 「买完用到哪天」。没到期的按现有到期日往后顺延，已到期 / 没套餐的从今天算。
-  /// 面板实际是按自然月加的，这里拿档位的参考天数估，所以写「预计」，别写死。
-  static String? _expiryHint(PanelAccount? acc, PlanOffer? offer) {
+  static String _payLabel(String? knownMask, PlanOffer? offer, ShopMe? me) {
+    if (knownMask != null) return '登录后购买';
+    final q = offer == null ? null : me?.quoteFor(offer.planId, offer.period);
+    if (q == null) return '去支付';
+    final pay = '¥${(q.payFen / 100).toStringAsFixed(2)}'.replaceAll(RegExp(r'\.00$'), '');
+    if (q.surplusFen <= 0) return '支付 $pay';
+    final cut = '¥${(q.surplusFen / 100).toStringAsFixed(2)}'.replaceAll(RegExp(r'\.00$'), '');
+    return '支付 $pay  已抵 $cut';
+  }
+
+  /// 「买完用到哪天」。有服务端报价时用报价里的到期日和抵扣；没有就按参考天数估。
+  static String? _expiryHint(PanelAccount? acc, PlanOffer? offer, [ShopMe? me]) {
+    final q = offer == null ? null : me?.quoteFor(offer.planId, offer.period);
+    if (q != null && q.expiresOn.isNotEmpty) {
+      if (q.fromToday && q.surplusFen > 0) return '买完能用到 ${q.expiresOn}（从今天算，已抵 ¥${(q.surplusFen / 100).toStringAsFixed(0)}）';
+      if (q.fromToday) return '买完能用到 ${q.expiresOn}（从今天算）';
+      return '买完能用到 ${q.expiresOn}（接在现在的到期日后面）';
+    }
     if (offer == null) return null;
     if (offer.periodDays <= 0) return '买完长期有效';
     final now = DateTime.now();
@@ -690,6 +724,74 @@ class _MeterBar extends StatelessWidget {
   }
 }
 
+class _TierCard extends StatelessWidget {
+  const _TierCard({
+    required this.t,
+    required this.tier,
+    required this.picked,
+    required this.current,
+    required this.blocked,
+    required this.onTap,
+  });
+
+  final PurchaseTokens t;
+  final ShopTier tier;
+  final bool picked;
+  final bool current;
+  final bool blocked;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = tier.keyTone == 'good' ? t.remaining : t.empty;
+    return Opacity(
+      opacity: blocked ? 0.55 : 1,
+      child: InkWell(
+        onTap: blocked ? null : onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
+          decoration: BoxDecoration(
+            color: blocked ? t.fill : t.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: picked ? t.primary : (current ? t.remaining : t.border),
+              width: picked || current ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (current)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: t.remaining, borderRadius: BorderRadius.circular(4)),
+                  child: const Text('✓ 你现在用的', style: TextStyle(color: Colors.white, fontSize: 10)),
+                ),
+              if (blocked)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text('本月名额已满', style: TextStyle(color: t.secondary, fontSize: 11)),
+                ),
+              Text(tier.name, style: TextStyle(color: t.text, fontSize: 16, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              Text(tier.keyLine, style: TextStyle(color: tone, fontSize: 13, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(tier.sub, style: TextStyle(color: t.secondary, fontSize: 11)),
+              if (tier.seatsLeft != null && tier.seatsLeft! > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('剩 ${tier.seatsLeft} 个名额', style: TextStyle(color: t.warning, fontSize: 11)),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _OfferCard extends StatelessWidget {
   const _OfferCard({required this.t, required this.offer, required this.selected, required this.onTap});
 
@@ -704,7 +806,10 @@ class _OfferCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(13),
-      child: Container(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: selected ? t.selected : t.surface,
@@ -723,24 +828,8 @@ class _OfferCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Text(offer.durationLabel,
-                          style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w600)),
-                      if (offer.badge != null) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: t.primary,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(offer.badge!,
-                              style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ],
-                  ),
+                  Text(offer.durationLabel,
+                      style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 3),
                   Text(
                     offer.dailyLabel != null ? '${offer.trafficLabel} · 约 ${offer.dailyLabel}' : offer.trafficLabel,
@@ -754,6 +843,19 @@ class _OfferCard extends StatelessWidget {
                 style: TextStyle(color: t.text, fontSize: 20, fontWeight: FontWeight.bold)),
           ],
         ),
+      ),
+          if (offer.badge != null)
+            Positioned(
+              top: -8,
+              right: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(8)),
+                child: Text(offer.badge!,
+                    style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
+              ),
+            ),
+        ],
       ),
     );
   }

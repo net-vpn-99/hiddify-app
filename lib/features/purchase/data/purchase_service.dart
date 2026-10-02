@@ -86,6 +86,26 @@ class PurchaseService {
     return (kDefaultRecommendedPeriod, kDefaultRecommendedBadge);
   }
 
+  /// 版本卡片走免登录配置。登录后再拉 line_tiers 里的 me（含服务端报价）。
+  Future<(List<ShopTier>, ShopMe?)> fetchShop(String? token) async {
+    var tiers = const <ShopTier>[];
+    try {
+      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
+      final body = res.data;
+      final data = body is Map ? body['data'] : null;
+      final shop = data is Map ? data['gsl_shop'] : null;
+      if (shop is Map) tiers = ShopTier.listFrom(shop['tiers']);
+    } catch (_) {}
+    ShopMe? me;
+    if (token != null && token.isNotEmpty) {
+      try {
+        final res = await _dio.get<dynamic>('/api/v1/gsl_shop/line_tiers', options: _opt(token));
+        me = ShopMe.from(_data(res.data)?['me']);
+      } catch (_) {}
+    }
+    return (tiers, me);
+  }
+
   /// 找出本账号「还没完成」的订单（status 0 待支付 / 1 开通中），返回最近一笔。
   /// **不取消任何订单** —— Xboard 的 order/save 有未完成订单时会直接报错，
   /// 所以下新单前先认这一笔：同档就续用，不同档让用户自己决定。

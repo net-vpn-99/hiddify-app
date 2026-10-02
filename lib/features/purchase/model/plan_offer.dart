@@ -147,3 +147,138 @@ class PlanOffer {
     return '$gb GB';
   }
 }
+
+class ShopTier {
+  const ShopTier({
+    required this.tier,
+    required this.planId,
+    required this.name,
+    required this.keyLine,
+    required this.keyTone,
+    required this.sub,
+    required this.full,
+    this.seatsLeft,
+  });
+
+  final String tier;
+  final int planId;
+  final String name;
+  final String keyLine;
+  final String keyTone;
+  final String sub;
+  final bool full;
+  final int? seatsLeft;
+
+  static List<ShopTier> listFrom(dynamic raw) {
+    if (raw is! List) return const [];
+    final out = <ShopTier>[];
+    for (final row in raw) {
+      if (row is! Map) continue;
+      final id = row['plan_id'];
+      final planId = id is num ? id.toInt() : int.tryParse('$id') ?? 0;
+      if (planId <= 0) continue;
+      final seats = row['seats_left'];
+      out.add(ShopTier(
+        tier: '${row['tier'] ?? ''}',
+        planId: planId,
+        name: '${row['name'] ?? ''}',
+        keyLine: '${row['key'] ?? ''}',
+        keyTone: '${row['key_tone'] ?? ''}',
+        sub: '${row['sub'] ?? ''}',
+        full: row['full'] == true,
+        seatsLeft: seats is num ? seats.toInt() : null,
+      ));
+    }
+    return out;
+  }
+}
+
+class PeriodQuote {
+  const PeriodQuote({
+    required this.period,
+    required this.priceFen,
+    required this.surplusFen,
+    required this.payFen,
+    required this.fromToday,
+    required this.expiresOn,
+  });
+
+  final String period;
+  final int priceFen;
+  final int surplusFen;
+  final int payFen;
+  final bool fromToday;
+  final String expiresOn;
+
+  static int _n(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
+
+  static PeriodQuote? from(dynamic raw) {
+    if (raw is! Map) return null;
+    final period = '${raw['period'] ?? ''}';
+    if (period.isEmpty) return null;
+    return PeriodQuote(
+      period: period,
+      priceFen: _n(raw['price_fen']),
+      surplusFen: _n(raw['surplus_fen']),
+      payFen: _n(raw['pay_fen']),
+      fromToday: raw['from_today'] == true,
+      expiresOn: '${raw['expires_on'] ?? ''}',
+    );
+  }
+}
+
+class ShopMe {
+  const ShopMe({
+    required this.tier,
+    required this.planName,
+    required this.daysLeft,
+    required this.expiresOn,
+    required this.quotes,
+  });
+
+  final String tier;
+  final String planName;
+  final int daysLeft;
+  final String expiresOn;
+  final List<({int planId, List<PeriodQuote> periods})> quotes;
+
+  PeriodQuote? quoteFor(int planId, String period) {
+    for (final q in quotes) {
+      if (q.planId != planId) continue;
+      for (final p in q.periods) {
+        if (p.period == period) return p;
+      }
+    }
+    return null;
+  }
+
+  static ShopMe? from(dynamic raw) {
+    if (raw is! Map) return null;
+    final quotes = <({int planId, List<PeriodQuote> periods})>[];
+    final list = raw['quotes'];
+    if (list is List) {
+      for (final row in list) {
+        if (row is! Map) continue;
+        final id = row['plan_id'];
+        final planId = id is num ? id.toInt() : int.tryParse('$id') ?? 0;
+        final periods = <PeriodQuote>[];
+        final ps = row['periods'];
+        if (ps is List) {
+          for (final p in ps) {
+            final parsed = PeriodQuote.from(p);
+            if (parsed != null) periods.add(parsed);
+          }
+        }
+        quotes.add((planId: planId, periods: periods));
+      }
+    }
+    final days = raw['days_left'];
+    return ShopMe(
+      tier: '${raw['tier'] ?? ''}',
+      planName: '${raw['plan_name'] ?? ''}',
+      daysLeft: days is num ? days.toInt() : int.tryParse('$days') ?? 0,
+      expiresOn: '${raw['expires_on'] ?? ''}',
+      quotes: quotes,
+    );
+  }
+}
