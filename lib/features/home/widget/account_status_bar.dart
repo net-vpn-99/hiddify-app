@@ -46,8 +46,17 @@ class AccountStatusBar extends HookConsumerWidget {
     final now = DateTime.now().add(Duration(microseconds: tick.value));
     final tier = ref.watch(lineTierProvider);
     final connected = ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
+    final lineName = ref.watch(Preferences.lastNodeName);
+    final onProLimit = connected && acc != null && acc.proThrottled && tier.isProName(lineName);
 
-    final (text, action, tone, route) = tier.trialEnded && !connected
+    final (text, action, tone, route) = onProLimit
+        ? (
+            '优化线路今天已超 ${formatDailyAmount(acc.proQuota)}，已限速 ${acc.proThrottleMbps}Mbps；标准线路照常满速',
+            '续费',
+            _Tone.warn,
+            'purchase',
+          )
+        : tier.trialEnded && !connected
         ? ('优化线路体验已结束，可以选一条标准线路继续用，或者升级优化版', '升级优化版', _Tone.warn, 'purchase')
         : _describe(auth, boot, loggedIn, now);
 

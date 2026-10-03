@@ -204,6 +204,11 @@ class PanelApi {
       dailyTier: dailyMap == null || dailyMap['tier'] is! String ? null : dailyMap['tier'] as String,
       paidQuota: dailyMap == null ? 0 : n(dailyMap['paid_quota']).toInt(),
       paidThrottleMbps: dailyMap == null ? 0 : n(dailyMap['paid_throttle_mbps']).toInt(),
+      proKnown: dailyMap != null && dailyMap.containsKey('pro_quota'),
+      proUsed: dailyMap == null ? 0 : n(dailyMap['pro_used']).toInt(),
+      proQuota: dailyMap == null ? 0 : n(dailyMap['pro_quota']).toInt(),
+      proThrottled: dailyMap != null && dailyMap['pro_throttled'] == true,
+      proThrottleMbps: dailyMap == null ? 0 : n(dailyMap['pro_throttle_mbps']).toInt(),
     );
   }
 
@@ -849,6 +854,11 @@ class PanelAccount {
     this.dailyTier,
     this.paidQuota = 0,
     this.paidThrottleMbps = 0,
+    this.proKnown = false,
+    this.proUsed = 0,
+    this.proQuota = 0,
+    this.proThrottled = false,
+    this.proThrottleMbps = 0,
   });
 
   final String? email;
@@ -873,6 +883,11 @@ class PanelAccount {
   final String? dailyTier;
   final int paidQuota;
   final int paidThrottleMbps;
+  final bool proKnown;
+  final int proUsed;
+  final int proQuota;
+  final bool proThrottled;
+  final int proThrottleMbps;
 
   bool get lifetime => expiredAt == null || expiredAt == 0;
 

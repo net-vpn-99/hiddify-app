@@ -11,9 +11,11 @@ import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class ProLine {
-  const ProLine({required this.name, required this.country});
+  const ProLine({required this.name, required this.country, this.host = '', this.port = 0});
   final String name;
   final String country;
+  final String host;
+  final int port;
 }
 
 class LineTierState {
@@ -91,7 +93,13 @@ class LineTierNotifier extends Notifier<LineTierState> {
           if (row is! Map) continue;
           final name = '${row['name'] ?? ''}'.trim();
           if (name.isEmpty) continue;
-          lines.add(ProLine(name: name, country: '${row['country'] ?? ''}'.trim()));
+          final port = row['port'];
+          lines.add(ProLine(
+            name: name,
+            country: '${row['country'] ?? ''}'.trim(),
+            host: '${row['host'] ?? ''}'.trim(),
+            port: port is num ? port.toInt() : int.tryParse('$port') ?? 0,
+          ));
         }
       }
       final trial = '${data['trial'] ?? ''}';

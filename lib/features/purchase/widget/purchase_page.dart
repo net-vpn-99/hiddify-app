@@ -9,6 +9,13 @@ import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
 import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+String tierNameOf(PurchaseState state, PlanOffer offer) {
+  for (final tier in state.tiers) {
+    if (tier.planId == offer.planId && tier.name.isNotEmpty) return tier.name;
+  }
+  return offer.name;
+}
+
 /// 续费 / 升级页。版式见 VPN 仓库 docs/充值续费/purchase-design-handoff-v1（android 参考）：
 /// 返回导航 → 账户 + 剩余流量卡 → 单列时长卡片 → 共享权益 + 折叠说明 → 底部固定购买区。
 class PurchasePage extends ConsumerStatefulWidget {
@@ -156,12 +163,23 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                             picked: selected?.planId == tier.planId,
                             current: state.me?.tier == tier.tier,
                             blocked: tier.full && state.me?.tier != 'pro',
+                            me: state.me,
                             onTap: () => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
                           ),
                         ),
                       ),
                   ],
                 ),
+                if (state.stdHint)
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(color: t.selected, borderRadius: BorderRadius.circular(10)),
+                    child: Text(
+                      '你是优化版会员，优化版已经包含全部标准线路，标准线路照常满速用。优化版到期后（${state.me?.expiresOn ?? ''} 之后）可以购买标准版。',
+                      style: TextStyle(color: t.text, fontSize: 12),
+                    ),
+                  ),
               ],
               const SizedBox(height: 10),
               for (final entry in byPlan.entries) ...[
@@ -200,6 +218,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               ? () => context.pushNamed('login')
               : (selected == null ? null : () => _confirm(t, selected)),
           payLabel: _payLabel(knownMask, selected, state.me),
+          pickedName: selected == null ? '' : tierNameOf(state, selected),
           expiryHint: _expiryHint(account, selected, state.me),
         ),
       ],
@@ -731,6 +750,7 @@ class _TierCard extends StatelessWidget {
     required this.picked,
     required this.current,
     required this.blocked,
+    required this.me,
     required this.onTap,
   });
 
@@ -739,13 +759,16 @@ class _TierCard extends StatelessWidget {
   final bool picked;
   final bool current;
   final bool blocked;
+  final ShopMe? me;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final tone = tier.keyTone == 'good' ? t.remaining : t.empty;
+    final tone = tier.keyTone == 'good' || tier.keyTone == 'connected' ? t.remaining : t.empty;
+    final stdBlocked = tier.tier == 'std' && me?.canBuyStd == false;
+    final gift = me != null && tier.tier == 'std' && (me!.trial == 'locked' || me!.trial == 'offer');
     return Opacity(
-      opacity: blocked ? 0.55 : 1,
+      opacity: blocked || stdBlocked ? 0.55 : 1,
       child: InkWell(
         onTap: blocked ? null : onTap,
         borderRadius: BorderRadius.circular(14),
@@ -778,7 +801,20 @@ class _TierCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text(tier.keyLine, style: TextStyle(color: tone, fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 2),
-              Text(tier.sub, style: TextStyle(color: t.secondary, fontSize: 11)),
+              Text(stdBlocked ? '优化版已包含，不用另买' : tier.sub, style: TextStyle(color: t.secondary, fontSize: 11)),
+              if (tier.tier == 'pro' && tier.dailyGb > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text('优化线路每天 ${tier.dailyGb}GB 高速', style: TextStyle(color: t.secondary, fontSize: 11)),
+                ),
+              if (gift)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    (me!.trialMinutes == 60) ? '送 1 小时优化线路体验' : '送 ${me!.trialMinutes} 分钟优化线路体验',
+                    style: TextStyle(color: t.remaining, fontSize: 11),
+                  ),
+                ),
               if (tier.seatsLeft != null && tier.seatsLeft! > 0)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
@@ -867,6 +903,7 @@ class _CheckoutBar extends StatelessWidget {
     required this.offer,
     required this.onPay,
     required this.payLabel,
+    required this.pickedName,
     required this.expiryHint,
   });
 
@@ -874,6 +911,7 @@ class _CheckoutBar extends StatelessWidget {
   final PlanOffer? offer;
   final VoidCallback? onPay;
   final String payLabel;
+  final String pickedName;
 
   /// 「买完用到哪天」。付钱之前最想知道的一件事，原来这页从头到尾没写过，
   /// 用户得自己拿当前到期时间加上档位天数去算。
@@ -897,7 +935,9 @@ class _CheckoutBar extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      offer != null ? '已选 · ${offer!.name} / ${offer!.durationLabel}' : '请选择一档',
+                      offer != null
+                          ? '已选 · $pickedName / ${offer!.durationLabel}'
+                          : '请选择一档',
                       style: TextStyle(color: t.secondary, fontSize: 12),
                       overflow: TextOverflow.ellipsis,
                     ),

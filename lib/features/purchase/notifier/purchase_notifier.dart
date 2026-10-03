@@ -34,6 +34,7 @@ class PurchaseState {
     this.refreshing = false,
     this.refreshFailed = false,
     this.fulfilled = false,
+    this.stdHint = false,
   });
 
   final bool plansLoading;
@@ -63,6 +64,7 @@ class PurchaseState {
 
   /// 订单已到「已完成(3)」；false = 还在「开通中(1)」，别写「套餐已开通」。
   final bool fulfilled;
+  final bool stdHint;
 
   PurchaseState copyWith({
     bool? plansLoading,
@@ -79,6 +81,7 @@ class PurchaseState {
     bool? refreshing,
     bool? refreshFailed,
     bool? fulfilled,
+    bool? stdHint,
   }) {
     return PurchaseState(
       plansLoading: plansLoading ?? this.plansLoading,
@@ -95,6 +98,7 @@ class PurchaseState {
       refreshing: refreshing ?? this.refreshing,
       refreshFailed: refreshFailed ?? this.refreshFailed,
       fulfilled: fulfilled ?? this.fulfilled,
+      stdHint: stdHint ?? this.stdHint,
     );
   }
 
@@ -194,8 +198,9 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
       return;
     }
     try {
-      final plans = await _service.fetchPlans(token);
+      final fetched = await _service.fetchPlans(token);
       final shop = await _service.fetchShop(token);
+      final plans = _withQuoteOffers(fetched, shop.$2, shop.$1);
       state = state.copyWith(
         plansLoading: false,
         plans: plans,
@@ -249,11 +254,51 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
     }
   }
 
+  List<PlanOffer> _withQuoteOffers(List<PlanOffer> plans, ShopMe? me, List<ShopTier> tiers) {
+    if (me == null) return plans;
+    final out = [...plans];
+    final have = {for (final o in plans) '${o.planId}:${o.period}'};
+    const cycles = <String, (String, String, int)>{
+      'onetime_price': ('7 天', '7 天', 7),
+      'month_price': ('月付', '1 个月', 30),
+      'quarter_price': ('季付', '3 个月', 90),
+      'half_year_price': ('半年付', '6 个月', 180),
+      'year_price': ('年付', '1 年', 365),
+      'two_year_price': ('两年付', '2 年', 730),
+      'three_year_price': ('三年付', '3 年', 1095),
+    };
+    for (final group in me.quotes) {
+      final name = tiers.where((t) => t.planId == group.planId).map((t) => t.name).firstOrNull ?? '套餐';
+      for (final period in group.periods) {
+        final key = '${group.planId}:${period.period}';
+        final cycle = cycles[period.period];
+        if (have.contains(key) || cycle == null || period.priceFen <= 0) continue;
+        out.add(PlanOffer(
+          planId: group.planId,
+          name: name,
+          trafficLabel: '不限流量',
+          period: period.period,
+          periodLabel: cycle.$1,
+          durationLabel: cycle.$2,
+          priceCents: period.priceFen,
+          periodDays: cycle.$3,
+        ));
+        have.add(key);
+      }
+    }
+    return out;
+  }
+
   void selectTier(ShopTier tier) {
     final mine = state.me?.tier == 'pro';
     if (tier.full && !mine) return;
+    if (tier.tier == 'std' && state.me?.canBuyStd == false) {
+      state = state.copyWith(stdHint: !state.stdHint);
+      return;
+    }
     final ofPlan = state.plans.where((o) => o.planId == tier.planId).toList();
     if (ofPlan.isEmpty) return;
+    state = state.copyWith(stdHint: false);
     final currentPeriod = state.selected?.period;
     PlanOffer? next;
     if (currentPeriod != null) {

@@ -84,6 +84,10 @@ class RemoteSiteConfig {
   /// 节点/订阅刷新间隔（插件 `poll_nodes_secs`，已夹在 5–30 分钟）。
   static Duration get nodesPoll => _nodesPoll;
 
+  /// 线路测速分档。没下发就用 150 / 300。
+  static int speedFastMs = 150;
+  static int speedOkMs = 300;
+
   /// 首页/设置页等进入时顺手调一次，让后面用到这些值时大概率已经是新的；
   /// 不调也没事，各个 getter 本来就有内置默认值兜底，只是可能慢一版。
   static Future<void> ensureLoaded() {
@@ -142,6 +146,10 @@ class RemoteSiteConfig {
         if (custom != null) _customUrl = _https(custom);
         _quotaPoll = _clampSecs(gsl['poll_quota_secs'], 45, 20, 90);
         _nodesPoll = _clampSecs(gsl['poll_nodes_secs'], 720, 300, 1800);
+        final fast = gsl['speedtest_fast_ms'];
+        final okMs = gsl['speedtest_ok_ms'];
+        if (fast is num && fast > 0) speedFastMs = fast.toInt();
+        if (okMs is num && okMs > speedFastMs) speedOkMs = okMs.toInt();
         unawaited(_persist(prefs));
       }
       _fetchedAt = DateTime.now();

@@ -5,9 +5,12 @@ import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
+import 'package:hiddify/features/proxy/line/line_speed.dart';
 import 'package:hiddify/features/proxy/line/line_tier.dart';
+import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/features/proxy/model/node_flag.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
 import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
@@ -112,7 +115,15 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
           pickedName: pickedName,
           connected: connected,
           tiers: tiers,
+          speed: ref.watch(lineSpeedProvider),
+          usageLabel: _proUsage(ref, tiers),
+          usageWarn: ref.watch(panelAuthProvider).account?.proThrottled ?? false,
           onPick: (o) => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
+          onUpgradeStd: () {
+            ref.read(purchasePreferTierProvider.notifier).state = 'std';
+            Navigator.of(context).pop();
+            context.pushNamed('purchase');
+          },
           onUpgrade: () {
             ref.read(purchasePreferTierProvider.notifier).state = 'pro';
             Navigator.of(context).pop();
@@ -185,8 +196,14 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-          child: Text('选择线路', style: theme.textTheme.titleMedium),
+          padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
+          child: Row(
+            children: [
+              Text('选择线路', style: theme.textTheme.titleMedium),
+              const Spacer(),
+              if (!locked) const _SpeedButton(),
+            ],
+          ),
         ),
         if (locked && options.isNotEmpty)
           Padding(
@@ -364,7 +381,11 @@ class _TieredLines extends StatefulWidget {
     required this.pickedName,
     required this.connected,
     required this.tiers,
+    required this.speed,
+    this.usageLabel,
+    this.usageWarn = false,
     required this.onPick,
+    this.onUpgradeStd,
     required this.onUpgrade,
     required this.onClaim,
   });
@@ -375,7 +396,11 @@ class _TieredLines extends StatefulWidget {
   final String pickedName;
   final bool connected;
   final LineTierState tiers;
+  final LineSpeedState speed;
+  final String? usageLabel;
+  final bool usageWarn;
   final void Function(LineOption) onPick;
+  final VoidCallback? onUpgradeStd;
   final VoidCallback onUpgrade;
   final VoidCallback onClaim;
 
@@ -443,6 +468,19 @@ class _TieredLinesState extends State<_TieredLines> {
         usingCountry = country;
       }
     }
+    final seen = widget.options.map((o) => o.name).toSet();
+    for (final line in widget.tiers.proLines) {
+      final split = splitNodeName(line.name);
+      if (split.name.isEmpty || seen.contains(split.name)) continue;
+      seen.add(split.name);
+      final country = split.name.split(RegExp(r'\s+')).first.trim();
+      final key = country.isEmpty ? '其它' : country;
+      pro.putIfAbsent(key, () {
+        proOrder.add(key);
+        return [];
+      });
+      pro[key]!.add((name: split.name, desc: split.desc));
+    }
     if (!_ready) {
       _ready = true;
       final preferPro = widget.tiers.trial == 'pro' || widget.tiers.trial == 'active';
@@ -460,7 +498,12 @@ class _TieredLinesState extends State<_TieredLines> {
       final open = seg == 'pro' ? _proOpen : _stdOpen;
       final isPro = seg == 'pro';
       final title = isPro ? '优化线路' : '标准线路';
-      final hint = isPro ? '晚高峰也不卡' : '晚高峰可能变慢';
+      var hint = isPro ? '晚高峰也不卡' : '晚高峰可能变慢';
+      var hintWarn = false;
+      if (isPro && widget.usageLabel != null && widget.usageLabel!.isNotEmpty) {
+        hintWarn = widget.usageWarn;
+        hint = hintWarn ? widget.usageLabel! : '${widget.usageLabel} · ${order.join(' · ')}';
+      }
       final promo = _promo(isPro, open, proLocked, tokens, okDeep);
       children.add(Padding(
         padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
@@ -508,7 +551,7 @@ class _TieredLinesState extends State<_TieredLines> {
                                 '$hint · ${order.join(' · ')}',
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 11, color: ink3),
+                                style: TextStyle(fontSize: 11, color: hintWarn ? tokens.warning : ink3),
                               ),
                             ],
                           ),
@@ -578,16 +621,20 @@ class _TieredLinesState extends State<_TieredLines> {
     }
     if (open || !proLocked) return null;
     final offer = widget.tiers.trial == 'offer';
+    final lockedTrial = widget.tiers.trial == 'locked';
+    final hour = widget.tiers.minutes == 60;
     final label = offer
-        ? (widget.tiers.minutes == 60 ? '您可领取 1 小时优化线路体验' : '您可领取 ${widget.tiers.minutes} 分钟优化线路体验')
-        : '想晚高峰更快？';
+        ? (hour ? '您可领取 1 小时优化线路体验' : '您可领取 ${widget.tiers.minutes} 分钟优化线路体验')
+        : lockedTrial
+            ? (hour ? '标准版会员可领 1 小时优化线路体验' : '标准版会员可领 ${widget.tiers.minutes} 分钟优化线路体验')
+            : '想晚高峰更快？';
     return _PromoRow(
       label: label,
-      action: offer ? '领取' : '升级优化版',
+      action: offer ? '领取' : (lockedTrial ? '升级' : '升级优化版'),
       warm: !offer,
       tokens: tokens,
       okDeep: okDeep,
-      onTap: offer ? widget.onClaim : widget.onUpgrade,
+      onTap: offer ? widget.onClaim : (lockedTrial ? (widget.onUpgradeStd ?? widget.onUpgrade) : widget.onUpgrade),
     );
   }
 
@@ -663,6 +710,12 @@ class _TieredLinesState extends State<_TieredLines> {
                     ),
                     // 线路只有名字，没有接入响应测量（不做 urltest、不显示延迟数字）。
                     // 跟 Windows 一样：没有测量结果就不画响应圆点。
+                    if (!blocked && _bestGrade(lines) != null) ...[
+                      _SpeedDot(level: _bestGrade(lines)!.level, tokens: tokens),
+                      const SizedBox(width: 4),
+                      Text(_bestGrade(lines)!.word, style: TextStyle(fontSize: 10, color: tokens.secondary)),
+                      const SizedBox(width: 6),
+                    ],
                     if (blocked)
                       Text('升级优化版 ›', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.primary))
                     else ...[
@@ -697,9 +750,21 @@ class _TieredLinesState extends State<_TieredLines> {
     );
   }
 
+  SpeedGrade? _bestGrade(List<LineOption> lines) {
+    SpeedGrade? best;
+    for (final o in lines) {
+      final grade = widget.speed.grades[o.name];
+      if (grade == null || grade.level <= 0) continue;
+      if (best == null || grade.level < best.level) best = grade;
+    }
+    return best;
+  }
+
   Widget _lineRow(LineOption o, String country, PurchaseTokens tokens, bool recommended) {
     final current = o.name == widget.currentName;
     final short = _shortName(country, o.name);
+    final grade = widget.speed.grades[o.name];
+    final best = widget.speed.bestName == o.name && grade != null && grade.level < 4;
     return Material(
       key: current ? _currentLineKey : null,
       color: current ? tokens.selected : Colors.transparent,
@@ -715,7 +780,8 @@ class _TieredLinesState extends State<_TieredLines> {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
               children: [
-                Expanded(
+                Flexible(
+                  flex: 3,
                   child: Text(
                     short,
                     maxLines: 1,
@@ -723,7 +789,29 @@ class _TieredLinesState extends State<_TieredLines> {
                     style: TextStyle(fontSize: 12, color: tokens.text),
                   ),
                 ),
-                if (current)
+                if (o.desc.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Flexible(
+                    flex: 2,
+                    child: Text(
+                      o.desc,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)),
+                    ),
+                  ),
+                ],
+                if (grade != null) ...[
+                  const SizedBox(width: 8),
+                  _SpeedDot(level: grade.level, tokens: tokens),
+                  const SizedBox(width: 4),
+                  Text(grade.word, style: TextStyle(fontSize: 10, color: tokens.secondary)),
+                ],
+                if (best && current)
+                  Text('使用中 · 最快', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.remaining))
+                else if (best)
+                  Text('你这里最快', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.primary))
+                else if (current)
                   Text(
                     widget.connected ? '使用中' : '上次用的',
                     style: TextStyle(
@@ -874,5 +962,66 @@ class _CustomLineRow extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+String? _proUsage(WidgetRef ref, LineTierState tiers) {
+  final acc = ref.watch(panelAuthProvider).account;
+  if (acc == null || !acc.proKnown) return null;
+  if (tiers.trial != 'pro' && tiers.trial != 'active') return null;
+  if (acc.proThrottled) {
+    return '今天已超 ${formatDailyAmount(acc.proQuota)}，优化线路限速 ${acc.proThrottleMbps}Mbps，明天恢复';
+  }
+  return '今天已用 ${formatDailyAmount(acc.proUsed)} / ${formatDailyAmount(acc.proQuota)}';
+}
+
+class _SpeedButton extends ConsumerWidget {
+  const _SpeedButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final speed = ref.watch(lineSpeedProvider);
+    final tokens = PurchaseTokens.of(context);
+    final ok = Theme.of(context).brightness == Brightness.dark ? tokens.remaining : const Color(0xFF1F6F59);
+    final label = speed.running ? '测速中 ${speed.done}/${speed.total}' : '测速';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (speed.stamp.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text(speed.stamp, style: TextStyle(fontSize: 11, color: tokens.secondary.withValues(alpha: 0.7))),
+          ),
+        TextButton(
+          style: TextButton.styleFrom(
+            minimumSize: const Size(0, 28),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            foregroundColor: ok,
+            backgroundColor: speed.running ? tokens.fill : null,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          onPressed: speed.running ? null : () => ref.read(lineSpeedProvider.notifier).start(),
+          child: Text(label, style: const TextStyle(fontSize: 12)),
+        ),
+      ],
+    );
+  }
+}
+
+class _SpeedDot extends StatelessWidget {
+  const _SpeedDot({required this.level, required this.tokens});
+
+  final int level;
+  final PurchaseTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (level) {
+      1 => tokens.remaining,
+      2 => tokens.warning,
+      3 => tokens.empty,
+      _ => tokens.secondary.withValues(alpha: 0.7),
+    };
+    return Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle));
   }
 }

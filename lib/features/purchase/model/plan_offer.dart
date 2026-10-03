@@ -158,6 +158,7 @@ class ShopTier {
     required this.sub,
     required this.full,
     this.seatsLeft,
+    this.dailyGb = 0,
   });
 
   final String tier;
@@ -168,6 +169,7 @@ class ShopTier {
   final String sub;
   final bool full;
   final int? seatsLeft;
+  final int dailyGb;
 
   static List<ShopTier> listFrom(dynamic raw) {
     if (raw is! List) return const [];
@@ -187,6 +189,7 @@ class ShopTier {
         sub: '${row['sub'] ?? ''}',
         full: row['full'] == true,
         seatsLeft: seats is num ? seats.toInt() : null,
+        dailyGb: row['daily_gb'] is num ? (row['daily_gb'] as num).toInt() : int.tryParse('${row['daily_gb']}') ?? 0,
       ));
     }
     return out;
@@ -234,12 +237,18 @@ class ShopMe {
     required this.daysLeft,
     required this.expiresOn,
     required this.quotes,
+    this.canBuyStd = true,
+    this.trial = '',
+    this.trialMinutes = 60,
   });
 
   final String tier;
   final String planName;
   final int daysLeft;
   final String expiresOn;
+  final bool canBuyStd;
+  final String trial;
+  final int trialMinutes;
   final List<({int planId, List<PeriodQuote> periods})> quotes;
 
   PeriodQuote? quoteFor(int planId, String period) {
@@ -279,6 +288,9 @@ class ShopMe {
       daysLeft: days is num ? days.toInt() : int.tryParse('$days') ?? 0,
       expiresOn: '${raw['expires_on'] ?? ''}',
       quotes: quotes,
+      canBuyStd: raw['can_buy_std'] != false,
+      trial: '${raw['trial'] ?? ''}',
+      trialMinutes: raw['trial_minutes'] is num ? (raw['trial_minutes'] as num).toInt() : 60,
     );
   }
 }
