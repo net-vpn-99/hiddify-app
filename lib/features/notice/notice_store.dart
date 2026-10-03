@@ -155,7 +155,7 @@ class NoticeNotifier extends Notifier<NoticeState> {
     }
     if (key.isNotEmpty) await _saveSeen(key, seen);
     state = state.copyWith(seen: seen, openUnread: unread, expandId: expandId);
-    await refresh();
+    unawaited(refresh());
   }
 
   Future<List<int>> _loadSeen(String key) async {

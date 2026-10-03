@@ -30,7 +30,8 @@ class NoticeHtml {
         final text = _decode(token);
         if (text.isEmpty) continue;
         if (href != null && _http(href)) {
-          final recognizer = TapGestureRecognizer()..onTap = () => onLink(href!);
+          final url = href;
+          final recognizer = TapGestureRecognizer()..onTap = () => onLink(url);
           keep(recognizer);
           spans.add(TextSpan(
             text: text,
