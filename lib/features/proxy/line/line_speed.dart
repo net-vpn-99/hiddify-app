@@ -194,9 +194,13 @@ List<_ProfileEndpoint> _profileEndpoints(String raw) {
 Future<SpeedGrade> _measure(String host, int port, DateTime deadline, int jitterMs, int jitterPct) async {
   final samples = <int>[];
   var fails = 0;
+  var finished = true;
   for (var i = 0; i < 5; i++) {
     final left = deadline.difference(DateTime.now());
-    if (left.inMilliseconds < 50) return const SpeedGrade(level: 4, word: '连不上', ms: -1);
+    if (left.inMilliseconds < 50) {
+      finished = false;
+      break;
+    }
     final ms = await _probe(host, port, left.inMilliseconds < 2000 ? left : const Duration(seconds: 2));
     if (ms < 0) {
       fails++;
@@ -205,16 +209,17 @@ Future<SpeedGrade> _measure(String host, int port, DateTime deadline, int jitter
     }
     if (i < 4) await Future<void>.delayed(const Duration(milliseconds: 300));
   }
+  if (!finished && samples.length < 2) return const SpeedGrade(level: 5, word: '没测完', ms: -1);
   if (samples.isEmpty) return const SpeedGrade(level: 4, word: '连不上', ms: -1);
   samples.sort();
   final median = samples[samples.length ~/ 2];
   final jitter = samples.last - samples.first;
   final steady = jitter <= jitterMs || (median > 0 && jitter * 100 <= median * jitterPct);
   final int level;
-  if (fails == 0 && steady) {
-    level = 1;
-  } else if (fails >= 2) {
+  if (fails >= 2) {
     level = 3;
+  } else if (fails == 0 && steady) {
+    level = 1;
   } else {
     level = 2;
   }

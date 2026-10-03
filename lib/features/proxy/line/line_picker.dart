@@ -756,7 +756,7 @@ class _TieredLinesState extends State<_TieredLines> {
     SpeedGrade? best;
     for (final o in lines) {
       final grade = widget.speed.grades[o.name];
-      if (grade == null || grade.level <= 0) continue;
+      if (grade == null || grade.level <= 0 || grade.level == 5) continue;
       if (best == null || grade.level < best.level) best = grade;
     }
     return best;
