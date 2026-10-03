@@ -83,7 +83,7 @@ class LineSpeedNotifier extends Notifier<LineSpeedState> {
     final net = await _netKey();
     _net = net;
     final serial = ++_serial;
-    state = LineSpeedState(running: true, total: targets.length, grades: const {});
+    state = LineSpeedState(running: true, total: targets.length);
     final fast = RemoteSiteConfig.speedFastMs;
     final ok = RemoteSiteConfig.speedOkMs;
     final deadline = DateTime.now().add(const Duration(seconds: 15));
@@ -225,11 +225,18 @@ Future<int> _probe(String host, int port, Duration timeout) async {
   }
 }
 
+/// VPN 网卡不算「换了网络」。连上隧道会多出一块 tun，不能因此把刚测的结果清掉。
+bool _isVpnInterface(String name) {
+  final n = name.toLowerCase();
+  return n.startsWith('tun') || n.startsWith('ppp') || n.startsWith('ipsec') || n.startsWith('wg');
+}
+
 Future<String> _netKey() async {
   try {
     final list = await NetworkInterface.list();
     final parts = <String>[];
     for (final iface in list) {
+      if (_isVpnInterface(iface.name)) continue;
       final addrs = iface.addresses.map((a) => a.address).join(',');
       parts.add('${iface.name}:$addrs');
     }
