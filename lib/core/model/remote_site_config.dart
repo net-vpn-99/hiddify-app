@@ -84,9 +84,9 @@ class RemoteSiteConfig {
   /// 节点/订阅刷新间隔（插件 `poll_nodes_secs`，已夹在 5–30 分钟）。
   static Duration get nodesPoll => _nodesPoll;
 
-  /// 线路测速分档。没下发就用 150 / 300。
-  static int speedFastMs = 150;
-  static int speedOkMs = 300;
+  /// 线路测速看波动。没下发就用 40 毫秒 / 25%。
+  static int speedJitterMs = 40;
+  static int speedJitterPct = 25;
 
   /// 首页/设置页等进入时顺手调一次，让后面用到这些值时大概率已经是新的；
   /// 不调也没事，各个 getter 本来就有内置默认值兜底，只是可能慢一版。
@@ -146,10 +146,10 @@ class RemoteSiteConfig {
         if (custom != null) _customUrl = _https(custom);
         _quotaPoll = _clampSecs(gsl['poll_quota_secs'], 45, 20, 90);
         _nodesPoll = _clampSecs(gsl['poll_nodes_secs'], 720, 300, 1800);
-        final fast = gsl['speedtest_fast_ms'];
-        final okMs = gsl['speedtest_ok_ms'];
-        if (fast is num && fast > 0) speedFastMs = fast.toInt();
-        if (okMs is num && okMs > speedFastMs) speedOkMs = okMs.toInt();
+        final jitterMs = gsl['speedtest_jitter_ms'];
+        final jitterPct = gsl['speedtest_jitter_pct'];
+        if (jitterMs is num && jitterMs > 0) speedJitterMs = jitterMs.toInt();
+        if (jitterPct is num && jitterPct > 0) speedJitterPct = jitterPct.toInt();
         unawaited(_persist(prefs));
       }
       _fetchedAt = DateTime.now();

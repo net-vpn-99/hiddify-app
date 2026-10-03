@@ -502,7 +502,7 @@ class _TieredLinesState extends State<_TieredLines> {
       var hintWarn = false;
       if (isPro && widget.usageLabel != null && widget.usageLabel!.isNotEmpty) {
         hintWarn = widget.usageWarn;
-        hint = hintWarn ? widget.usageLabel! : '${widget.usageLabel} · ${order.join(' · ')}';
+        hint = widget.usageLabel!;
       }
       final promo = _promo(isPro, open, proLocked, tokens, okDeep);
       children.add(Padding(
@@ -548,7 +548,9 @@ class _TieredLinesState extends State<_TieredLines> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '$hint · ${order.join(' · ')}',
+                                (isPro && widget.usageLabel != null && widget.usageLabel!.isNotEmpty)
+                                    ? hint
+                                    : '$hint · ${order.join(' · ')}',
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(fontSize: 11, color: hintWarn ? tokens.warning : ink3),
@@ -764,7 +766,7 @@ class _TieredLinesState extends State<_TieredLines> {
     final current = o.name == widget.currentName;
     final short = _shortName(country, o.name);
     final grade = widget.speed.grades[o.name];
-    final best = widget.speed.bestName == o.name && grade != null && grade.level < 4;
+    final best = widget.speed.bestName == o.name && grade != null && grade.level <= 2;
     return Material(
       key: current ? _currentLineKey : null,
       color: current ? tokens.selected : Colors.transparent,
@@ -806,6 +808,7 @@ class _TieredLinesState extends State<_TieredLines> {
                   _SpeedDot(level: grade.level, tokens: tokens),
                   const SizedBox(width: 4),
                   Text(grade.word, style: TextStyle(fontSize: 10, color: tokens.secondary)),
+                  if (best || current || recommended) const SizedBox(width: 8),
                 ],
                 if (best && current)
                   Text('使用中 · 最快', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.remaining))
@@ -972,7 +975,7 @@ String? _proUsage(WidgetRef ref, LineTierState tiers) {
   if (acc.proThrottled) {
     return '今天已超 ${formatDailyAmount(acc.proQuota)}，优化线路限速 ${acc.proThrottleMbps}Mbps，明天恢复';
   }
-  return '今天已用 ${formatDailyAmount(acc.proUsed)} / ${formatDailyAmount(acc.proQuota)}';
+  return '今天已用 ${formatDailyAmount(acc.proUsed)} / ${formatDailyAmount(acc.proQuota)} · 所有优化线路合计';
 }
 
 class _SpeedButton extends ConsumerWidget {

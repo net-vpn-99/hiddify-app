@@ -84,8 +84,8 @@ class LineSpeedNotifier extends Notifier<LineSpeedState> {
     _net = net;
     final serial = ++_serial;
     state = LineSpeedState(running: true, total: targets.length);
-    final fast = RemoteSiteConfig.speedFastMs;
-    final ok = RemoteSiteConfig.speedOkMs;
+    final jitterMs = RemoteSiteConfig.speedJitterMs;
+    final jitterPct = RemoteSiteConfig.speedJitterPct;
     final deadline = DateTime.now().add(const Duration(seconds: 15));
     final grades = <String, SpeedGrade>{};
     var done = 0;
@@ -96,7 +96,7 @@ class LineSpeedNotifier extends Notifier<LineSpeedState> {
         next++;
         if (i >= targets.length) return;
         final item = targets[i];
-        final grade = await _measure(item.host, item.port, deadline, fast, ok);
+        final grade = await _measure(item.host, item.port, deadline, jitterMs, jitterPct);
         if (serial != _serial) return;
         for (final name in item.names) {
           grades[name] = grade;
@@ -110,10 +110,13 @@ class LineSpeedNotifier extends Notifier<LineSpeedState> {
     if (serial != _serial) return;
     var bestName = '';
     var bestMs = -1;
+    var bestLevel = 0;
     for (final item in targets) {
       final grade = grades[item.names.first];
-      if (grade == null || grade.level >= 4 || grade.ms <= 0) continue;
-      if (bestMs < 0 || grade.ms < bestMs) {
+      if (grade == null || grade.ms <= 0) continue;
+      if (grade.level != 1 && grade.level != 2) continue;
+      if (bestLevel == 0 || grade.level < bestLevel || (grade.level == bestLevel && grade.ms < bestMs)) {
+        bestLevel = grade.level;
         bestMs = grade.ms;
         bestName = item.names.first;
       }
@@ -188,29 +191,35 @@ List<_ProfileEndpoint> _profileEndpoints(String raw) {
   return out;
 }
 
-Future<SpeedGrade> _measure(String host, int port, DateTime deadline, int fast, int ok) async {
+Future<SpeedGrade> _measure(String host, int port, DateTime deadline, int jitterMs, int jitterPct) async {
   final samples = <int>[];
   var fails = 0;
-  for (var i = 0; i < 3; i++) {
+  for (var i = 0; i < 5; i++) {
     final left = deadline.difference(DateTime.now());
-    if (left.inMilliseconds < 50) {
-      fails += 3 - i;
-      break;
-    }
+    if (left.inMilliseconds < 50) return const SpeedGrade(level: 4, word: '连不上', ms: -1);
     final ms = await _probe(host, port, left.inMilliseconds < 2000 ? left : const Duration(seconds: 2));
     if (ms < 0) {
       fails++;
     } else {
       samples.add(ms);
     }
+    if (i < 4) await Future<void>.delayed(const Duration(milliseconds: 300));
   }
-  if (samples.isEmpty) return const SpeedGrade(level: 4, word: '不通', ms: -1);
+  if (samples.isEmpty) return const SpeedGrade(level: 4, word: '连不上', ms: -1);
   samples.sort();
   final median = samples[samples.length ~/ 2];
-  var level = median < fast ? 1 : (median < ok ? 2 : 3);
-  if (fails > 0) level = level + 1 > 4 ? 4 : level + 1;
-  const words = {1: '快', 2: '一般', 3: '慢', 4: '不通'};
-  return SpeedGrade(level: level, word: words[level] ?? '不通', ms: median);
+  final jitter = samples.last - samples.first;
+  final steady = jitter <= jitterMs || (median > 0 && jitter * 100 <= median * jitterPct);
+  final int level;
+  if (fails == 0 && steady) {
+    level = 1;
+  } else if (fails >= 2) {
+    level = 3;
+  } else {
+    level = 2;
+  }
+  const words = {1: '稳定', 2: '有波动', 3: '容易卡', 4: '连不上'};
+  return SpeedGrade(level: level, word: words[level] ?? '连不上', ms: median);
 }
 
 Future<int> _probe(String host, int port, Duration timeout) async {
