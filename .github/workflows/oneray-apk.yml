@@ -142,14 +142,14 @@ jobs:
               "prerelease": false,
               "mandatory": false,
               "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-              "html_url": "https://www.BRAND.com/android/",
+              "html_url": "https://www.gsldvpn.com/android/",
               "body": "见更新说明",
               "assets": [
                 {
                   "name": "oneray.apk",
-                  "browser_download_url": "https://dl.TECH.com/dengta/android/oneray.apk",
+                  "browser_download_url": "https://dl.paperkiln.download/dengta/android/oneray.apk",
                   "mirrors": [
-                    "https://www.BRAND.com/dengta/android/oneray.apk"
+                    "https://www.gsldvpn.com/dengta/android/oneray.apk"
                   ],
                   "sha256": "$SHA"
                 }
@@ -158,7 +158,7 @@ jobs:
           ]
           EOF
           echo "SHA256(arm64) = $SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "artifact 里有 oneray.apk + releases.json —— 传东京源站 /var/www/dengtago/dengta/android/（dl.TECH.com 和 www.BRAND.com 共用同一份），**再同步到香港中转机 165.154.61.178:/var/www/relay/dengta/android/**（App 内更新的主下载源，2026-09-20 起）。步骤见 VPN 仓库 docs/发版.md §2" >> "$GITHUB_STEP_SUMMARY"
+          echo "artifact 里有 oneray.apk + releases.json —— 传东京源站 /var/www/dengtago/dengta/android/（dl.paperkiln.download 和 www.gsldvpn.com 共用同一份），**再同步到香港中转机 165.154.61.178:/var/www/relay/dengta/android/**（App 内更新的主下载源，2026-09-20 起）。步骤见 VPN 仓库 docs/发版.md §2" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:

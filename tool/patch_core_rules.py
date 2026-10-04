@@ -18,7 +18,7 @@ import sys
 import zipfile
 
 OLD_BASE = "https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set/country/"
-NEW_BASE = "https://api-hk.TECH.com/rules/oneray-hiddify-core-v4.1.0-patch01/"
+NEW_BASE = "https://api-hk.paperkiln.download/rules/oneray-hiddify-core-v4.1.0-patch01/"
 
 PAIRS = [
     (OLD_BASE + "geosite-", NEW_BASE + "geosite-"),

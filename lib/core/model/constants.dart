@@ -3,42 +3,42 @@ import 'package:flutter/services.dart';
 
 abstract class Constants {
   static const appName = "光速雷达";
-  // 占位名。真域名到手后只改这一处。中转名字不进安装包，只走指针 / feed。
-  static const brandDomain = "BRAND.com";
-  static const techDomain = "TECH.com";
-  static const panelApiBase = "https://api-hk.TECH.com";
+  // 现网域名。中转名字不进安装包，只走指针 / feed。
+  static const brandDomain = "gsldvpn.com";
+  static const techDomain = "paperkiln.download";
+  static const panelApiBase = "https://api-hk.paperkiln.download";
   static const ossPointerUrls = [
-    "https://api-hk.TECH.com/rules/d9b21c47e0a8f315.txt",
-    "https://www.BRAND.com/dengta/d9b21c47e0a8f315.txt",
+    "https://api-hk.paperkiln.download/rules/d9b21c47e0a8f315.txt",
+    "https://www.gsldvpn.com/dengta/d9b21c47e0a8f315.txt",
   ];
   static const panelApiFallbacks = [
-    "https://api-hk.TECH.com",
-    "https://api.BRAND.com",
+    "https://api-hk.paperkiln.download",
+    "https://api.gsldvpn.com",
   ];
-  static const panelRegisterUrl = "https://www.BRAND.com/account/";
-  static const panelForgotUrl = "https://www.BRAND.com/account/";
-  static const panelPlanUrl = "https://www.BRAND.com/account/";
-  static const panelProfileUrl = "https://www.BRAND.com/account/";
-  static const panelInviteUrl = "https://www.BRAND.com/i/";
-  static const websiteUrl = "https://www.BRAND.com/";
-  static const supportPageUrl = "https://www.BRAND.com/support.html";
-  static const iosPageUrl = "https://www.BRAND.com/ios/";
+  static const panelRegisterUrl = "https://www.gsldvpn.com/account/";
+  static const panelForgotUrl = "https://www.gsldvpn.com/account/";
+  static const panelPlanUrl = "https://www.gsldvpn.com/account/";
+  static const panelProfileUrl = "https://www.gsldvpn.com/account/";
+  static const panelInviteUrl = "https://www.gsldvpn.com/i/";
+  static const websiteUrl = "https://www.gsldvpn.com/";
+  static const supportPageUrl = "https://www.gsldvpn.com/support.html";
+  static const iosPageUrl = "https://www.gsldvpn.com/ios/";
 
-  static const githubUrl = "https://www.BRAND.com/help.html";
-  static const licenseUrl = "https://www.BRAND.com/help.html";
-  static const faqUrl = "https://www.BRAND.com/help.html";
+  static const githubUrl = "https://www.gsldvpn.com/help.html";
+  static const licenseUrl = "https://www.gsldvpn.com/help.html";
+  static const faqUrl = "https://www.gsldvpn.com/help.html";
   static const releasesJsonUrls = [
-    "https://dl.TECH.com/dengta/android/releases.json",
-    "https://www.BRAND.com/dengta/android/releases.json",
+    "https://dl.paperkiln.download/dengta/android/releases.json",
+    "https://www.gsldvpn.com/dengta/android/releases.json",
   ];
-  static const githubReleasesApiUrl = "https://dl.TECH.com/dengta/android/releases.json";
-  static const githubLatestReleaseUrl = "https://www.BRAND.com/";
-  static const appCastUrl = "https://www.BRAND.com/oneray/android/appcast.xml";
+  static const githubReleasesApiUrl = "https://dl.paperkiln.download/dengta/android/releases.json";
+  static const githubLatestReleaseUrl = "https://www.gsldvpn.com/";
+  static const appCastUrl = "https://www.gsldvpn.com/oneray/android/appcast.xml";
   static const telegramChannelUrl = "https://t.me/+LQ-pvMvK4ClkNzFk";
-  static const statusPageUrl = "https://status.BRAND.com/";
-  static const kfBase = "https://kf.BRAND.com";
-  static const privacyPolicyUrl = "https://www.BRAND.com/help.html";
-  static const termsAndConditionsUrl = "https://www.BRAND.com/help.html";
+  static const statusPageUrl = "https://status.gsldvpn.com/";
+  static const kfBase = "https://kf.gsldvpn.com";
+  static const privacyPolicyUrl = "https://www.gsldvpn.com/help.html";
+  static const termsAndConditionsUrl = "https://www.gsldvpn.com/help.html";
   static const endpointEpoch = 20261004;
   static const cfWarpPrivacyPolicy = "https://www.cloudflare.com/application/privacypolicy/";
   static const cfWarpTermsOfService = "https://www.cloudflare.com/application/terms/";
