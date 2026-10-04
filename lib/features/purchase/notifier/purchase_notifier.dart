@@ -108,7 +108,7 @@ class PurchaseState {
 final purchaseNotifierProvider =
     NotifierProvider.autoDispose<PurchaseNotifier, PurchaseState>(PurchaseNotifier.new);
 
-/// 线路列表点「升级优化版」时，购买页打开后选中优化版。
+/// 线路列表点「升级精品版」时，购买页打开后选中精品版。
 final purchasePreferTierProvider = StateProvider<String?>((ref) => null);
 
 /// 购买页顶部「账户 + 剩余流量」卡片用。拉最新订阅信息，失败 / 未登录返回 null。
@@ -597,7 +597,7 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
   Future<bool> _refreshSubscription() => refreshAccountSubscription(ref);
 }
 
-/// 把账号订阅重新拉一遍。购买成功和领完优化线路体验都走这里。
+/// 把账号订阅重新拉一遍。购买成功和领完精品线路体验都走这里。
 ///
 /// 拿到订阅 URL 只是一半 —— 节点 / 权益真同步过来（profile 更新成功）才算成功，
 /// 之前这里 catch(_) 吞掉了 profile 更新失败，会误报「已刷新」。

@@ -125,17 +125,30 @@ class AccountPage extends HookConsumerWidget {
                     _row('剩余时间', _remainLabel(a, now)),
                     if (a.dailyKnown) ...[
                       const Divider(height: 1),
-                      ListTile(
-                        dense: true,
-                        title: const Text('今日高速'),
-                        subtitle: Text(
-                          a.dailyThrottled
-                              ? '已用完，现在限速 ${a.dailyThrottleMbps}Mbps，0 点恢复'
-                              : '还剩 ${formatDailyAmount((a.dailyQuota - a.dailyUsed).clamp(0, 1 << 62))}（每天 ${formatDailyAmount(a.dailyQuota)}，0 点重置）',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: a.dailyThrottled ? theme.colorScheme.error : null,
-                          ),
+                      _quotaRow(
+                        context,
+                        '今日高速',
+                        a.dailyThrottled
+                            ? '已用完，限速 ${a.dailyThrottleMbps}Mbps'
+                            : '还剩 ${formatDailyAmount((a.dailyQuota - a.dailyUsed).clamp(0, 1 << 62))} / 共 ${formatDailyAmount(a.dailyQuota)}',
+                        warn: a.dailyThrottled,
+                      ),
+                      if (a.proKnown)
+                        _quotaRow(
+                          context,
+                          '精品线路今日',
+                          a.proThrottled
+                              ? '已用完，限速 ${a.proThrottleMbps}Mbps'
+                              : '还剩 ${formatDailyAmount((a.proQuota - a.proUsed).clamp(0, 1 << 62))} / 共 ${formatDailyAmount(a.proQuota)}',
+                          warn: a.proThrottled,
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Text(
+                          a.proKnown && a.dailyThrottleMbps != a.proThrottleMbps
+                              ? '每天 0 点恢复，超出后今日高速限速 ${a.dailyThrottleMbps}Mbps，精品线路限速 ${a.proThrottleMbps}Mbps'
+                              : '每天 0 点恢复，超出后限速 ${a.proKnown ? a.proThrottleMbps : a.dailyThrottleMbps}Mbps',
+                          style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ),
                     ],
@@ -191,6 +204,19 @@ class AccountPage extends HookConsumerWidget {
       ),
     );
   }
+
+  Widget _quotaRow(BuildContext context, String k, String v, {bool warn = false}) => ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        title: Text(k),
+        trailing: Text(
+          v,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: warn ? const Color(0xFFA66116) : null,
+          ),
+        ),
+      );
 
   Widget _row(String k, String v) => ListTile(
         dense: true,

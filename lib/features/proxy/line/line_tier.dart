@@ -161,7 +161,7 @@ class LineTierNotifier extends Notifier<LineTierState> {
         return msg is String && msg.isNotEmpty ? msg : '领不了';
       }
       await refresh();
-      // 线路列表读的是本地订阅文件。领完不重拉的话，优化线路既不出现也连不上。
+      // 线路列表读的是本地订阅文件。领完不重拉的话，精品线路既不出现也连不上。
       await refreshAccountSubscription(ref);
       return null;
     } catch (_) {

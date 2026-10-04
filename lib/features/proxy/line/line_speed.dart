@@ -83,31 +83,49 @@ class LineSpeedNotifier extends Notifier<LineSpeedState> {
     final net = await _netKey();
     _net = net;
     final serial = ++_serial;
-    state = LineSpeedState(running: true, total: targets.length);
+    state = const LineSpeedState(running: true, total: 5, done: 1);
     final jitterMs = RemoteSiteConfig.speedJitterMs;
     final jitterPct = RemoteSiteConfig.speedJitterPct;
     final deadline = DateTime.now().add(const Duration(seconds: 15));
-    final grades = <String, SpeedGrade>{};
-    var done = 0;
-    var next = 0;
-    Future<void> worker() async {
-      while (serial == _serial) {
-        final i = next;
-        next++;
-        if (i >= targets.length) return;
-        final item = targets[i];
-        final grade = await _measure(item.host, item.port, deadline, jitterMs, jitterPct);
-        if (serial != _serial) return;
-        for (final name in item.names) {
-          grades[name] = grade;
+    final samples = [for (final _ in targets) <int>[]];
+    final fails = [for (final _ in targets) 0];
+    for (var round = 1; round <= 5; round++) {
+      if (serial != _serial) return;
+      if (!DateTime.now().isBefore(deadline)) break;
+      state = state.copyWith(done: round, total: 5);
+      var next = 0;
+      Future<void> worker() async {
+        while (serial == _serial) {
+          final i = next;
+          next++;
+          if (i >= targets.length) return;
+          final left = deadline.difference(DateTime.now());
+          if (left.inMilliseconds < 50) return;
+          final cap = left.inMilliseconds < 1500 ? left : const Duration(milliseconds: 1500);
+          final ms = await _probe(targets[i].host, targets[i].port, cap);
+          if (serial != _serial) return;
+          if (ms < 0) {
+            fails[i]++;
+          } else {
+            samples[i].add(ms);
+          }
         }
-        done++;
-        state = state.copyWith(grades: Map.of(grades), done: done);
+      }
+
+      final n = targets.length < 8 ? targets.length : 8;
+      await Future.wait([for (var i = 0; i < n; i++) worker()]);
+      if (round < 5 && deadline.difference(DateTime.now()).inMilliseconds > 350) {
+        await Future<void>.delayed(const Duration(milliseconds: 300));
       }
     }
-
-    await Future.wait([for (var i = 0; i < 4 && i < targets.length; i++) worker()]);
     if (serial != _serial) return;
+    final grades = <String, SpeedGrade>{};
+    for (var i = 0; i < targets.length; i++) {
+      final grade = _grade(samples[i], fails[i], jitterMs, jitterPct);
+      for (final name in targets[i].names) {
+        grades[name] = grade;
+      }
+    }
     var bestName = '';
     var bestMs = -1;
     var bestLevel = 0;
@@ -191,29 +209,11 @@ List<_ProfileEndpoint> _profileEndpoints(String raw) {
   return out;
 }
 
-Future<SpeedGrade> _measure(String host, int port, DateTime deadline, int jitterMs, int jitterPct) async {
-  final samples = <int>[];
-  var fails = 0;
-  var finished = true;
-  for (var i = 0; i < 5; i++) {
-    final left = deadline.difference(DateTime.now());
-    if (left.inMilliseconds < 50) {
-      finished = false;
-      break;
-    }
-    final ms = await _probe(host, port, left.inMilliseconds < 2000 ? left : const Duration(seconds: 2));
-    if (ms < 0) {
-      fails++;
-    } else {
-      samples.add(ms);
-    }
-    if (i < 4) await Future<void>.delayed(const Duration(milliseconds: 300));
-  }
-  if (!finished && samples.length < 2) return const SpeedGrade(level: 5, word: '没测完', ms: -1);
+SpeedGrade _grade(List<int> samples, int fails, int jitterMs, int jitterPct) {
   if (samples.isEmpty) return const SpeedGrade(level: 4, word: '连不上', ms: -1);
-  samples.sort();
-  final median = samples[samples.length ~/ 2];
-  final jitter = samples.last - samples.first;
+  final sorted = [...samples]..sort();
+  final median = sorted[sorted.length ~/ 2];
+  final jitter = sorted.last - sorted.first;
   final steady = jitter <= jitterMs || (median > 0 && jitter * 100 <= median * jitterPct);
   final int level;
   if (fails >= 2) {

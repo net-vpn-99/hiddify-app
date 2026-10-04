@@ -176,7 +176,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(color: t.selected, borderRadius: BorderRadius.circular(10)),
                     child: Text(
-                      '你是优化版会员，优化版已经包含全部标准线路，标准线路照常满速用。优化版到期后（${state.me?.expiresOn ?? ''} 之后）可以购买标准版。',
+                      '你是精品版会员，精品版已经包含全部标准线路，标准线路照常满速用。精品版到期后（${state.me?.expiresOn ?? ''} 之后）可以购买标准版。',
                       style: TextStyle(color: t.text, fontSize: 12),
                     ),
                   ),
@@ -801,17 +801,17 @@ class _TierCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text(tier.keyLine, style: TextStyle(color: tone, fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 2),
-              Text(stdBlocked ? '优化版已包含，不用另买' : tier.sub, style: TextStyle(color: t.secondary, fontSize: 11)),
+              Text(stdBlocked ? '精品版已包含，不用另买' : tier.sub, style: TextStyle(color: t.secondary, fontSize: 11)),
               if (tier.tier == 'pro' && tier.dailyGb > 0)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
-                  child: Text('优化线路每天 ${tier.dailyGb}GB 高速', style: TextStyle(color: t.secondary, fontSize: 11)),
+                  child: Text('精品线路每天 ${tier.dailyGb}GB 高速', style: TextStyle(color: t.secondary, fontSize: 11)),
                 ),
               if (gift)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
-                    (me!.trialMinutes == 60) ? '送 1 小时优化线路体验' : '送 ${me!.trialMinutes} 分钟优化线路体验',
+                    (me!.trialMinutes == 60) ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验',
                     style: TextStyle(color: t.remaining, fontSize: 11),
                   ),
                 ),

@@ -10,6 +10,7 @@ import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/proxy/line/line_speed.dart';
 import 'package:hiddify/features/proxy/line/line_tier.dart';
+import 'package:hiddify/features/proxy/line/region_vote.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/features/proxy/model/node_flag.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
@@ -64,6 +65,14 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
 
   ScrollController? _controller;
   bool _scrolled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() {
+      if (mounted) ref.read(regionVoteProvider.notifier).load();
+    });
+  }
 
   @override
   void dispose() {
@@ -129,6 +138,9 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
             Navigator.of(context).pop();
             context.pushNamed('purchase');
           },
+          regionEnabled: ref.watch(regionVoteProvider).enabled,
+          regionThreshold: ref.watch(regionVoteProvider).threshold,
+          onWantRegion: () => showRegionSheet(context, ref),
           onClaim: () async {
             final msg = await ref.read(lineTierProvider.notifier).claim();
             if (!context.mounted || msg == null) return;
@@ -161,6 +173,13 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                 recommended: i == 0 && !locked && pickedName.isEmpty && i != currentIndex,
                 connected: connected,
                 onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
+              ),
+            if (ref.watch(regionVoteProvider).enabled)
+              ListTile(
+                title: const Text('想要别的地区？'),
+                subtitle: Text('会员投票，够 ${ref.watch(regionVoteProvider).threshold} 票就开'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => showRegionSheet(context, ref),
               ),
             if (_customLineUrl() != null) ...[
               const Divider(height: 1),
@@ -388,6 +407,9 @@ class _TieredLines extends StatefulWidget {
     this.onUpgradeStd,
     required this.onUpgrade,
     required this.onClaim,
+    required this.regionEnabled,
+    required this.regionThreshold,
+    required this.onWantRegion,
   });
 
   final List<LineOption> options;
@@ -403,6 +425,9 @@ class _TieredLines extends StatefulWidget {
   final VoidCallback? onUpgradeStd;
   final VoidCallback onUpgrade;
   final VoidCallback onClaim;
+  final bool regionEnabled;
+  final int regionThreshold;
+  final VoidCallback onWantRegion;
 
   @override
   State<_TieredLines> createState() => _TieredLinesState();
@@ -497,7 +522,7 @@ class _TieredLinesState extends State<_TieredLines> {
       if (order.isEmpty) return;
       final open = seg == 'pro' ? _proOpen : _stdOpen;
       final isPro = seg == 'pro';
-      final title = isPro ? '优化线路' : '标准线路';
+      final title = isPro ? '精品线路' : '标准线路';
       var hint = isPro ? '晚高峰也不卡' : '晚高峰可能变慢';
       var hintWarn = false;
       if (isPro && widget.usageLabel != null && widget.usageLabel!.isNotEmpty) {
@@ -560,7 +585,7 @@ class _TieredLinesState extends State<_TieredLines> {
                         ),
                         if (isPro && proLocked) ...[
                           const SizedBox(width: 8),
-                          _GoldButton(label: '升级优化版', onTap: widget.onUpgrade, tokens: tokens),
+                          _GoldButton(label: '升级精品版', onTap: widget.onUpgrade, tokens: tokens),
                         ],
                         const SizedBox(width: 6),
                         Transform.rotate(
@@ -592,6 +617,13 @@ class _TieredLinesState extends State<_TieredLines> {
 
     addSeg('pro', proOrder, pro);
     addSeg('std', stdOrder, std);
+    if (widget.regionEnabled) {
+      children.add(_WantRegionRow(
+        tokens: tokens,
+        threshold: widget.regionThreshold,
+        onTap: widget.onWantRegion,
+      ));
+    }
     final custom = _customLineUrl();
     if (custom != null) {
       children.add(_CustomLineRow(
@@ -613,8 +645,8 @@ class _TieredLinesState extends State<_TieredLines> {
     if (widget.tiers.trial == 'active') {
       final mins = (widget.tiers.seconds / 60).ceil().clamp(1, 9999);
       return _PromoRow(
-        label: '优化线路体验中 · 还剩 $mins 分钟',
-        action: '升级优化版',
+        label: '精品线路体验中 · 还剩 $mins 分钟',
+        action: '升级精品版',
         warm: false,
         tokens: tokens,
         okDeep: okDeep,
@@ -626,13 +658,13 @@ class _TieredLinesState extends State<_TieredLines> {
     final lockedTrial = widget.tiers.trial == 'locked';
     final hour = widget.tiers.minutes == 60;
     final label = offer
-        ? (hour ? '您可领取 1 小时优化线路体验' : '您可领取 ${widget.tiers.minutes} 分钟优化线路体验')
+        ? (hour ? '您可领取 1 小时精品线路体验' : '您可领取 ${widget.tiers.minutes} 分钟精品线路体验')
         : lockedTrial
-            ? (hour ? '标准版会员可领 1 小时优化线路体验' : '标准版会员可领 ${widget.tiers.minutes} 分钟优化线路体验')
+            ? (hour ? '标准版会员可领 1 小时精品线路体验' : '标准版会员可领 ${widget.tiers.minutes} 分钟精品线路体验')
             : '想晚高峰更快？';
     return _PromoRow(
       label: label,
-      action: offer ? '领取' : (lockedTrial ? '升级' : '升级优化版'),
+      action: offer ? '领取' : (lockedTrial ? '升级' : '升级精品版'),
       warm: !offer,
       tokens: tokens,
       okDeep: okDeep,
@@ -719,7 +751,7 @@ class _TieredLinesState extends State<_TieredLines> {
                       const SizedBox(width: 6),
                     ],
                     if (blocked)
-                      Text('升级优化版 ›', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.primary))
+                      Text('升级精品版 ›', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.primary))
                     else ...[
                       Transform.rotate(
                         angle: expanded ? 1.5708 : 0,
@@ -756,7 +788,7 @@ class _TieredLinesState extends State<_TieredLines> {
     SpeedGrade? best;
     for (final o in lines) {
       final grade = widget.speed.grades[o.name];
-      if (grade == null || grade.level <= 0 || grade.level == 5) continue;
+      if (grade == null || grade.level <= 0) continue;
       if (best == null || grade.level < best.level) best = grade;
     }
     return best;
@@ -782,27 +814,16 @@ class _TieredLinesState extends State<_TieredLines> {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
               children: [
-                Flexible(
-                  flex: 3,
+                Text(short, maxLines: 1, style: TextStyle(fontSize: 12, color: tokens.text)),
+                const SizedBox(width: 8),
+                Expanded(
                   child: Text(
-                    short,
+                    o.desc,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: tokens.text),
+                    style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)),
                   ),
                 ),
-                if (o.desc.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Flexible(
-                    flex: 2,
-                    child: Text(
-                      o.desc,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)),
-                    ),
-                  ),
-                ],
                 if (grade != null) ...[
                   const SizedBox(width: 8),
                   _SpeedDot(level: grade.level, tokens: tokens),
@@ -925,6 +946,36 @@ class _PromoRow extends StatelessWidget {
   }
 }
 
+class _WantRegionRow extends StatelessWidget {
+  const _WantRegionRow({required this.tokens, required this.threshold, required this.onTap});
+
+  final PurchaseTokens tokens;
+  final int threshold;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('想要别的地区？', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text)),
+              const SizedBox(height: 2),
+              Text('会员投票，够 $threshold 票就开', style: TextStyle(fontSize: 11, color: tokens.secondary)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CustomLineRow extends StatelessWidget {
   const _CustomLineRow({required this.tokens, required this.onTap});
 
@@ -973,9 +1024,9 @@ String? _proUsage(WidgetRef ref, LineTierState tiers) {
   if (acc == null || !acc.proKnown) return null;
   if (tiers.trial != 'pro' && tiers.trial != 'active') return null;
   if (acc.proThrottled) {
-    return '今天已超 ${formatDailyAmount(acc.proQuota)}，优化线路限速 ${acc.proThrottleMbps}Mbps，明天恢复';
+    return '今天已超 ${formatDailyAmount(acc.proQuota)}，精品线路限速 ${acc.proThrottleMbps}Mbps，明天恢复';
   }
-  return '今天已用 ${formatDailyAmount(acc.proUsed)} / ${formatDailyAmount(acc.proQuota)} · 所有优化线路合计';
+  return '今天已用 ${formatDailyAmount(acc.proUsed)} / ${formatDailyAmount(acc.proQuota)} · 所有精品线路合计';
 }
 
 class _SpeedButton extends ConsumerWidget {
