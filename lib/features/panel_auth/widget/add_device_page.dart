@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/utils/device_id.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
@@ -191,7 +192,7 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
               Text('这个账号已经在 $used 台设备上用了（最多 $limit 台）。不用的设备 45 天后会自动让出位置；你急用，请联系客服。'),
               const SizedBox(height: 12),
               OutlinedButton(
-                onPressed: () => UriUtils.tryLaunch(Uri.parse('https://www.gsldone.com/support.html')),
+                onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.supportPageUrl)),
                 child: const Text('联系客服'),
               ),
             ] else ...[
@@ -213,7 +214,7 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
               const SizedBox(height: 12),
               const Text('在那台设备上打开光速雷达，点「已有账号？」，输入上面这 6 位数。'),
               const SizedBox(height: 8),
-              const SelectableText('还没装？到 www.gsldone.com 下载'),
+              SelectableText('还没装？到 www.${Constants.brandDomain} 下载'),
               if (limit > 0) ...[
                 const SizedBox(height: 8),
                 Text('这个账号现在 $used/$limit 台设备。'),
@@ -225,7 +226,7 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
             const SizedBox(height: 12),
             const Text('① iPhone 上装 Shadowrocket（需要非中国区 Apple ID）② 打开它，点左上角扫码 ③ 对准这个二维码'),
             TextButton(
-              onPressed: () => UriUtils.tryLaunch(Uri.parse('https://www.gsldone.com/ios/')),
+              onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.iosPageUrl)),
               child: const Text('详细步骤'),
             ),
             if (subUrl.isNotEmpty)

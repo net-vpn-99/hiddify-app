@@ -335,6 +335,10 @@ class UpdateProfileNotifier extends _$UpdateProfileNotifier with AppLogger {
 Future<String?> freshAccountSubscribeUrlIfChanged(Ref ref, RemoteProfileEntity profile) async {
   final bound = await boundAccountProfileId();
   if (!isOwnAccountProfile(profile, boundId: bound)) return null;
+  if (!isKnownPanelHost(profile.url)) {
+    final rebuilt = buildOwnSubscribeUrl(apiBase: PanelApiBase.current, originalUrl: profile.url);
+    if (rebuilt.isNotEmpty && rebuilt != profile.url.trim()) return rebuilt;
+  }
   try {
     final fresh = await ref.read(panelAuthProvider.notifier).refreshSubscribeUrl();
     if (fresh != null && fresh.trim().isNotEmpty && fresh.trim() != profile.url) {

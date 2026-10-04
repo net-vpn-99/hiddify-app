@@ -2,12 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/support/model/support_message.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 在线客服：直接调 Chatwoot 官网小组件用的那套公开接口（/api/v1/widget/*），
-/// 后台是同一个 Chatwoot（kf.gsldone.com）—— 客服在网页后台 / 手机 App 看到的
+/// 后台是同一个 Chatwoot —— 客服在网页后台 / 手机 App 看到的
 /// 是同一条会话，跟官网气泡、chat.html 完全等价，只是这边用原生界面画出来。
 ///
 /// 认证：从 GET /widget?website_token=... 这张网页里嵌的 <script> 解析出 authToken
@@ -39,7 +40,7 @@ class SupportChatService {
   // 本来就写在网页源码里公开可见，不是密钥。这个字面量只是内置默认值——kf. 不跟着
   // 品牌/技术域走（应急手册校正第 5 条），真正生效的地址走 _resolveBase()，从插件
   // 在 guest/comm/config 里下发的 gsl_invite.kf 字段拿，改后台配置不用发版。
-  static const _defaultBase = 'https://kf.gsldone.com';
+  static const _defaultBase = Constants.kfBase;
   static const _websiteToken = '6EDJYPA8bcduF3GjoFTCEvdZ';
   static const _prefKey = 'oneray_support_chat_base';
 

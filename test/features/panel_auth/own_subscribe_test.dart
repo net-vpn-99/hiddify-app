@@ -6,7 +6,7 @@ void main() {
     test('accepts standard Xboard subscribe URL', () {
       expect(
         looksLikeOwnPanelSubscribe(
-          'https://api-hk.inkspindle.com/api/v1/client/subscribe?token=abc',
+          'https://api-hk.TECH.com/api/v1/client/subscribe?token=abc',
         ),
         isTrue,
       );
@@ -14,8 +14,8 @@ void main() {
 
     test('rejects clash and other third-party links', () {
       expect(looksLikeOwnPanelSubscribe('https://example.com/clash.yaml'), isFalse);
-      expect(looksLikeOwnPanelSubscribe('https://api-hk.inkspindle.com/not-subscribe?token=abc'), isFalse);
-      expect(looksLikeOwnPanelSubscribe('https://api-hk.inkspindle.com/api/v1/client/subscribe'), isFalse);
+      expect(looksLikeOwnPanelSubscribe('https://api-hk.TECH.com/not-subscribe?token=abc'), isFalse);
+      expect(looksLikeOwnPanelSubscribe('https://api-hk.TECH.com/api/v1/client/subscribe'), isFalse);
     });
 
     test('other Xboard providers share the same path and must not be treated as ours', () {
@@ -28,7 +28,7 @@ void main() {
     test('known panel subscribe URL is account-importable', () {
       expect(
         isOwnAccountSubscribeSource(
-          'https://api-hk.inkspindle.com/api/v1/client/subscribe?token=abc',
+          'https://api-hk.TECH.com/api/v1/client/subscribe?token=abc',
         ),
         isTrue,
       );
@@ -39,18 +39,18 @@ void main() {
     test('rebuilds from current API and encodes token', () {
       expect(
         buildOwnSubscribeUrl(
-          apiBase: 'https://api.gsldone.com/',
+          apiBase: 'https://api.BRAND.com/',
           token: 'a b',
           originalUrl: 'https://old.example/api/v1/client/subscribe?token=old&flag=1',
         ),
-        'https://api.gsldone.com/api/v1/client/subscribe?token=a+b&flag=1',
+        'https://api.BRAND.com/api/v1/client/subscribe?token=a+b&flag=1',
       );
     });
 
     test('leaves third-party URL alone when there is no token', () {
       expect(
         buildOwnSubscribeUrl(
-          apiBase: 'https://api-hk.inkspindle.com',
+          apiBase: 'https://api-hk.TECH.com',
           originalUrl: 'https://example.com/clash.yaml',
         ),
         'https://example.com/clash.yaml',

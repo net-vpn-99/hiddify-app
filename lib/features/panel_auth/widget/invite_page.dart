@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gal/gal.dart';
+import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -266,7 +267,7 @@ class InvitePage extends HookConsumerWidget {
       return template.replaceAll('{bonus}', bonus ?? '奖励').replaceAll('{link}', link).replaceAll('{code}', code);
     }
     final b = bonus != null ? '各得 $bonus' : '都有奖励';
-    return '我在用「光速雷达」，速度快、YouTube 4K 不卡。\n用我的链接注册，连上用起来后咱俩$b：\n$link\n官网打不开时：https://gsl-status.guangsu-970.workers.dev/';
+    return '我在用「光速雷达」，速度快、YouTube 4K 不卡。\n用我的链接注册，连上用起来后咱俩$b：\n$link\n官网打不开时：${Constants.statusPageUrl}';
   }
 
   static void _toast(BuildContext context, String msg) {

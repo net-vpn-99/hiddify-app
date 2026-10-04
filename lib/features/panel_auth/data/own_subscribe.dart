@@ -46,7 +46,9 @@ bool isOwnAccountSubscribeSource(String url) {
 bool isOwnAccountProfile(RemoteProfileEntity profile, {String? boundId}) {
   if (boundId != null && boundId.isNotEmpty && profile.id == boundId) return true;
   if (profile.userOverride?.name != '光速') return false;
-  return isOwnAccountSubscribeSource(profile.url);
+  if (isOwnAccountSubscribeSource(profile.url)) return true;
+  // 换域前写进本地的自家订阅，主机已经不在内置名单里，仍按 profile 认出来再改地址。
+  return looksLikeOwnPanelSubscribe(profile.url);
 }
 
 String? subscribeTokenOf(String url) {

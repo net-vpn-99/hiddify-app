@@ -114,8 +114,9 @@ class ForegroundProfilesUpdateNotifier extends _$ForegroundProfilesUpdateNotifie
           continue;
         }
         final isAccount = isOwnAccountProfile(profile, boundId: boundId);
+        final staleHost = isAccount && !isKnownPanelHost(profile.url);
         final updateInterval = isAccount ? RemoteSiteConfig.nodesPoll : profile.options?.updateInterval;
-        if (force || updateInterval != null && updateInterval <= DateTime.now().difference(profile.lastUpdate)) {
+        if (force || staleHost || updateInterval != null && updateInterval <= DateTime.now().difference(profile.lastUpdate)) {
           final t = ref.read(translationsProvider).requireValue;
           // 账号自己那份订阅：先问一次面板拿当前真正生效的地址，不要用可能已经
           // 过期的 profile.url（跟手动更新入口同一条逻辑，见 profile_notifier.dart）。

@@ -9,11 +9,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 运行时解析 Xboard API 根地址。
 ///
-/// 自有指针（api-hk `/rules/` 与 gsldone `/dengta/`）决定主备顺序；第三方
-/// 阿里 OSS 只补充救援候选。上次成功地址加快故障期间启动，不能升成配置主入口。
+  /// 自有指针（技术域 `/rules/` 与品牌域 `/dengta/`）决定主备顺序。
+  /// 上次成功地址加快故障期间启动，不能升成配置主入口。换域前的缓存启动时丢掉。
 class PanelApiBase {
   PanelApiBase._();
 
+  static const _epochKey = 'oneray_endpoint_epoch';
   static const _prefKey = 'oneray_panel_api_base';
   static const _domainPrefKey = 'oneray_panel_api_domain';
   static const _configPrefKey = 'oneray_panel_api_config';
@@ -193,6 +194,7 @@ class PanelApiBase {
   static Future<String> _resolve({required bool force}) async {
     final sw = Stopwatch()..start();
     final prefs = await SharedPreferences.getInstance();
+    await _dropStaleCache(prefs);
     await _loadPersistedConfig(prefs);
     final last = _normalize(prefs.getString(_prefKey));
     if (!force && last != null && _configOrder.contains(last) && !_skipped(last)) {
@@ -302,6 +304,22 @@ class PanelApiBase {
     }
     add(Constants.panelApiBase);
     return out;
+  }
+
+  static Future<void> _dropStaleCache(SharedPreferences prefs) async {
+    if (prefs.getInt(_epochKey) == Constants.endpointEpoch) return;
+    await prefs.remove(_prefKey);
+    await prefs.remove(_domainPrefKey);
+    await prefs.remove(_configPrefKey);
+    await prefs.remove(_primaryPrefKey);
+    await prefs.remove('oneray_support_chat_base');
+    await prefs.setInt(_epochKey, Constants.endpointEpoch);
+    _configOrder = List<String>.from(Constants.panelApiFallbacks);
+    _configPrimary = Constants.panelApiBase;
+    _rescue.clear();
+    _ownConfigValid = false;
+    _cached = null;
+    _cachedAt = null;
   }
 
   static Future<void> _loadPersistedConfig(SharedPreferences prefs) async {
@@ -447,11 +465,15 @@ class PanelApiBase {
     }
   }
 
-  static bool _isOwnPointer(String url) =>
-      url.contains('inkspindle.com/rules/') ||
-      url.contains('gsldone.com/dengta/') ||
-      url.contains('quarrybell.com/dengta/') ||
-      url.contains('guangsuleida.com/dengta/');
+  static bool _hostUnder(String host, String domain) =>
+      host == domain || host.endsWith('.$domain');
+
+  static bool _isOwnPointer(String url) {
+    final host = Uri.tryParse(url)?.host.toLowerCase() ?? '';
+    if (host.isEmpty) return false;
+    if (_hostUnder(host, Constants.techDomain) && url.contains('/rules/')) return true;
+    return _hostUnder(host, Constants.brandDomain) && url.contains('/dengta/');
+  }
 
   static Future<({List<String> own, List<String> rescue})> _fetchPointers() async {
     final own = <String>[];

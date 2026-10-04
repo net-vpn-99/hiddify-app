@@ -3,48 +3,43 @@ import 'package:flutter/services.dart';
 
 abstract class Constants {
   static const appName = "光速雷达";
-  // OneRay: 会员系统 API（登录 / 拉订阅），对接 Xboard，与桌面版同一套接口。
-  // 内置只放稳定地址；中转名字（经常被墙要换）只在服务器下发的指针 / feed 里，换它不用发版。
-  static const panelApiBase = "https://api-hk.inkspindle.com";
-  // 自有指针在前，第三方阿里 OSS 只当救援。跟 Windows panel.json ossPointerUrls 同一份。
+  // 占位名。真域名到手后只改这一处。中转名字不进安装包，只走指针 / feed。
+  static const brandDomain = "BRAND.com";
+  static const techDomain = "TECH.com";
+  static const panelApiBase = "https://api-hk.TECH.com";
   static const ossPointerUrls = [
-    "https://api-hk.inkspindle.com/rules/d9b21c47e0a8f315.txt",
-    "https://www.gsldone.com/dengta/d9b21c47e0a8f315.txt",
-    "https://surrr.oss-cn-hangzhou.aliyuncs.com/f20025155414474.txt",
+    "https://api-hk.TECH.com/rules/d9b21c47e0a8f315.txt",
+    "https://www.BRAND.com/dengta/d9b21c47e0a8f315.txt",
   ];
   static const panelApiFallbacks = [
-    "https://api-hk.inkspindle.com",
-    "https://api.gsldone.com",
-    "https://api.inkspindle.com",
+    "https://api-hk.TECH.com",
+    "https://api.BRAND.com",
   ];
-  // Xboard 会员前台已全部 404，浏览器入口走官网会员中心。
-  static const panelRegisterUrl = "https://www.gsldone.com/account/";
-  static const panelForgotUrl = "https://www.gsldone.com/account/";
-  static const panelPlanUrl = "https://www.gsldone.com/account/"; // 续费/购买
-  static const panelProfileUrl = "https://www.gsldone.com/account/"; // 改密码
-  static const panelInviteUrl = "https://www.gsldone.com/i/"; // 邀请好友
-  static const websiteUrl = "https://www.gsldone.com/"; // 首页顶栏「官网」
+  static const panelRegisterUrl = "https://www.BRAND.com/account/";
+  static const panelForgotUrl = "https://www.BRAND.com/account/";
+  static const panelPlanUrl = "https://www.BRAND.com/account/";
+  static const panelProfileUrl = "https://www.BRAND.com/account/";
+  static const panelInviteUrl = "https://www.BRAND.com/i/";
+  static const websiteUrl = "https://www.BRAND.com/";
+  static const supportPageUrl = "https://www.BRAND.com/support.html";
+  static const iosPageUrl = "https://www.BRAND.com/ios/";
 
-  static const githubUrl = "https://www.gsldone.com/help.html";
-  static const licenseUrl = "https://www.gsldone.com/help.html";
-  // OneRay: 「我的 → 帮助与客服 → 常见问题」跳这里（官网帮助页）。
-  static const faqUrl = "https://www.gsldone.com/help.html";
-  // OneRay: 更新清单。主 = 搬瓦工中转直连（快、抗封），备 = 香港源站（CF）。逐个试。
+  static const githubUrl = "https://www.BRAND.com/help.html";
+  static const licenseUrl = "https://www.BRAND.com/help.html";
+  static const faqUrl = "https://www.BRAND.com/help.html";
   static const releasesJsonUrls = [
-    // dl.inkspindle.com 是同一台中转机换的非实名域名（2026-09-16），dl2.meadowfoundry.com
-    // 留着当过渡期候选。**这个域名下所有路径都要带 /dengta/ 前缀**——它跟旧 dl2 不是
-    // 同一套 Caddy 配置，没有 dl2 那种 strip_prefix，第一版少写了这个前缀，实测 404。
-    "https://dl.inkspindle.com/dengta/android/releases.json",
-    "https://www.gsldone.com/dengta/android/releases.json",
+    "https://dl.TECH.com/dengta/android/releases.json",
+    "https://www.BRAND.com/dengta/android/releases.json",
   ];
-  // 兼容旧字段名，代码里没人读了（搜过 app_update_repository 没有引用），留着不删只是保险。
-  static const githubReleasesApiUrl = "https://dl.inkspindle.com/android/releases.json";
-  static const githubLatestReleaseUrl = "https://www.gsldone.com/";
-  static const appCastUrl = "https://www.gsldone.com/oneray/android/appcast.xml";
+  static const githubReleasesApiUrl = "https://dl.TECH.com/dengta/android/releases.json";
+  static const githubLatestReleaseUrl = "https://www.BRAND.com/";
+  static const appCastUrl = "https://www.BRAND.com/oneray/android/appcast.xml";
   static const telegramChannelUrl = "https://t.me/+LQ-pvMvK4ClkNzFk";
-  static const statusPageUrl = "https://gsl-status.guangsu-970.workers.dev/";
-  static const privacyPolicyUrl = "https://www.gsldone.com/help.html";
-  static const termsAndConditionsUrl = "https://www.gsldone.com/help.html";
+  static const statusPageUrl = "https://status.BRAND.com/";
+  static const kfBase = "https://kf.BRAND.com";
+  static const privacyPolicyUrl = "https://www.BRAND.com/help.html";
+  static const termsAndConditionsUrl = "https://www.BRAND.com/help.html";
+  static const endpointEpoch = 20261004;
   static const cfWarpPrivacyPolicy = "https://www.cloudflare.com/application/privacypolicy/";
   static const cfWarpTermsOfService = "https://www.cloudflare.com/application/terms/";
 }

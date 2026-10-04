@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
+import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
@@ -51,7 +52,7 @@ class ConnectReporter {
   static const int stageNodeTls = 7;
   static const int stageProxyRequest = 8;
 
-  static const String _fallbackApiBase = 'https://api-hk.inkspindle.com';
+  static const String _fallbackApiBase = Constants.panelApiBase;
   static const String _reportPath = '/api/v1/guest/gsl_connect/report';
   static const int _queueMax = 10;
   static const int _queueTtlSecs = 3 * 24 * 3600;
