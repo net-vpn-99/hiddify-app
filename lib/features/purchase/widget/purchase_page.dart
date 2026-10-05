@@ -107,17 +107,28 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
             children: [
-              _AccountCard(
-                t: t,
-                account: account,
-                loading: acctAsync.isLoading,
-                isGuest: auth.isGuest,
-                loggedIn: auth.loggedIn,
-                label: auth.accountLabel,
-                knownAccountMask: knownMask,
-                onLogin: () => context.pushNamed('login'),
-              ),
-              const SizedBox(height: 16),
+              // 已注册登录、流量不限的人：账号和套餐压成一行（两端一样，一屏放下）。
+              // 游客、没登录、有流量上限的，还用原来的卡片（要说清买给谁、剩多少）。
+              if (auth.loggedIn && !auth.isGuest && knownMask == null
+                  && quotaStateOf(account) != QuotaState.empty && quotaRatioOf(account) == null)
+                Text(
+                  _accountLine(auth.accountLabel, account, state.me),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: t.secondary, fontSize: 12),
+                )
+              else
+                _AccountCard(
+                  t: t,
+                  account: account,
+                  loading: acctAsync.isLoading,
+                  isGuest: auth.isGuest,
+                  loggedIn: auth.loggedIn,
+                  label: auth.accountLabel,
+                  knownAccountMask: knownMask,
+                  onLogin: () => context.pushNamed('login'),
+                ),
+              const SizedBox(height: 12),
               if (state.pendingOrder != null) ...[
                 _PendingOrderBanner(
                   t: t,
@@ -141,17 +152,10 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                   Text('以下价格均为整期金额', style: TextStyle(color: t.secondary, fontSize: 11)),
                 ],
               ),
-              if (state.me != null && state.me!.planName.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '你现在的套餐是 ${state.me!.planName}，还能用 ${state.me!.daysLeft} 天'
-                  '${state.me!.expiresOn.isEmpty ? '' : '（${state.me!.expiresOn} 到期）'}',
-                  style: TextStyle(color: t.secondary, fontSize: 12),
-                ),
-              ],
               if (state.tiers.length >= 2) ...[
-                const SizedBox(height: 10),
-                Row(
+                const SizedBox(height: 14),
+                IntrinsicHeight(child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     for (final tier in state.tiers)
                       Expanded(
@@ -169,7 +173,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                         ),
                       ),
                   ],
-                ),
+                )),
                 if (state.stdHint)
                   Container(
                     margin: const EdgeInsets.only(top: 8),
@@ -192,16 +196,31 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                       child: Text(entry.value.first.name,
                           style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w700)),
                     ),
-                  for (final o in entry.value)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _OfferCard(
-                        t: t,
-                        offer: o,
-                        selected: selected != null && selected.planId == o.planId && selected.period == o.period,
-                        onTap: () => ref.read(purchaseNotifierProvider.notifier).select(o),
-                      ),
+                  // 两列，卡片矮一点，标准版 4 档也一屏放下（Win 是一行 4 张）。
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 4),
+                    child: LayoutBuilder(
+                      builder: (context, box) {
+                        final w = (box.maxWidth - 10) / 2;
+                        return Wrap(
+                          spacing: 10,
+                          runSpacing: 12,
+                          children: [
+                            for (final o in entry.value)
+                              SizedBox(
+                                width: w,
+                                child: _OfferCard(
+                                  t: t,
+                                  offer: o,
+                                  selected: selected != null && selected.planId == o.planId && selected.period == o.period,
+                                  onTap: () => ref.read(purchaseNotifierProvider.notifier).select(o),
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     ),
+                  ),
                 ],
               ],
               const SizedBox(height: 4),
@@ -223,6 +242,23 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
         ),
       ],
     );
+  }
+
+  /// 「20129048@qq.com · 精品版 · 还能用 10 天（10-16 到期）」。没套餐写「还没有套餐」。
+  static String _accountLine(String label, PanelAccount? acc, ShopMe? me) {
+    final plan = (me != null && me.planName.isNotEmpty) ? me.planName : (acc?.planName ?? '');
+    if (plan.isEmpty) return '$label · 还没有套餐';
+    if (me != null && me.planName.isNotEmpty) {
+      final on = me.expiresOn.length >= 10 ? me.expiresOn.substring(5) : me.expiresOn;
+      return on.isEmpty
+          ? '$label · $plan · 还能用 ${me.daysLeft} 天'
+          : '$label · $plan · 还能用 ${me.daysLeft} 天（$on 到期）';
+    }
+    if (acc?.lifetime == true) return '$label · $plan · 长期有效';
+    final exp = acc?.expiredAt;
+    if (exp == null) return '$label · $plan';
+    final days = DateTime.fromMillisecondsSinceEpoch(exp * 1000).difference(DateTime.now()).inDays;
+    return days < 0 ? '$label · $plan · 已到期' : '$label · $plan · 还能用 $days 天';
   }
 
   static String _payLabel(String? knownMask, PlanOffer? offer, ShopMe? me) {
@@ -273,6 +309,8 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
       spacing: 16,
       runSpacing: 4,
       children: [
+        if (offer != null && offer.trafficLabel.isNotEmpty)
+          Text(offer.trafficLabel == '不限流量' ? '所有时长都不限流量' : offer.trafficLabel, style: s),
         Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.devices_rounded, size: 13, color: t.secondary),
           const SizedBox(width: 4),
@@ -772,8 +810,12 @@ class _TierCard extends StatelessWidget {
       child: InkWell(
         onTap: blocked ? null : onTap,
         borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
           decoration: BoxDecoration(
             color: blocked ? t.fill : t.surface,
             borderRadius: BorderRadius.circular(14),
@@ -785,28 +827,30 @@ class _TierCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (current)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(color: t.remaining, borderRadius: BorderRadius.circular(4)),
-                  child: const Text('✓ 你现在用的', style: TextStyle(color: Colors.white, fontSize: 10)),
-                ),
               if (blocked)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.only(bottom: 4),
                   child: Text('本月名额已满', style: TextStyle(color: t.secondary, fontSize: 11)),
                 ),
-              Text(tier.name, style: TextStyle(color: t.text, fontSize: 16, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              Text(tier.keyLine, style: TextStyle(color: tone, fontSize: 13, fontWeight: FontWeight.w600)),
+              Wrap(
+                spacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.end,
+                children: [
+                  Text(tier.name, style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700)),
+                  Text(tier.keyLine, style: TextStyle(color: tone, fontSize: 12, fontWeight: FontWeight.w600)),
+                ],
+              ),
               const SizedBox(height: 2),
-              Text(stdBlocked ? '精品版已包含，不用另买' : tier.sub, style: TextStyle(color: t.secondary, fontSize: 11)),
-              if (tier.tier == 'pro' && tier.dailyGb > 0)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text('精品线路每天 ${tier.dailyGb}GB 高速', style: TextStyle(color: t.secondary, fontSize: 11)),
-                ),
+              Text(
+                stdBlocked
+                    ? '精品版已包含，不用另买'
+                    : (tier.tier == 'pro' && tier.dailyGb > 0
+                        ? '${tier.sub} · 精品线路每天 ${tier.dailyGb}GB 高速'
+                        : tier.sub),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: t.secondary, fontSize: 11),
+              ),
               if (gift)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
@@ -817,11 +861,26 @@ class _TierCard extends StatelessWidget {
                 ),
               if (tier.seatsLeft != null && tier.seatsLeft! > 0)
                 Padding(
-                  padding: const EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.only(top: 2),
                   child: Text('剩 ${tier.seatsLeft} 个名额', style: TextStyle(color: t.warning, fontSize: 11)),
                 ),
             ],
           ),
+        ),
+            if (current)
+              Positioned(
+                top: -8,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                    decoration: BoxDecoration(color: t.remaining, borderRadius: BorderRadius.circular(8)),
+                    child: const Text('✓ 你现在用的', style: TextStyle(color: Colors.white, fontSize: 10)),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -846,37 +905,37 @@ class _OfferCard extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: selected ? t.selected : t.surface,
           borderRadius: BorderRadius.circular(13),
           border: Border.all(color: selected ? t.primary : t.border, width: selected ? 2 : 1),
         ),
-        child: Row(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              selected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
-              size: 20,
-              color: selected ? t.primary : t.secondary,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(offer.durationLabel,
-                      style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 3),
-                  Text(
-                    offer.dailyLabel != null ? '${offer.trafficLabel} · 约 ${offer.dailyLabel}' : offer.trafficLabel,
-                    style: TextStyle(color: t.secondary, fontSize: 12),
-                  ),
+            Row(
+              children: [
+                Text(offer.durationLabel, style: TextStyle(color: t.secondary, fontSize: 12)),
+                if (selected) ...[
+                  const SizedBox(width: 4),
+                  Text('✓', style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.bold)),
                 ],
-              ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Text(priceLabel,
-                style: TextStyle(color: t.text, fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 1),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(priceLabel, style: TextStyle(color: t.text, fontSize: 20, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                if (offer.dailyLabel != null)
+                  Text('约 ${offer.dailyLabel}', maxLines: 1, style: TextStyle(color: t.secondary, fontSize: 11)),
+              ],
+            ),
           ],
         ),
       ),
@@ -927,57 +986,45 @@ class _CheckoutBar extends StatelessWidget {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          // 一行：左边「已选 / 买完能用到」两行小字，右边付款按钮（金额写在按钮上）。两端一样。
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      offer != null
-                          ? '已选 · $pickedName / ${offer!.durationLabel}'
-                          : '请选择一档',
-                      style: TextStyle(color: t.secondary, fontSize: 12),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      offer != null ? '已选 · $pickedName / ${offer!.durationLabel}' : '请选择一档',
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: t.text, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
-                  ),
-                  if (offer != null)
-                    Text(offer!.trafficLabel, style: TextStyle(color: t.secondary, fontSize: 11)),
-                ],
-              ),
-              if (expiryHint != null) ...[
-                const SizedBox(height: 2),
-                Text(expiryHint!,
-                    style: TextStyle(color: t.text, fontSize: 12, fontWeight: FontWeight.w600)),
-              ],
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('本次套餐金额', style: TextStyle(color: t.secondary, fontSize: 11)),
-                      Text(priceLabel.isEmpty ? '—' : priceLabel,
-                          style: TextStyle(color: t.text, fontSize: 22, fontWeight: FontWeight.bold)),
+                    if (expiryHint != null) ...[
+                      const SizedBox(height: 2),
+                      Text(expiryHint!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: t.secondary, fontSize: 11)),
                     ],
-                  ),
-                  const Spacer(),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: t.primary,
-                      foregroundColor: t.onPrimary,
-                      disabledBackgroundColor: t.fill,
-                      minimumSize: const Size(150, 48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                    ),
-                    onPressed: onPay,
-                    child: Text(payLabel, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                  ),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 4),
-              Text('付款后返回，自动确认套餐状态', style: TextStyle(color: t.secondary, fontSize: 11)),
+              const SizedBox(width: 10),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: t.primary,
+                  foregroundColor: t.onPrimary,
+                  disabledBackgroundColor: t.fill,
+                  minimumSize: const Size(132, 44),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                ),
+                onPressed: onPay,
+                child: Text(
+                  payLabel == '去支付' && priceLabel.isNotEmpty ? '支付 $priceLabel' : payLabel,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+              ),
             ],
           ),
         ),

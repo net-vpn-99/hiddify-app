@@ -204,25 +204,24 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                 connected: connected,
                 onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
               ),
-            if (region.enabled)
-              _WantRegionRow(
-                tokens: PurchaseTokens.of(context),
-                subtitle: regionEntrySubtitle(region),
-                onTap: () async {
-                  final name = await showRegionSheet(context, ref);
-                  if (!context.mounted || name == null || name.isEmpty) return;
-                  setState(() => _locate = name);
-                },
-              ),
-            if (_customLineUrl() != null)
-              _CustomLineRow(
-                tokens: PurchaseTokens.of(context),
-                onTap: () {
-                  final url = _customLineUrl()!;
-                  Navigator.of(context).pop();
-                  UriUtils.tryLaunch(Uri.parse(url));
-                },
-              ),
+            _FooterLinks(
+              tokens: PurchaseTokens.of(context),
+              regionSubtitle: region.enabled ? regionEntrySubtitle(region) : null,
+              onRegion: !region.enabled
+                  ? null
+                  : () async {
+                      final name = await showRegionSheet(context, ref);
+                      if (!context.mounted || name == null || name.isEmpty) return;
+                      setState(() => _locate = name);
+                    },
+              onCustom: _customLineUrl() == null
+                  ? null
+                  : () {
+                      final url = _customLineUrl()!;
+                      Navigator.of(context).pop();
+                      UriUtils.tryLaunch(Uri.parse(url));
+                    },
+            ),
           ],
         ),
       );
@@ -371,48 +370,6 @@ class _LineTile extends StatelessWidget {
       trailing: locked ? Icon(Icons.lock_outline_rounded, size: 18, color: theme.colorScheme.outline) : null,
       selected: current,
       onTap: onTap,
-    );
-  }
-}
-
-class _ServerMark extends StatelessWidget {
-  const _ServerMark();
-
-  @override
-  Widget build(BuildContext context) {
-    const gold = Color(0xFF8D6C32);
-    const fill = Color(0xFFFBF4DD);
-    return Container(
-      width: 36,
-      height: 36,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: gold),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 18,
-            height: 6,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(2),
-              border: Border.all(color: gold, width: 1),
-            ),
-          ),
-          const SizedBox(height: 2),
-          Container(
-            width: 18,
-            height: 6,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(2),
-              border: Border.all(color: gold, width: 1),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -658,23 +615,18 @@ class _TieredLinesState extends State<_TieredLines> {
 
     addSeg('pro', proOrder, pro);
     addSeg('std', stdOrder, std);
-    if (widget.regionEnabled) {
-      children.add(_WantRegionRow(
-        tokens: tokens,
-        subtitle: widget.regionSubtitle,
-        onTap: widget.onWantRegion,
-      ));
-    }
     final custom = _customLineUrl();
-    if (custom != null) {
-      children.add(_CustomLineRow(
-        tokens: tokens,
-        onTap: () {
-          Navigator.of(context).pop();
-          UriUtils.tryLaunch(Uri.parse(custom));
-        },
-      ));
-    }
+    children.add(_FooterLinks(
+      tokens: tokens,
+      regionSubtitle: widget.regionEnabled ? widget.regionSubtitle : null,
+      onRegion: widget.regionEnabled ? widget.onWantRegion : null,
+      onCustom: custom == null
+          ? null
+          : () {
+              Navigator.of(context).pop();
+              UriUtils.tryLaunch(Uri.parse(custom));
+            },
+    ));
     return ListView(
       padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
       children: children,
@@ -990,105 +942,6 @@ class _PromoRow extends StatelessWidget {
   }
 }
 
-class _WantRegionRow extends StatelessWidget {
-  const _WantRegionRow({required this.tokens, required this.subtitle, required this.onTap});
-
-  final PurchaseTokens tokens;
-  final String subtitle;
-  final Future<void> Function() onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    const gold = Color(0xFF8D6C32);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 2, 2, 2),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          hoverColor: tokens.fill,
-          highlightColor: tokens.fill,
-          onTap: () {
-            onTap();
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFBF4DD),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: gold),
-                  ),
-                  child: const Icon(Icons.add_location_alt_outlined, size: 18, color: gold),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('想要别的地区？', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text)),
-                      Text(subtitle, style: TextStyle(fontSize: 11, color: tokens.secondary.withValues(alpha: 0.7))),
-                    ],
-                  ),
-                ),
-                Text('›', style: TextStyle(fontSize: 16, color: tokens.secondary.withValues(alpha: 0.7))),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CustomLineRow extends StatelessWidget {
-  const _CustomLineRow({required this.tokens, required this.onTap});
-
-  final PurchaseTokens tokens;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 2, 2, 2),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          hoverColor: tokens.fill,
-          highlightColor: tokens.fill,
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                const _ServerMark(),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('定制我的专属线路', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text)),
-                      Text('可独享或拼车', style: TextStyle(fontSize: 11, color: tokens.secondary.withValues(alpha: 0.7))),
-                    ],
-                  ),
-                ),
-                Text('›', style: TextStyle(fontSize: 16, color: tokens.secondary.withValues(alpha: 0.7))),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 String? _proUsage(WidgetRef ref, LineTierState tiers) {
   final acc = ref.watch(panelAuthProvider).account;
@@ -1148,5 +1001,61 @@ class _SpeedDot extends StatelessWidget {
       _ => tokens.secondary.withValues(alpha: 0.7),
     };
     return Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle));
+  }
+}
+
+/// 线路列表最后那行：投票、定制是次要入口，只用一行小字链接，别跟线路段抢。两端一样（Win `RoutePalette.qml` 的 `ListFooterLinks`）。
+class _FooterLinks extends StatelessWidget {
+  const _FooterLinks({required this.tokens, this.regionSubtitle, this.onRegion, this.onCustom});
+
+  final PurchaseTokens tokens;
+  final String? regionSubtitle;
+  final Future<void> Function()? onRegion;
+  final VoidCallback? onCustom;
+
+  String get _regionText {
+    final sub = regionSubtitle ?? '';
+    if (sub.isEmpty || sub.startsWith('会员投票')) return '想要别的地区？投票开通 ›';
+    return '$sub ›';
+  }
+
+  Widget _link(String text, VoidCallback onTap) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: tokens.secondary),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final region = onRegion == null ? null : _link(_regionText, () => onRegion!());
+    final custom = onCustom == null ? null : _link('定制专属线路 ›', onCustom!);
+    if (region == null && custom == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          if (region != null && custom != null && box.maxWidth < 340) {
+            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [region, custom]);
+          }
+          return Row(
+            children: [
+              if (region != null) Flexible(child: region),
+              const Spacer(),
+              if (custom != null) custom,
+            ],
+          );
+        },
+      ),
+    );
   }
 }

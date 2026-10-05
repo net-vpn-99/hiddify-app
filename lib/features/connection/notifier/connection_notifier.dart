@@ -159,7 +159,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   void _armUnconfirmedDeadline(int serial) {
-    Future<void>.delayed(const Duration(seconds: 10), () async {
+    Future<void>.delayed(const Duration(seconds: 15), () async {
       if (serial != _connectedSerial) return;
       if (state.valueOrNull is! Connected) return;
       if (ref.read(stabilityProvider).confirmed) return;

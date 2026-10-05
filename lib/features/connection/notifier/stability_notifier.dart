@@ -67,7 +67,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
   Timer? _timer;
   Timer? _ifaceTimer;
   String _ifaces = '';
-  int _consecFail = 0;
+  int _misses = 0;
   bool _running = false;
   bool _confirmed = false;
   int _gen = 0;
@@ -113,7 +113,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
   void _start() {
     _gen++;
     _running = true;
-    _consecFail = 0;
+    _misses = 0;
     _confirmed = false;
     _probeNotes.clear();
     // 有上次的分数就先照着显示，探完再更新；没有才是「测量中」。
@@ -126,7 +126,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     final gen = _gen;
     if (immediate) unawaited(_probe(gen));
     // 确认通之前 3 秒一探：首页要尽快从「连接中」变「已连接」，不通的线在 10 秒
-    // 截止前也要试够几次。确认后在 _probe 里换成 15 秒。
+    // 截止前也要试够几次。确认后在 _probe 里换成 5 分钟一次。
     _timer = Timer.periodic(const Duration(seconds: 3), (_) => _probe(gen));
     _ifaceTimer?.cancel();
     _ifaceTimer = Timer.periodic(const Duration(seconds: 5), (_) => _watchIfaces(gen));
@@ -186,37 +186,53 @@ class StabilityNotifier extends Notifier<StabilityState> {
     } else {
       _note(proved ? 'ok' : 'err');
     }
-    // 还没亮过绿灯时，一次没结果不当失败（接口可能被限流），等下一次。
-    if (exit == null && !_confirmed) return;
-    _consecFail = proved ? 0 : _consecFail + 1;
-
     if (proved) {
+      _misses = 0;
       final reporter = ref.read(connectReporterProvider);
       if (reporter.attemptOpen) {
         reporter.markStage(ConnectReporter.stageProxyRequest);
         unawaited(reporter.reportSuccess(1));
       }
-      if (!_confirmed) {
-        _confirmed = true;
-        _timer?.cancel();
-        _timer = Timer.periodic(const Duration(minutes: 5), (_) => _probe(gen));
-      }
-    }
-
-    final int g = _consecFail >= 2 ? 4 : 10;
-    _rememberedScore = g;
-    state = StabilityState(g, confirmed: _confirmed, egressAudit: audit);
-
-    if (!proved && _confirmed && exit != null && exit.cc.toUpperCase() == 'CN') {
-      ref.read(homeFaultProvider.notifier).state = 'egress';
-      unawaited(ref.read(connectionNotifierProvider.notifier).abortConnection());
+      if (!_confirmed) _confirmed = true;
+      _armSteady(gen);
+      _rememberedScore = 10;
+      state = StabilityState(10, confirmed: true, egressAudit: audit);
       return;
     }
-    if (!proved && _confirmed && _consecFail >= 2) {
-      ref.read(homeFaultProvider.notifier).state = 'line';
-      ref.read(deadLineProvider.notifier).state = true;
-      unawaited(ref.read(connectionNotifierProvider.notifier).abortConnection());
+
+    final cn = exit != null && exit.cc.toUpperCase() == 'CN';
+    if (!_confirmed) {
+      state = StabilityState(_rememberedScore, egressAudit: audit);
+      // 15 秒一直核不到由 connection_notifier 的 _armUnconfirmedDeadline 处理
+      // （它先查流量用完、在后台时等回到前台），这里只管出口是国内这一种。
+      if (cn) _fault('egress');
+      return;
     }
+
+    if (cn) {
+      state = StabilityState(4, confirmed: true, egressAudit: audit);
+      _fault('egress');
+      return;
+    }
+    _misses++;
+    state = StabilityState(4, confirmed: true, egressAudit: audit);
+    if (_misses >= 2) {
+      _fault('line');
+      return;
+    }
+    _timer?.cancel();
+    _timer = Timer(const Duration(seconds: 30), () => _probe(gen));
+  }
+
+  void _armSteady(int gen) {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(minutes: 5), (_) => _probe(gen));
+  }
+
+  void _fault(String kind) {
+    if (kind == 'line') ref.read(deadLineProvider.notifier).state = true;
+    ref.read(homeFaultProvider.notifier).state = kind;
+    unawaited(ref.read(connectionNotifierProvider.notifier).abortConnection());
   }
 
   Future<_Exit?> _readExit() async {
