@@ -1,7 +1,6 @@
 import 'package:circle_flags/circle_flags.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
@@ -263,7 +262,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Text(
-                      board.message.isNotEmpty ? board.message : _local,
+                      _local.isNotEmpty ? _local : board.message,
                       style: const TextStyle(fontSize: 12, color: warn),
                     ),
                   ),
@@ -301,24 +300,36 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: () {
-                        if (!board.canVote) {
-                          Navigator.of(context).pop();
-                          context.pushNamed('purchase');
-                          return;
-                        }
-                        if (_picked.isEmpty) {
-                          setState(() => _local = '没有找到这个地区');
-                          return;
-                        }
-                        ref.read(regionVoteProvider.notifier).vote(_picked);
-                        setState(() {
-                          _picked = '';
-                          _field.clear();
-                        });
-                      },
-                      child: const Text('发起'),
+                    Material(
+                      color: tokens.text,
+                      borderRadius: BorderRadius.circular(8),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () {
+                          if (board.busy && board.regions.isEmpty) {
+                            setState(() => _local = '正在读取，稍等一下');
+                            return;
+                          }
+                          if (!board.canVote) {
+                            setState(() => _local = '付费会员才能投票');
+                            return;
+                          }
+                          if (_picked.isEmpty) {
+                            setState(() => _local = '没有找到这个地区');
+                            return;
+                          }
+                          setState(() => _local = '');
+                          ref.read(regionVoteProvider.notifier).vote(_picked);
+                          setState(() {
+                            _picked = '';
+                            _field.clear();
+                          });
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          child: Text('发起', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.raised)),
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -331,7 +342,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
   }
 
   Widget _regionRow(RegionItem row, RegionBoard board, PurchaseTokens tokens) {
-    final label = !board.canVote ? '成为会员后投票' : (row.mine ? '取消' : '投票');
+    final cancel = row.mine;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
@@ -351,16 +362,31 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                 style: TextStyle(fontSize: 11, color: row.mine ? tokens.remaining : tokens.secondary),
               ),
               const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: () {
-                  if (!board.canVote) {
-                    Navigator.of(context).pop();
-                    context.pushNamed('purchase');
-                    return;
-                  }
-                  ref.read(regionVoteProvider.notifier).vote(row.mine ? '' : row.code);
-                },
-                child: Text(label, style: const TextStyle(fontSize: 11)),
+              Material(
+                color: cancel ? tokens.fill : tokens.text,
+                borderRadius: BorderRadius.circular(8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () {
+                    if (board.busy && board.regions.isEmpty) {
+                      setState(() => _local = '正在读取，稍等一下');
+                      return;
+                    }
+                    if (!board.canVote) {
+                      setState(() => _local = '付费会员才能投票');
+                      return;
+                    }
+                    setState(() => _local = '');
+                    ref.read(regionVoteProvider.notifier).vote(row.mine ? '' : row.code);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    child: Text(
+                      cancel ? '取消' : '投票',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cancel ? tokens.text : tokens.raised),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
