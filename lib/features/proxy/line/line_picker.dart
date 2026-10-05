@@ -60,8 +60,16 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
   /// 估歪了后面的 ensureVisible 会兜住。
   static const _tileHeight = 76.0;
 
+  String _lineHead(String name) {
+    final head = name.split(RegExp(r'\s+')).first.trim();
+    return head.isEmpty ? '其它' : head;
+  }
+
   /// 挂在「使用中 / 上次用的」那条上，用来精确滚到它。
   final _currentKey = GlobalKey();
+  final _locateKey = GlobalKey();
+  String _locate = '';
+  bool _locateQueued = false;
 
   ScrollController? _controller;
   bool _scrolled = false;
@@ -108,6 +116,22 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     final pickedName = ref.watch(Preferences.preferredLineName);
     final connected = ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
 
+    final region = ref.watch(regionVoteProvider);
+    if (_locate.isNotEmpty && !_locateQueued) {
+      _locateQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _locateKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(ctx, alignment: 0.35, duration: const Duration(milliseconds: 220));
+        }
+        if (mounted) {
+          setState(() {
+            _locate = '';
+            _locateQueued = false;
+          });
+        }
+      });
+    }
     final value = set.valueOrNull;
     final options = value?.lines ?? const <LineOption>[];
     final locked = value?.locked ?? false;
@@ -138,9 +162,15 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
             Navigator.of(context).pop();
             context.pushNamed('purchase');
           },
-          regionEnabled: ref.watch(regionVoteProvider).enabled,
-          regionThreshold: ref.watch(regionVoteProvider).threshold,
-          onWantRegion: () => showRegionSheet(context, ref),
+          regionEnabled: region.enabled,
+          regionSubtitle: regionEntrySubtitle(region),
+          locateCountry: _locate,
+          locateKey: _locateKey,
+          onWantRegion: () async {
+            final name = await showRegionSheet(context, ref);
+            if (!context.mounted || name == null || name.isEmpty) return;
+            setState(() => _locate = name);
+          },
           onClaim: () async {
             final msg = await ref.read(lineTierProvider.notifier).claim();
             if (!context.mounted || msg == null) return;
@@ -165,7 +195,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
           children: [
             for (final (i, o) in options.indexed)
               _LineTile(
-                key: i == currentIndex ? _currentKey : null,
+                key: _lineHead(o.name) == _locate ? _locateKey : (i == currentIndex ? _currentKey : null),
                 option: o,
                 locked: locked,
                 current: i == currentIndex,
@@ -174,30 +204,25 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                 connected: connected,
                 onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
               ),
-            if (ref.watch(regionVoteProvider).enabled)
-              ListTile(
-                title: const Text('想要别的地区？'),
-                subtitle: Text('会员投票，够 ${ref.watch(regionVoteProvider).threshold} 票就开'),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () => showRegionSheet(context, ref),
+            if (region.enabled)
+              _WantRegionRow(
+                tokens: PurchaseTokens.of(context),
+                subtitle: regionEntrySubtitle(region),
+                onTap: () async {
+                  final name = await showRegionSheet(context, ref);
+                  if (!context.mounted || name == null || name.isEmpty) return;
+                  setState(() => _locate = name);
+                },
               ),
-            if (_customLineUrl() != null) ...[
-              const Divider(height: 1),
-              ListTile(
-                leading: const _ServerMark(),
-                title: const Text('定制我的专属线路'),
-                subtitle: Text(
-                  '可独享或拼车',
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                ),
-                trailing: const Icon(Icons.chevron_right_rounded),
+            if (_customLineUrl() != null)
+              _CustomLineRow(
+                tokens: PurchaseTokens.of(context),
                 onTap: () {
                   final url = _customLineUrl()!;
                   Navigator.of(context).pop();
                   UriUtils.tryLaunch(Uri.parse(url));
                 },
               ),
-            ],
           ],
         ),
       );
@@ -408,7 +433,9 @@ class _TieredLines extends StatefulWidget {
     required this.onUpgrade,
     required this.onClaim,
     required this.regionEnabled,
-    required this.regionThreshold,
+    required this.regionSubtitle,
+    required this.locateCountry,
+    required this.locateKey,
     required this.onWantRegion,
   });
 
@@ -426,8 +453,10 @@ class _TieredLines extends StatefulWidget {
   final VoidCallback onUpgrade;
   final VoidCallback onClaim;
   final bool regionEnabled;
-  final int regionThreshold;
-  final VoidCallback onWantRegion;
+  final String regionSubtitle;
+  final String locateCountry;
+  final GlobalKey locateKey;
+  final Future<void> Function() onWantRegion;
 
   @override
   State<_TieredLines> createState() => _TieredLinesState();
@@ -513,6 +542,18 @@ class _TieredLinesState extends State<_TieredLines> {
       _proOpen = preferPro || usingPro;
       _stdOpen = !preferPro || (widget.currentName.isNotEmpty && !usingPro);
       if (usingSeg != null && usingCountry != null) _openKey = '$usingSeg|$usingCountry';
+    }
+    final locate = widget.locateCountry;
+    if (locate.isNotEmpty) {
+      if (stdOrder.contains(locate)) {
+        _stdOpen = true;
+        _openKey = 'std|$locate';
+      } else if (proOrder.contains(locate)) {
+        _proOpen = true;
+        _openKey = 'pro|$locate';
+      }
+      if (proOrder.contains(locate)) _proOpen = true;
+      if (stdOrder.contains(locate)) _stdOpen = true;
     }
     final proLocked = widget.tiers.trial != 'pro' && widget.tiers.trial != 'active';
     final recommended = widget.pickedName.isEmpty && widget.options.isNotEmpty ? widget.options.first.name : '';
@@ -620,7 +661,7 @@ class _TieredLinesState extends State<_TieredLines> {
     if (widget.regionEnabled) {
       children.add(_WantRegionRow(
         tokens: tokens,
-        threshold: widget.regionThreshold,
+        subtitle: widget.regionSubtitle,
         onTap: widget.onWantRegion,
       ));
     }
@@ -683,8 +724,9 @@ class _TieredLinesState extends State<_TieredLines> {
   }) {
     final key = '$seg|$country';
     final expanded = _openKey == key;
+    final locateHere = widget.locateCountry == country && _openKey == key;
     final usingHere = lines.any((o) => o.name == widget.currentName);
-    return Column(
+    final block = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Material(
@@ -782,6 +824,8 @@ class _TieredLinesState extends State<_TieredLines> {
           ),
       ],
     );
+    if (locateHere) return KeyedSubtree(key: widget.locateKey, child: block);
+    return block;
   }
 
   SpeedGrade? _bestGrade(List<LineOption> lines) {
@@ -947,28 +991,55 @@ class _PromoRow extends StatelessWidget {
 }
 
 class _WantRegionRow extends StatelessWidget {
-  const _WantRegionRow({required this.tokens, required this.threshold, required this.onTap});
+  const _WantRegionRow({required this.tokens, required this.subtitle, required this.onTap});
 
   final PurchaseTokens tokens;
-  final int threshold;
-  final VoidCallback onTap;
+  final String subtitle;
+  final Future<void> Function() onTap;
 
   @override
   Widget build(BuildContext context) {
+    const gold = Color(0xFF8D6C32);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('想要别的地区？', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text)),
-              const SizedBox(height: 2),
-              Text('会员投票，够 $threshold 票就开', style: TextStyle(fontSize: 11, color: tokens.secondary)),
-            ],
+      padding: const EdgeInsets.fromLTRB(2, 2, 2, 2),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          hoverColor: tokens.fill,
+          highlightColor: tokens.fill,
+          onTap: () {
+            onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFBF4DD),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: gold),
+                  ),
+                  child: const Icon(Icons.add_location_alt_outlined, size: 18, color: gold),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('想要别的地区？', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text)),
+                      Text(subtitle, style: TextStyle(fontSize: 11, color: tokens.secondary.withValues(alpha: 0.7))),
+                    ],
+                  ),
+                ),
+                Text('›', style: TextStyle(fontSize: 16, color: tokens.secondary.withValues(alpha: 0.7))),
+              ],
+            ),
           ),
         ),
       ),
