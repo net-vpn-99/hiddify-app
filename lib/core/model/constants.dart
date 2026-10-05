@@ -35,7 +35,7 @@ abstract class Constants {
   static const githubLatestReleaseUrl = "https://www.gsldvpn.com/";
   static const appCastUrl = "https://www.gsldvpn.com/oneray/android/appcast.xml";
   static const telegramChannelUrl = "https://t.me/+LQ-pvMvK4ClkNzFk";
-  static const statusPageUrl = "https://status.gsldvpn.com/";
+  static const statusPageUrl = "https://square-sea-65e9.peregrineup.workers.dev/";
   static const kfBase = "https://kf.gsldvpn.com";
   static const privacyPolicyUrl = "https://www.gsldvpn.com/help.html";
   static const termsAndConditionsUrl = "https://www.gsldvpn.com/help.html";
