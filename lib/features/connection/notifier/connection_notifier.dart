@@ -42,6 +42,8 @@ int _connectedSerial = 0;
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   /// 10 秒到了人还在后台：先不断开，回到前台再给 10 秒。
   bool _deadlineHeld = false;
+  bool _wasUp = false;
+  bool _userStop = false;
   int _heldSerial = 0;
 
   @override
@@ -123,7 +125,10 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         case Connecting():
           reporter.markStage(ConnectReporter.stageCoreStarted);
           ref.read(deadLineProvider.notifier).state = false;
+          ref.read(homeFaultProvider.notifier).state = '';
         case Connected():
+          _wasUp = true;
+          _userStop = false;
           reporter.markStage(ConnectReporter.stageTunnelReady);
           _startQuotaPoll();
           _startDeviceKeepWarm();
@@ -139,6 +144,11 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           // 人在后台时先不下这个结论，回到前台再给 10 秒。
           _armUnconfirmedDeadline(serial);
         case Disconnected() || Disconnecting():
+          if (event is Disconnected && _wasUp && !_userStop && ref.read(homeFaultProvider).isEmpty) {
+            ref.read(homeFaultProvider.notifier).state = 'engine';
+          }
+          if (event is Disconnected) _wasUp = false;
+          _userStop = false;
           _deadlineHeld = false;
           _stopQuotaPoll();
           _stopDeviceKeepWarm();
@@ -466,6 +476,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   Future<void> _disconnect() async {
+    _userStop = true;
     ref.read(connectReporterProvider).abandon();
     await _connectionRepo.disconnect().mapLeft((err) {
       loggy.warning("error disconnecting", err);

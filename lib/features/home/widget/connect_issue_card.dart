@@ -21,25 +21,39 @@ class ConnectIssueCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final status = ref.watch(connectionNotifierProvider).valueOrNull;
     final deadLine = ref.watch(deadLineProvider);
+    final fault = ref.watch(homeFaultProvider);
     final outage = ref.watch(stabilityProvider.select((s) => s.outage));
 
-    final bool dead = deadLine && status is Disconnected;
-    final bool broken = !dead && outage && status is Connected;
-    if (!dead && !broken) return const SizedBox.shrink();
+    final bool dead = (deadLine || fault == 'line') && status is Disconnected;
+    final bool engine = fault == 'engine' && status is Disconnected;
+    final bool egress = fault == 'egress' && status is Disconnected;
+    final bool broken = !dead && !engine && !egress && outage && status is Connected;
+    if (!dead && !engine && !egress && !broken) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final bg = dead ? scheme.errorContainer : scheme.tertiaryContainer;
-    final fg = dead ? scheme.onErrorContainer : scheme.onTertiaryContainer;
+    final bg = (dead || engine || egress) ? scheme.errorContainer : scheme.tertiaryContainer;
+    final fg = (dead || engine || egress) ? scheme.onErrorContainer : scheme.onTertiaryContainer;
 
-    final String title = dead ? '这条线路现在连不通' : '网络中断了约 1 分钟';
-    final String body = dead
-        ? '已经连上了服务器，但打不开任何外网，所以先帮你断开了。\n'
-            '常见原因：这条线路在你现在的网络下被挡住了，或者你的网络本身不稳定。'
-        : '可能是这条线路临时波动，或者你的网络切换了。';
+    final String title;
+    final String body;
+    if (engine) {
+      title = '连接断了';
+      body = '连接被系统关掉了，点「重新连接」恢复';
+    } else if (egress) {
+      title = '流量没有经过线路';
+      body = '可能被别的 VPN 或安全软件接管了网络，关掉它们后点「重新连接」';
+    } else if (dead) {
+      title = '这条线路现在不通';
+      body = '换一条线路试试，或者稍后点「重新连接」';
+    } else {
+      title = '网络中断了约 1 分钟';
+      body = '可能是这条线路临时波动，或者你的网络切换了。';
+    }
 
     Future<void> reconnect() async {
       ref.read(deadLineProvider.notifier).state = false;
+      ref.read(homeFaultProvider.notifier).state = '';
       final notifier = ref.read(connectionNotifierProvider.notifier);
       if (status is Connected) {
         await notifier.reconnect(await ref.read(activeProfileProvider.future));
@@ -67,41 +81,40 @@ class ConnectIssueCard extends ConsumerWidget {
                     visualDensity: VisualDensity.compact,
                     tooltip: '关闭',
                     icon: Icon(Icons.close, size: 18, color: fg),
-                    onPressed: () => ref.read(deadLineProvider.notifier).state = false,
+                    onPressed: () {
+                      ref.read(deadLineProvider.notifier).state = false;
+                      ref.read(homeFaultProvider.notifier).state = '';
+                    },
                   ),
               ],
             ),
             const SizedBox(height: 6),
             Text(body, style: theme.textTheme.bodySmall?.copyWith(color: fg, height: 1.5)),
-            if (dead) ...[
-              const SizedBox(height: 8),
-              Text(
-                '你可以：\n1. 换一条线路再连\n2. 切换 Wi-Fi / 手机流量后再试\n3. 还不行就联系客服',
-                style: theme.textTheme.bodySmall?.copyWith(color: fg, height: 1.6),
-              ),
-            ],
             const SizedBox(height: 4),
             Wrap(
               spacing: 4,
               children: [
-                TextButton(
-                  style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
-                  onPressed: () {
-                    ref.read(deadLineProvider.notifier).state = false;
-                    showLinePicker(context, ref);
-                  },
-                  child: const Text('换一条线路'),
-                ),
+                if (dead)
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
+                    onPressed: () {
+                      ref.read(deadLineProvider.notifier).state = false;
+                      ref.read(homeFaultProvider.notifier).state = '';
+                      showLinePicker(context, ref);
+                    },
+                    child: const Text('换一条线路'),
+                  ),
                 TextButton(
                   style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
                   onPressed: reconnect,
                   child: const Text('重新连接'),
                 ),
-                TextButton(
-                  style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
-                  onPressed: () => context.pushNamed('supportChat'),
-                  child: const Text('联系客服'),
-                ),
+                if (broken)
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
+                    onPressed: () => context.pushNamed('supportChat'),
+                    child: const Text('联系客服'),
+                  ),
               ],
             ),
           ],

@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
@@ -74,6 +75,8 @@ Future<String> _collect(WidgetRef ref) async {
   b.writeln('系统: ${_osLine()}');
   b.writeln('账号: ${ref.read(panelAuthProvider).email ?? "未登录"}');
   b.writeln('连接: ${_stateLabel(ref)}');
+  final audit = ref.read(stabilityProvider).egressAudit;
+  b.writeln('最近一次出口核对: ${audit.isEmpty ? '还没有' : audit}');
   b.writeln();
   b.writeln('--- 关键设置 ---');
   try {
