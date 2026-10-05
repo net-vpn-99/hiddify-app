@@ -1,7 +1,8 @@
 /// 运营常量 —— 后台没有对应字段，只能客户端写死（见 VPN 仓库
 /// docs/充值续费/数据契约-v2-实测修正.md §1 / §2）。
 ///
-/// [kShortTermPlanId]：插件 GslInviteBonus 配置 `short_term_plan_id`。这个套餐的
+/// [kShortTermPlanId]：拉不到服务端名单时的兜底。GslShop 1.8.2 起 comm/config 的 gsl_shop 下发
+/// `short_term_plan_ids` / `short_term_days`（来自插件 GslInviteBonus 的 `short_term_plan_id`，可以多个）。这些套餐的
 /// 「一次性(onetime)」价位被插件改写成「N 天体验」，其余套餐的 onetime 仍是
 /// Xboard 原生的一次性永久。改了插件配置这里也要改。
 /// [kShortTermDays] / [kShortTermTrafficGb]：插件 `short_term_days` / `short_term_traffic_gb`。
@@ -86,12 +87,16 @@ class PlanOffer {
   /// - 套餐 `transfer_enable` 是 **GB 整数**（不是字节！账户接口那个才是字节）
   /// - `month_price` 等是 **分**（后台把 prices JSON 的「元」×100 下发成旧字段）
   ///   null = 该周期没设价 / 不可买；这里 null 和 <=0 都跳过
-  static List<PlanOffer> expand(Map<String, dynamic> plan) {
+  static List<PlanOffer> expand(
+    Map<String, dynamic> plan, {
+    Set<int> shortTermIds = const {kShortTermPlanId},
+    int shortTermDays = kShortTermDays,
+  }) {
     num n(dynamic v) => v is num ? v : num.tryParse('$v') ?? 0;
     final id = n(plan['id']).toInt();
     if (id <= 0) return const [];
     final name = (plan['name'] as String?)?.trim() ?? '套餐';
-    final isShortTermPlan = id == kShortTermPlanId;
+    final isShortTermPlan = shortTermIds.contains(id);
     final rawDevice = plan['device_limit'];
     final deviceLimit = rawDevice == null ? null : n(rawDevice).toInt();
 
@@ -100,7 +105,7 @@ class PlanOffer {
       // 一次性：只有短期套餐才当「N 天体验」（插件改写了到期时间）；
       // 其余套餐的 onetime 是 Xboard 原生的一次性永久，不算日均价。
       if (isShortTermPlan)
-        ('onetime_price', '$kShortTermDays 天', '$kShortTermDays 天', kShortTermDays)
+        ('onetime_price', '$shortTermDays 天', '$shortTermDays 天', shortTermDays)
       else
         ('onetime_price', '一次性', '一次性', -1),
       ('month_price', '月付', '1 个月', 30),

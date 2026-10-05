@@ -36,11 +36,13 @@ class PurchaseService {
     }
     final body = res.data;
     final list = (body is Map && body['data'] is List) ? body['data'] as List<dynamic> : const [];
+    final (recPeriod, recBadge, shortIds, shortDays) = await _recommended();
     final offers = <PlanOffer>[];
     for (final p in list) {
-      if (p is Map) offers.addAll(PlanOffer.expand(p.cast<String, dynamic>()));
+      if (p is Map) {
+        offers.addAll(PlanOffer.expand(p.cast<String, dynamic>(), shortTermIds: shortIds, shortTermDays: shortDays));
+      }
     }
-    final (recPeriod, recBadge) = await _recommended();
     if (recPeriod.isEmpty) return offers;
     return [
       for (final o in offers) o.period == recPeriod ? o.copyWith(recommended: true, badge: recBadge) : o,
@@ -51,18 +53,20 @@ class PurchaseService {
   /// `user/plan/fetch` 是同一个 PlanResource（价格同样是分），所以共用 [PlanOffer.expand]。
   /// 只给看，下单仍然要账号（点购买时现开游客号）。
   Future<List<PlanOffer>> fetchPublicPlans() async {
+    final (recPeriod, recBadge, shortIds, shortDays) = await _recommended();
     final offers = <PlanOffer>[];
     try {
       final res = await _dio.get<dynamic>('/api/v1/guest/plan/fetch');
       final body = res.data;
       final list = (body is Map && body['data'] is List) ? body['data'] as List<dynamic> : const [];
       for (final p in list) {
-        if (p is Map) offers.addAll(PlanOffer.expand(p.cast<String, dynamic>()));
+        if (p is Map) {
+          offers.addAll(PlanOffer.expand(p.cast<String, dynamic>(), shortTermIds: shortIds, shortTermDays: shortDays));
+        }
       }
     } catch (_) {
       return const [];
     }
-    final (recPeriod, recBadge) = await _recommended();
     if (recPeriod.isEmpty) return offers;
     return [
       for (final o in offers) o.period == recPeriod ? o.copyWith(recommended: true, badge: recBadge) : o,
@@ -71,7 +75,8 @@ class PurchaseService {
 
   /// 推荐档：GslShop 插件经 guest/comm/config 的 gsl_shop 下发。period 空串 = 后台设了不推荐。
   /// 插件没装 / 拉不到 → 回退内置默认（季付 +「推荐选择」）。
-  Future<(String, String)> _recommended() async {
+  /// 顺带拿 7 天档是哪些套餐（GslShop 1.8.2 `short_term_plan_ids` / `short_term_days`），拿不到只认套餐 1。
+  Future<(String, String, Set<int>, int)> _recommended() async {
     try {
       final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
       final body = res.data;
@@ -80,10 +85,22 @@ class PurchaseService {
       if (shop is Map) {
         final period = (shop['recommended_period'] as String?)?.trim() ?? '';
         final badge = (shop['badge'] as String?)?.trim() ?? '';
-        return (period, badge.isEmpty ? kDefaultRecommendedBadge : badge);
+        final rawIds = shop['short_term_plan_ids'];
+        final ids = <int>{
+          if (rawIds is List)
+            for (final v in rawIds)
+              if (_int(v) case final int id when id > 0) id,
+        };
+        final days = _int(shop['short_term_days']) ?? 0;
+        return (
+          period,
+          badge.isEmpty ? kDefaultRecommendedBadge : badge,
+          ids.isEmpty ? const {kShortTermPlanId} : ids,
+          days > 0 ? days : kShortTermDays,
+        );
       }
     } catch (_) {}
-    return (kDefaultRecommendedPeriod, kDefaultRecommendedBadge);
+    return (kDefaultRecommendedPeriod, kDefaultRecommendedBadge, const {kShortTermPlanId}, kShortTermDays);
   }
 
   /// 版本卡片：订阅里的 gsl_tier.tiers 优先，没有再用免登录配置。两边都没有就是旧购买页。
