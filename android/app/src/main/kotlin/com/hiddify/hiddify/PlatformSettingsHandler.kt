@@ -8,6 +8,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.util.Base64
@@ -43,6 +44,9 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
             RequestIgnoreBatteryOptimizations("request_ignore_battery_optimizations"),
             GetInstalledPackages("get_installed_packages"),
             GetPackagesIcon("get_package_icon"),
+            // OneRay：新用户打开 App 时看手机上是不是开着别家 VPN（我们自己的没连时才问）。
+            OtherVpnActive("other_vpn_active"),
+            OpenVpnSettings("open_vpn_settings"),
         }
     }
 
@@ -181,6 +185,34 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
                         Base64.encodeToString(byteArrayOutputStream.toByteArray(), Base64.NO_WRAP)
                     success(base64)
                 }
+            }
+
+            Trigger.OtherVpnActive.method -> {
+                result.runCatching {
+                    val cm = Application.connectivity
+                    @Suppress("DEPRECATION")
+                    val active = cm.allNetworks.any { n ->
+                        cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+                    }
+                    success(active)
+                }.onFailure { result.success(false) }
+            }
+
+            Trigger.OpenVpnSettings.method -> {
+                result.runCatching {
+                    val ctx = activity ?: Application.application
+                    val intent = Intent(android.provider.Settings.ACTION_VPN_SETTINGS)
+                    if (activity == null) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    try {
+                        ctx.startActivity(intent)
+                    } catch (e: Exception) {
+                        // 少数系统没有单独的 VPN 设置页：退到「无线和网络」总设置
+                        val fallback = Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)
+                        if (activity == null) fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        ctx.startActivity(fallback)
+                    }
+                    success(true)
+                }.onFailure { result.success(false) }
             }
 
             else -> result.notImplemented()

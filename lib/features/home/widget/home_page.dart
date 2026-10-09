@@ -26,6 +26,7 @@ import 'package:hiddify/features/home/widget/account_status_bar.dart';
 import 'package:hiddify/features/home/widget/connect_issue_card.dart';
 import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/home/widget/line_bar.dart';
+import 'package:hiddify/features/home/widget/other_vpn_banner.dart';
 import 'package:hiddify/features/notice/notice_sheet.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
@@ -154,6 +155,7 @@ class HomePage extends HookConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   NoticeStrip(),
+                  OtherVpnBanner(),
                   Expanded(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
