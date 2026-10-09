@@ -27,7 +27,7 @@ class PanelApi {
         data: {'email': email, 'password': password},
       );
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     final token = _extractToken(res.data);
     if (token != null && token.isNotEmpty) return token;
@@ -48,7 +48,7 @@ class PanelApi {
         data: {'account_no': accountNo, 'password': password},
       );
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     final token = _extractToken(res.data);
     if (token != null && token.isNotEmpty) return token;
@@ -132,7 +132,7 @@ class PanelApi {
       );
     } on DioException catch (e) {
       _logCall('拉订阅', sw, e.response);
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     _logCall('拉订阅', sw, res);
     if (res.statusCode == 401 || res.statusCode == 403) {
@@ -172,7 +172,7 @@ class PanelApi {
       );
     } on DioException catch (e) {
       _logCall('读账号', sw, e.response);
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     _logCall('读账号', sw, res);
     if (res.statusCode == 401 || res.statusCode == 403) {
@@ -279,7 +279,7 @@ class PanelApi {
         },
       );
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     final token = _extractToken(res.data);
     if (token != null && token.isNotEmpty) return token;
@@ -295,8 +295,21 @@ class PanelApi {
   /// 读不到按 false 处理 —— 和老服务端行为一致（购买前先跳绑定页），免得客户端放行
   /// 了服务端却拦着，用户填完支付信息才报错。
   Future<GuestOptions> getGuestOptions() async {
+    Response<dynamic> res;
     try {
-      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
+      res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
+    } catch (e) {
+      if (e is DioException) {
+        throw PanelApiException.network(e, _networkMessage(e));
+      }
+      throw PanelApiException('网络请求失败', isNetworkError: true);
+    }
+
+    if (res.statusCode != null && (res.statusCode! < 200 || res.statusCode! >= 300)) {
+      throw PanelApiException('连不上服务器，请检查网络后点重试。如果开着别的 VPN，先关掉它', isNetworkError: true);
+    }
+    
+    try {
       final data = _dataOf(res.data);
       final g = data?['gsl_guest'];
       if (g is! Map) return _guestOptionsOff;
@@ -375,7 +388,7 @@ class PanelApi {
       res = await post(null);
     } on DioException catch (e) {
       _logCall('开号', sw, e.response);
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     if (res.statusCode == 400) {
       final altcha = await solveAltcha(_dio);
@@ -384,7 +397,7 @@ class PanelApi {
           res = await post(altcha);
         } on DioException catch (e) {
           _logCall('开号', sw, e.response);
-          throw PanelApiException(_networkMessage(e));
+          throw PanelApiException.network(e, _networkMessage(e));
         }
       }
     }
@@ -404,7 +417,11 @@ class PanelApi {
         hasInviter: data?['has_inviter'] == true,
       );
     }
-    throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '免注册试用暂时不可用，请注册账号');
+    // 这个 Dio 不会因为 5xx 抛异常：面板重启时这里拿到 502，算网络问题（重试），不算服务端拒绝（去注册）。
+    throw PanelApiException(
+      _messageOf(res.data, res.statusCode) ?? '免注册试用暂时不可用，请注册账号',
+      isNetworkError: (res.statusCode ?? 0) == 0 || (res.statusCode ?? 0) >= 500,
+    );
   }
 
   Future<({String code, int expiresIn, String accountNo, int used, int limit, bool guest, bool full, int? limitAfterBind})> createPairCode(String token) async {
@@ -440,7 +457,7 @@ class PanelApi {
         data: {'code': code, 'platform': 'android', 'device_id': deviceId},
       );
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     final token = _extractToken(res.data);
     if (token != null && token.isNotEmpty) return token;
@@ -499,7 +516,7 @@ class PanelApi {
         },
       );
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     final data = _dataOf(res.data);
     final status = data?['status'];
@@ -544,7 +561,7 @@ class PanelApi {
         options: Options(headers: {'auth_data': token, 'Authorization': token}),
       );
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     if (res.statusCode != null && res.statusCode! >= 400) {
       throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '邀请码没记上，稍后再试');
@@ -565,7 +582,7 @@ class PanelApi {
         options: Options(headers: {'auth_data': token, 'Authorization': token}),
       );
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     if (res.statusCode == 401) throw PanelApiException('登录已过期，请重新打开 App', unauthorized: true);
     if (res.statusCode != null && res.statusCode! >= 400) {
@@ -594,7 +611,7 @@ class PanelApi {
         options: Options(headers: {'auth_data': token, 'Authorization': token}),
       );
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     if (res.statusCode == 401) throw PanelApiException('登录已过期，请重新打开 App', unauthorized: true);
     final data = _dataOf(res.data);
@@ -612,7 +629,7 @@ class PanelApi {
         data: {'email': email.trim(), 'password': newPassword, 'email_code': code.trim()},
       );
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     if (_dataOf(res.data) != null || res.statusCode == 200) return;
     throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '重置失败，请检查验证码');
@@ -651,7 +668,7 @@ class PanelApi {
       final link = _inviteLinkFromTemplate(texts.linkTemplate, code);
       return (code: code, link: link);
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
   }
 
@@ -695,7 +712,7 @@ class PanelApi {
         options: Options(headers: {'auth_data': token, 'Authorization': token}),
       );
     } on DioException catch (e) {
-      throw PanelApiException(_networkMessage(e));
+      throw PanelApiException.network(e, _networkMessage(e));
     }
     if (res.statusCode == 401 || res.statusCode == 403) {
       throw PanelApiException('登录已过期，请重新登录', unauthorized: true);
@@ -792,7 +809,6 @@ class PanelApi {
   }
 
   String? _messageOf(dynamic body, [int? statusCode]) {
-    if (statusCode == 429) return '操作太频繁，等一分钟再试';
     if (body is Map) {
       final m = body['message'] ?? body['error'];
       if (m is String && m.trim().isNotEmpty) {
@@ -801,13 +817,18 @@ class PanelApi {
         return t;
       }
     }
+    if (statusCode == 429) return '操作太频繁，等一分钟再试';
     return null;
   }
 
   String? _str(dynamic v) => (v is String && v.isNotEmpty) ? v : null;
 
   String _networkMessage(DioException e) {
-    if (e.response?.statusCode == 429) return '操作太频繁，等一分钟再试';
+    if (e.response?.statusCode == 429) {
+      final m = _messageOf(e.response?.data);
+      if (m != null) return m;
+      return '操作太频繁，等一分钟再试';
+    }
     switch (e.type) {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
@@ -935,9 +956,14 @@ class PanelAccount {
 }
 
 class PanelApiException implements Exception {
-  PanelApiException(this.message, {this.unauthorized = false});
+  PanelApiException(this.message, {this.unauthorized = false, this.isNetworkError = false});
+
+  /// 请求没到服务端（没有响应）或服务端 5xx：算网络问题，界面上给「重试」而不是「去注册」。
+  PanelApiException.network(DioException e, String message)
+      : this(message, isNetworkError: (e.response?.statusCode ?? 0) == 0 || (e.response?.statusCode ?? 0) >= 500);
   final String message;
   final bool unauthorized;
+  final bool isNetworkError;
   @override
   String toString() => message;
 }

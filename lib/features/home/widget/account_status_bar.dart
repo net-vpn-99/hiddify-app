@@ -74,53 +74,125 @@ class AccountStatusBar extends HookConsumerWidget {
         fg = theme.colorScheme.onSurfaceVariant;
     }
 
+    final isUnavailable = !loggedIn && boot.reason == GuestBlockReason.unavailable;
+    final isOffline = !loggedIn && boot.reason == GuestBlockReason.offline;
+    final canShowDialog = isUnavailable || isOffline;
+
+    Future<void> handleAction() async {
+      if (route == 'login') {
+        context.pushNamed('login');
+      } else if (route == 'retry') {
+        ref.read(guestBootstrapProvider.notifier).reset();
+        await ref.read(guestBootstrapProvider.notifier).ensure();
+      } else if (route == 'trial') {
+        // 先等「不再是退出状态」写完，ensure() 一开头就读这个值。
+        await ref.read(Preferences.guestOptOut.notifier).update(false);
+        ref.read(guestBootstrapProvider.notifier).reset();
+        await ref.read(guestBootstrapProvider.notifier).ensure();
+      } else {
+        if (route == 'purchase' && tier.trialEnded) {
+          ref.read(purchasePreferTierProvider.notifier).state = 'pro';
+        }
+        context.pushNamed(route);
+      }
+    }
+
+    final textWidget = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            text,
+            maxLines: tier.trialEnded && !connected ? 3 : 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(color: fg),
+          ),
+        ),
+        if (canShowDialog)
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Icon(Icons.chevron_right_rounded, size: 16, color: fg.withValues(alpha: 0.7)),
+          ),
+      ],
+    );
+
+    final actionWidget = action.isEmpty
+        ? const SizedBox.shrink()
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(action, style: theme.textTheme.labelMedium?.copyWith(color: fg)),
+              Icon(Icons.chevron_right_rounded, size: 18, color: fg),
+            ],
+          );
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Material(
         color: bg,
         borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: action.isEmpty
-              ? null
-              : () async {
-                  if (route == 'login') {
-                    context.pushNamed('login');
-                  } else if (route == 'retry') {
-                    ref.read(guestBootstrapProvider.notifier).reset();
-                    await ref.read(guestBootstrapProvider.notifier).ensure();
-                  } else if (route == 'trial') {
-                    await ref.read(Preferences.guestOptOut.notifier).update(false);
-                    ref.read(guestBootstrapProvider.notifier).reset();
-                    await ref.read(guestBootstrapProvider.notifier).ensure();
-                  } else {
-                    if (route == 'purchase' && tier.trialEnded) {
-                      ref.read(purchasePreferTierProvider.notifier).state = 'pro';
-                    }
-                    context.pushNamed(route);
-                  }
-                },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    text,
-                    maxLines: tier.trialEnded && !connected ? 3 : 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(color: fg),
+        child: canShowDialog
+            ? Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      borderRadius: action.isNotEmpty ? const BorderRadius.horizontal(left: Radius.circular(12)) : BorderRadius.circular(12),
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('为什么领不了免费试用'),
+                            content: Text(text),
+                            actions: [
+                              if (action.isNotEmpty && route != 'login')
+                                TextButton(
+                                  onPressed: () async {
+                                    Navigator.of(context).pop();
+                                    await handleAction();
+                                  },
+                                  child: Text(action),
+                                ),
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('知道了'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        child: textWidget,
+                      ),
+                    ),
+                  ),
+                  if (action.isNotEmpty)
+                    InkWell(
+                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(12)),
+                      onTap: handleAction,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 10, 14, 10),
+                        child: actionWidget,
+                      ),
+                    ),
+                ],
+              )
+            : InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: action.isEmpty ? null : handleAction,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Row(
+                    children: [
+                      Expanded(child: textWidget),
+                      if (action.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        actionWidget,
+                      ],
+                    ],
                   ),
                 ),
-                if (action.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Text(action, style: theme.textTheme.labelMedium?.copyWith(color: fg)),
-                  Icon(Icons.chevron_right_rounded, size: 18, color: fg),
-                ],
-              ],
-            ),
-          ),
-        ),
+              ),
       ),
     );
   }
@@ -137,8 +209,11 @@ class AccountStatusBar extends HookConsumerWidget {
       if (mask != null) {
         return (mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask', '登录', _Tone.warn, 'login');
       }
+      if (boot.reason == GuestBlockReason.offline) {
+        return (boot.message ?? '连不上服务器，请检查网络后重试', '重试', _Tone.plain, 'retry');
+      }
       if (boot.reason == GuestBlockReason.unavailable) {
-        return (boot.message ?? '免费试用暂时开不了，稍后再试', '重试', _Tone.plain, 'retry');
+        return (boot.message ?? '免费试用暂时开不了，稍后再试', '去注册', _Tone.plain, 'register');
       }
       return ('还没有账号', '免费试用', _Tone.plain, 'trial');
     }

@@ -13,8 +13,11 @@ enum GuestBlockReason {
   /// 自己点过「退出登录」—— 尊重他的选择，不再自动开号，但首页照常能逛。
   optedOut,
 
-  /// 服务端关了游客 / 名额满了 / 网络不通。可以重试，也可以去注册。
+  /// 服务端关了游客 / 名额满了 / 服务端明确拒绝（如 403 / 429 有 message 的）。可以去注册。
   unavailable,
+
+  /// 网络不通 / 超时 / 拉开关失败 / 开号抛其它错等。只能重试。
+  offline,
 }
 
 class GuestBootstrapState {
@@ -142,7 +145,16 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
 
     state = const GuestBootstrapState(working: true);
     try {
-      final opts = await ref.read(panelAuthProvider.notifier).guestOptions();
+      late final GuestOptions opts;
+      try {
+        opts = await ref.read(panelAuthProvider.notifier).guestOptions();
+      } catch (e) {
+        state = const GuestBootstrapState(
+          reason: GuestBlockReason.offline,
+          message: '连不上服务器，请检查网络后点重试。如果开着别的 VPN，先关掉它',
+        );
+        return;
+      }
       if (!opts.enabled) {
         _done = true;
         state = const GuestBootstrapState(
@@ -177,7 +189,7 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
       if (r.error != null || url == null || url.isEmpty) {
         // 没标 _done：网络不好时下次回到首页还能再试一次。
         state = GuestBootstrapState(
-          reason: GuestBlockReason.unavailable,
+          reason: r.isNetworkError == true ? GuestBlockReason.offline : GuestBlockReason.unavailable,
           message: r.error ?? '免费试用暂时开不了，稍后再试或注册账号',
         );
         return;
@@ -188,7 +200,7 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
       state = const GuestBootstrapState();
     } catch (e) {
       state = GuestBootstrapState(
-        reason: GuestBlockReason.unavailable,
+        reason: GuestBlockReason.offline,
         message: '免费试用暂时开不了：$e',
       );
     }
@@ -200,7 +212,12 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
   /// 会当成普通开号真的建一个号 —— 那正是这里要避免的事。
   Future<void> _probe() async {
     try {
-      final opts = await ref.read(panelAuthProvider.notifier).guestOptions();
+      late final GuestOptions opts;
+      try {
+        opts = await ref.read(panelAuthProvider.notifier).guestOptions();
+      } catch (_) {
+        return;
+      }
       if (!opts.selfPassword) return;
       final deviceId = await DeviceId.read();
       if (deviceId == null) return;
