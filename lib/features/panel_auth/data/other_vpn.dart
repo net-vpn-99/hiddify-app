@@ -28,5 +28,5 @@ abstract final class OtherVpn {
     } catch (_) {}
   }
 
-  static const message = '手机上开着别的 VPN，请先把它关掉，再用光速雷达。';
+  static const message = '手机上开着别的 VPN，会影响光速雷达使用，请先把它关掉。';
 }
