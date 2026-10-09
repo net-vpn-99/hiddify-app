@@ -18,6 +18,9 @@ enum GuestBlockReason {
 
   /// 网络不通 / 超时 / 拉开关失败 / 开号抛其它错等。只能重试。
   offline,
+
+  /// 服务端拒绝，但用户自己能解决（比如开着别的 VPN：关掉再试）。主按钮「重试」，弹窗里也给「去注册」。
+  fixable,
 }
 
 class GuestBootstrapState {
@@ -189,7 +192,9 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
       if (r.error != null || url == null || url.isEmpty) {
         // 没标 _done：网络不好时下次回到首页还能再试一次。
         state = GuestBootstrapState(
-          reason: r.isNetworkError == true ? GuestBlockReason.offline : GuestBlockReason.unavailable,
+          reason: r.isNetworkError == true
+              ? GuestBlockReason.offline
+              : (r.action == 'retry' ? GuestBlockReason.fixable : GuestBlockReason.unavailable),
           message: r.error ?? '免费试用暂时开不了，稍后再试或注册账号',
         );
         return;

@@ -76,7 +76,8 @@ class AccountStatusBar extends HookConsumerWidget {
 
     final isUnavailable = !loggedIn && boot.reason == GuestBlockReason.unavailable;
     final isOffline = !loggedIn && boot.reason == GuestBlockReason.offline;
-    final canShowDialog = isUnavailable || isOffline;
+    final isFixable = !loggedIn && boot.reason == GuestBlockReason.fixable;
+    final canShowDialog = isUnavailable || isOffline || isFixable;
 
     Future<void> handleAction() async {
       if (route == 'login') {
@@ -152,6 +153,15 @@ class AccountStatusBar extends HookConsumerWidget {
                                   },
                                   child: Text(action),
                                 ),
+                              // 开着别的 VPN 这类：主按钮是「重试」（关掉再试），注册也是一条路，一起给。
+                              if (isFixable)
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.of(context).pop();
+                                    context.pushNamed('register');
+                                  },
+                                  child: const Text('去注册'),
+                                ),
                               TextButton(
                                 onPressed: () => Navigator.of(context).pop(),
                                 child: const Text('知道了'),
@@ -208,6 +218,9 @@ class AccountStatusBar extends HookConsumerWidget {
       final mask = boot.knownAccountMask;
       if (mask != null) {
         return (mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask', '登录', _Tone.warn, 'login');
+      }
+      if (boot.reason == GuestBlockReason.fixable) {
+        return (boot.message ?? '免费试用暂时开不了，请稍后重试', '重试', _Tone.plain, 'retry');
       }
       if (boot.reason == GuestBlockReason.offline) {
         return (boot.message ?? '连不上服务器，请检查网络后重试', '重试', _Tone.plain, 'retry');

@@ -421,6 +421,7 @@ class PanelApi {
     throw PanelApiException(
       _messageOf(res.data, res.statusCode) ?? '免注册试用暂时不可用，请注册账号',
       isNetworkError: (res.statusCode ?? 0) == 0 || (res.statusCode ?? 0) >= 500,
+      action: res.data is Map && (res.data as Map)['action'] is String ? (res.data as Map)['action'] as String : null,
     );
   }
 
@@ -956,7 +957,7 @@ class PanelAccount {
 }
 
 class PanelApiException implements Exception {
-  PanelApiException(this.message, {this.unauthorized = false, this.isNetworkError = false});
+  PanelApiException(this.message, {this.unauthorized = false, this.isNetworkError = false, this.action});
 
   /// 请求没到服务端（没有响应）或服务端 5xx：算网络问题，界面上给「重试」而不是「去注册」。
   PanelApiException.network(DioException e, String message)
@@ -964,6 +965,10 @@ class PanelApiException implements Exception {
   final String message;
   final bool unauthorized;
   final bool isNetworkError;
+
+  /// 服务端建议的主按钮（GslGuest 1.7.4 起开号被拒时带）：'retry' = 用户自己能解决（比如关掉别的 VPN）
+  /// 后重试；'register' = 只能去注册。老服务端不带，为 null。
+  final String? action;
   @override
   String toString() => message;
 }
