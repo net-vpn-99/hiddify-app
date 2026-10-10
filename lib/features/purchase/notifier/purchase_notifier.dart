@@ -222,7 +222,22 @@ class PurchaseNotifier extends AutoDisposeNotifier<PurchaseState> {
   static PlanOffer? _pickDefault(List<PlanOffer> plans, List<ShopTier> tiers, ShopMe? me) {
     if (plans.isEmpty) return null;
     if (tiers.length >= 2) {
-      final want = me?.tier == 'pro' ? 'pro' : 'std';
+      // 三端一样（VPN 仓库 docs/计划/购买页-突出精品版.md 第三节）：
+      // 标准版没到期 → 标准版；精品版用户 → 精品版；其他人 → 推荐档（满员时退回标准版）。
+      String want;
+      if (me?.tier == 'std' && (me?.daysLeft ?? 0) > 0) {
+        want = 'std';
+      } else if (me?.tier == 'pro') {
+        want = 'pro';
+      } else {
+        want = 'std';
+        for (final t in tiers) {
+          if (t.recommended && !t.full) {
+            want = t.tier;
+            break;
+          }
+        }
+      }
       ShopTier? tier;
       for (final t in tiers) {
         if (t.tier == want) tier = t;

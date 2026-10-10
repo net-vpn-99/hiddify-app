@@ -9,6 +9,37 @@ import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
 import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+/// 推荐档（精品版）放第一张。
+List<ShopTier> _orderedTiers(List<ShopTier> tiers) {
+  final out = [...tiers];
+  out.sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0));
+  return out;
+}
+
+/// 「比标准版每天多 ¥X」：按当前选中的时长算，两档没有同一个时长就不写。
+String? _proPerDayMore(PurchaseState state) {
+  final period = state.selected?.period;
+  if (period == null) return null;
+  ShopTier? pro;
+  ShopTier? std;
+  for (final t in state.tiers) {
+    if (t.tier == 'pro') pro = t;
+    if (t.tier == 'std') std = t;
+  }
+  if (pro == null || std == null) return null;
+  PlanOffer? p;
+  PlanOffer? s;
+  for (final o in state.plans) {
+    if (o.period != period) continue;
+    if (o.planId == pro.planId) p = o;
+    if (o.planId == std.planId) s = o;
+  }
+  if (p == null || s == null || p.periodDays <= 0 || p.periodDays != s.periodDays) return null;
+  final diff = p.priceCents - s.priceCents;
+  if (diff <= 0) return null;
+  return '比标准版每天多 ¥${(diff / 100 / p.periodDays).toStringAsFixed(1)}';
+}
+
 String tierNameOf(PurchaseState state, PlanOffer offer) {
   for (final tier in state.tiers) {
     if (tier.planId == offer.planId && tier.name.isNotEmpty) return tier.name;
@@ -154,26 +185,21 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               ),
               if (state.tiers.length >= 2) ...[
                 const SizedBox(height: 14),
-                IntrinsicHeight(child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final tier in state.tiers)
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.only(right: tier == state.tiers.last ? 0 : 8),
-                          child: _TierCard(
-                            t: t,
-                            tier: tier,
-                            picked: selected?.planId == tier.planId,
-                            current: state.me?.tier == tier.tier,
-                            blocked: tier.full && state.me?.tier != 'pro',
-                            me: state.me,
-                            onTap: () => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
-                          ),
-                        ),
-                      ),
-                  ],
-                )),
+                // 屏幕窄，两张上下排，精品版（推荐档）在上。
+                for (final tier in _orderedTiers(state.tiers))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _TierCard(
+                      t: t,
+                      tier: tier,
+                      picked: selected?.planId == tier.planId,
+                      current: state.me?.tier == tier.tier,
+                      blocked: tier.full && state.me?.tier != 'pro',
+                      me: state.me,
+                      moreLine: tier.tier == 'pro' ? _proPerDayMore(state) : null,
+                      onTap: () => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
+                    ),
+                  ),
                 if (state.stdHint)
                   Container(
                     margin: const EdgeInsets.only(top: 8),
@@ -790,6 +816,7 @@ class _TierCard extends StatelessWidget {
     required this.blocked,
     required this.me,
     required this.onTap,
+    this.moreLine,
   });
 
   final PurchaseTokens t;
@@ -799,6 +826,9 @@ class _TierCard extends StatelessWidget {
   final bool blocked;
   final ShopMe? me;
   final VoidCallback onTap;
+
+  /// 精品版卡片上的「比标准版每天多 ¥X」。
+  final String? moreLine;
 
   @override
   Widget build(BuildContext context) {
@@ -840,17 +870,39 @@ class _TierCard extends StatelessWidget {
                   Text(tier.keyLine, style: TextStyle(color: tone, fontSize: 12, fontWeight: FontWeight.w600)),
                 ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                stdBlocked
-                    ? '精品版已包含，不用另买'
-                    : (tier.tier == 'pro' && tier.dailyGb > 0
-                        ? '${tier.sub} · 精品线路每天 ${tier.dailyGb}GB 高速'
-                        : tier.sub),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: t.secondary, fontSize: 11),
-              ),
+              const SizedBox(height: 4),
+              // 好处列表：服务端 GslShop 1.9.0 下发 points，老插件退回 sub 一句。
+              for (final p in stdBlocked
+                  ? const ['精品版已包含，不用另买']
+                  : (tier.points.isNotEmpty ? tier.points : [if (tier.sub.isNotEmpty) tier.sub]))
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('✓', style: TextStyle(color: t.remaining, fontSize: 12, height: 1.35)),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(p, style: TextStyle(color: t.secondary, fontSize: 12, height: 1.35)),
+                      ),
+                    ],
+                  ),
+                ),
+              if ((moreLine != null && !current) || (tier.tier == 'pro' && tier.dailyGb > 0))
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Wrap(
+                    spacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (moreLine != null && !current)
+                        Text(moreLine!,
+                            style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.w700)),
+                      if (tier.tier == 'pro' && tier.dailyGb > 0)
+                        Text('精品线路每天 ${tier.dailyGb}GB 高速', style: TextStyle(color: t.secondary, fontSize: 11)),
+                    ],
+                  ),
+                ),
               if (gift)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
@@ -878,6 +930,17 @@ class _TierCard extends StatelessWidget {
                     decoration: BoxDecoration(color: t.remaining, borderRadius: BorderRadius.circular(8)),
                     child: const Text('✓ 你现在用的', style: TextStyle(color: Colors.white, fontSize: 10)),
                   ),
+                ),
+              ),
+            // 「推荐」角标，样式同时长卡片的角标。
+            if (tier.recommended && !current && !blocked)
+              Positioned(
+                top: -8,
+                right: 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(8)),
+                  child: Text('推荐', style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               ),
           ],

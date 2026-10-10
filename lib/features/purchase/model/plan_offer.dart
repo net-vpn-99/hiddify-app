@@ -164,6 +164,8 @@ class ShopTier {
     required this.full,
     this.seatsLeft,
     this.dailyGb = 0,
+    this.points = const [],
+    this.recommended = false,
   });
 
   final String tier;
@@ -176,6 +178,12 @@ class ShopTier {
   final int? seatsLeft;
   final int dailyGb;
 
+  /// 好处列表，每条一句（GslShop 1.9.0 起下发）。老插件没有时退回 [sub] 一句。
+  final List<String> points;
+
+  /// 推荐档（精品版），放第一张、带「推荐」角标、新买默认选它。老插件没这个字段时按精品版。
+  final bool recommended;
+
   static List<ShopTier> listFrom(dynamic raw) {
     if (raw is! List) return const [];
     final out = <ShopTier>[];
@@ -185,7 +193,11 @@ class ShopTier {
       final planId = id is num ? id.toInt() : int.tryParse('$id') ?? 0;
       if (planId <= 0) continue;
       final seats = row['seats_left'];
+      final pts = row['points'];
+      final rec = row['recommended'];
       out.add(ShopTier(
+        points: pts is List ? [for (final p in pts) if ('$p'.trim().isNotEmpty) '$p'.trim()] : const [],
+        recommended: rec is bool ? rec : '${row['tier']}' == 'pro',
         tier: '${row['tier'] ?? ''}',
         planId: planId,
         name: '${row['name'] ?? ''}',
