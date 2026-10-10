@@ -997,7 +997,6 @@ class _TierCompareTable extends StatelessWidget {
       if (_seatBlocked(tier) && !current) ('本月名额已满', t.secondary, false),
       if (_stdBlocked(tier)) ('精品版已包含，不用另买', t.secondary, false),
       if (tier.tier == 'pro' && !current && moreLine != null) (moreLine!, _gold, true),
-      if (tier.tier == 'pro' && tier.dailyGb > 0) ('精品线路每天 ${tier.dailyGb}GB 高速', t.secondary, false),
       if (gift) ((me!.trialMinutes == 60) ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验', t.remaining, false),
       if (tier.seatsLeft != null && tier.seatsLeft! > 0) ('剩 ${tier.seatsLeft} 个名额', t.warning, false),
     ];
@@ -1010,7 +1009,7 @@ class _TierCompareTable extends StatelessWidget {
 
     return LayoutBuilder(builder: (context, box) {
       // 左边项目列，右边每档一张竖卡片（跟官网、下面的时长卡片一个样子），卡片之间留空。
-      final labelW = (box.maxWidth * 0.27).clamp(76.0, 120.0);
+      final labelW = (box.maxWidth * 0.25).clamp(72.0, 112.0);
       final colW = (box.maxWidth - labelW - gap * tiers.length) / tiers.length;
       double colX(int i) => labelW + gap + i * (colW + gap);
       final sep = t.border.withValues(alpha: 0.6);
@@ -1020,7 +1019,7 @@ class _TierCompareTable extends StatelessWidget {
         final tier = col > 0 ? tiers[col - 1] : null;
         Widget box = Container(
           margin: tier != null ? const EdgeInsets.symmetric(horizontal: 1) : EdgeInsets.zero,
-          padding: pad ?? EdgeInsets.fromLTRB(tier != null ? 10 : 2, 7, 6, last ? 11 : 7),
+          padding: pad ?? EdgeInsets.fromLTRB(tier != null ? 8 : 2, 7, 4, last ? 11 : 7),
           decoration: BoxDecoration(border: line ? Border(top: BorderSide(color: sep)) : null),
           child: child,
         );
@@ -1058,7 +1057,7 @@ class _TierCompareTable extends StatelessWidget {
                 ],
               ),
               line: false,
-              pad: const EdgeInsets.fromLTRB(10, 14, 6, 9),
+              pad: const EdgeInsets.fromLTRB(8, 14, 4, 9),
             ),
         ]),
       );
