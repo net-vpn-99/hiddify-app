@@ -1020,15 +1020,12 @@ class _TierCompareTable extends StatelessWidget {
       final labelW = (box.maxWidth * 0.25).clamp(72.0, 112.0);
       final colW = (box.maxWidth - labelW - gap * tiers.length) / tiers.length;
       double colX(int i) => labelW + gap + i * (colW + gap);
-      final sep = t.border.withValues(alpha: 0.6);
-
-      // 一格。项目列和卡片里画分隔线（第一行不画），卡片之间的空隙不画。
-      Widget cell(int col, Widget child, {bool line = true, bool last = false, EdgeInsets? pad}) {
+      // 一格。不画分隔线（卡片已经把每档框出来了），格子不打 ✓、两档字一样颜色——不为了突出精品版去贬低标准版。
+      Widget cell(int col, Widget child, {bool last = false, EdgeInsets? pad}) {
         final tier = col > 0 ? tiers[col - 1] : null;
         Widget box = Container(
           margin: tier != null ? const EdgeInsets.symmetric(horizontal: 1) : EdgeInsets.zero,
           padding: pad ?? EdgeInsets.fromLTRB(tier != null ? 8 : 2, 7, 4, last ? 11 : 7),
-          decoration: BoxDecoration(border: line ? Border(top: BorderSide(color: sep)) : null),
           child: child,
         );
         if (tier != null) {
@@ -1071,7 +1068,6 @@ class _TierCompareTable extends StatelessWidget {
                     ),
                 ],
               ),
-              line: false,
               pad: const EdgeInsets.fromLTRB(8, 14, 4, 9),
             ),
         ]),
@@ -1087,7 +1083,6 @@ class _TierCompareTable extends StatelessWidget {
                   tiers.map((x) => r < x.compare.length ? x.compare[r].label : '').firstWhere((s) => s.isNotEmpty, orElse: () => ''),
                   style: TextStyle(color: t.secondary, fontSize: 12),
                 ),
-                line: r > 0,
                 last: r == rows - 1,
               ),
               [
@@ -1096,14 +1091,7 @@ class _TierCompareTable extends StatelessWidget {
                     final c = r < tiers[i].compare.length ? tiers[i].compare[r] : const CompareCell(label: '', value: '', good: false);
                     return cell(
                       i + 1,
-                      Text.rich(
-                        TextSpan(children: [
-                          if (c.good)
-                            TextSpan(text: c.value.isEmpty ? '✓' : '✓ ', style: TextStyle(color: t.remaining, fontWeight: FontWeight.w700)),
-                          TextSpan(text: c.value),
-                        ]),
-                        style: TextStyle(color: c.good ? t.text : t.secondary, fontSize: 12),
-                      ),
+                      Text(c.value, style: TextStyle(color: t.text, fontSize: 12)),
                       last: r == rows - 1,
                     );
                   }(),
