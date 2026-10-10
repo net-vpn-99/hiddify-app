@@ -964,7 +964,7 @@ class _TierCard extends StatelessWidget {
   }
 }
 
-/// 版本对比表：左边项目，右边每档一列。选中的一列整列高亮，点哪一格都选那一档。
+/// 版本对比表：左边项目，右边每档一张竖卡片，选中那张金边浅金底，点哪一格都选那一档。
 class _TierCompareTable extends StatelessWidget {
   const _TierCompareTable({
     required this.t,
@@ -1006,118 +1006,141 @@ class _TierCompareTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final rows = tiers.map((x) => x.compare.length).fold(0, (a, b) => a > b ? a : b);
+    const gap = 8.0;
 
-    // 每一格：选中列加底色和左右金边；最后一行再加底边。
-    Widget cell(int col, Widget child, {bool head = false, bool bottom = false, EdgeInsets? pad}) {
-      final tier = col > 0 ? tiers[col - 1] : null;
-      final picked = tier != null && _picked(tier);
-      final gold = BorderSide(color: t.primary, width: 2);
-      Widget box = Container(
-        padding: pad ?? const EdgeInsets.fromLTRB(10, 7, 6, 7),
-        decoration: BoxDecoration(
-          color: picked ? t.selected : null,
-          border: picked
-              ? Border(left: gold, right: gold, top: head ? gold : BorderSide.none, bottom: bottom ? gold : BorderSide.none)
-              : null,
-        ),
-        child: child,
-      );
-      if (tier != null) {
-        final dim = _seatBlocked(tier) || _stdBlocked(tier);
-        box = GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _seatBlocked(tier) ? null : () => onTap(tier),
-          child: Opacity(opacity: dim ? 0.55 : 1, child: box),
+    return LayoutBuilder(builder: (context, box) {
+      // 左边项目列，右边每档一张竖卡片（跟官网、下面的时长卡片一个样子），卡片之间留空。
+      final labelW = (box.maxWidth * 0.27).clamp(76.0, 120.0);
+      final colW = (box.maxWidth - labelW - gap * tiers.length) / tiers.length;
+      double colX(int i) => labelW + gap + i * (colW + gap);
+      final sep = t.border.withValues(alpha: 0.6);
+
+      // 一格。项目列和卡片里画分隔线（第一行不画），卡片之间的空隙不画。
+      Widget cell(int col, Widget child, {bool line = true, bool last = false, EdgeInsets? pad}) {
+        final tier = col > 0 ? tiers[col - 1] : null;
+        Widget box = Container(
+          margin: tier != null ? const EdgeInsets.symmetric(horizontal: 1) : EdgeInsets.zero,
+          padding: pad ?? EdgeInsets.fromLTRB(tier != null ? 10 : 2, 7, 6, last ? 11 : 7),
+          decoration: BoxDecoration(border: line ? Border(top: BorderSide(color: sep)) : null),
+          child: child,
         );
+        if (tier != null) {
+          final dim = _seatBlocked(tier) || _stdBlocked(tier);
+          box = GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _seatBlocked(tier) ? null : () => onTap(tier),
+            child: Opacity(opacity: dim ? 0.6 : 1, child: box),
+          );
+        }
+        return box;
       }
-      return box;
-    }
 
-    TableRow line(List<Widget> cells) => TableRow(
-          decoration: BoxDecoration(border: Border(top: BorderSide(color: t.border))),
-          children: cells,
-        );
+      List<Widget> withGaps(Widget label, List<Widget> perTier) => [
+            label,
+            for (final w in perTier) ...[const SizedBox.shrink(), w],
+          ];
 
-    final head = TableRow(children: [
-      cell(0, const SizedBox.shrink(), head: true),
-      for (var i = 0; i < tiers.length; i++)
-        cell(
-          i + 1,
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Wrap(
-                spacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
+      final head = TableRow(
+        children: withGaps(const SizedBox.shrink(), [
+          for (var i = 0; i < tiers.length; i++)
+            cell(
+              i + 1,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(tiers[i].name, style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700)),
-                  if (tiers[i].recommended && me?.tier != tiers[i].tier && !_seatBlocked(tiers[i]))
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(8)),
-                      child: Text('推荐', style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
+                  for (final n in _notes(tiers[i]))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Text(n.$1,
+                          style: TextStyle(color: n.$2, fontSize: 11, fontWeight: n.$3 ? FontWeight.w700 : FontWeight.normal)),
                     ),
                 ],
               ),
-              for (final n in _notes(tiers[i]))
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
-                  child: Text(n.$1,
-                      style: TextStyle(color: n.$2, fontSize: 11, fontWeight: n.$3 ? FontWeight.w700 : FontWeight.normal)),
-                ),
-            ],
-          ),
-          head: true,
-          bottom: rows == 0,
-          pad: const EdgeInsets.fromLTRB(10, 10, 6, 8),
-        ),
-    ]);
-
-    final body = <TableRow>[
-      for (var r = 0; r < rows; r++)
-        line([
-          cell(
-            0,
-            Text(
-              tiers.map((x) => r < x.compare.length ? x.compare[r].label : '').firstWhere((s) => s.isNotEmpty, orElse: () => ''),
-              style: TextStyle(color: t.secondary, fontSize: 12),
+              line: false,
+              pad: const EdgeInsets.fromLTRB(10, 14, 6, 9),
             ),
-            bottom: r == rows - 1,
-          ),
-          for (var i = 0; i < tiers.length; i++)
-            () {
-              final c = r < tiers[i].compare.length ? tiers[i].compare[r] : const CompareCell(label: '', value: '', good: false);
-              return cell(
-                i + 1,
-                Text.rich(
-                  TextSpan(children: [
-                    if (c.good) TextSpan(text: c.value.isEmpty ? '✓' : '✓ ', style: TextStyle(color: t.remaining, fontWeight: FontWeight.w700)),
-                    TextSpan(text: c.value),
-                  ]),
-                  style: TextStyle(color: c.good ? t.text : t.secondary, fontSize: 12),
-                ),
-                bottom: r == rows - 1,
-              );
-            }(),
         ]),
-    ];
+      );
 
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: t.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: t.border),
-      ),
-      child: Table(
-        columnWidths: {
-          0: const FlexColumnWidth(),
-          for (var i = 0; i < tiers.length; i++) i + 1: const FlexColumnWidth(1.25),
-        },
-        defaultVerticalAlignment: TableCellVerticalAlignment.intrinsicHeight,
-        children: [head, ...body],
-      ),
-    );
+      final body = <TableRow>[
+        for (var r = 0; r < rows; r++)
+          TableRow(
+            children: withGaps(
+              cell(
+                0,
+                Text(
+                  tiers.map((x) => r < x.compare.length ? x.compare[r].label : '').firstWhere((s) => s.isNotEmpty, orElse: () => ''),
+                  style: TextStyle(color: t.secondary, fontSize: 12),
+                ),
+                line: r > 0,
+                last: r == rows - 1,
+              ),
+              [
+                for (var i = 0; i < tiers.length; i++)
+                  () {
+                    final c = r < tiers[i].compare.length ? tiers[i].compare[r] : const CompareCell(label: '', value: '', good: false);
+                    return cell(
+                      i + 1,
+                      Text.rich(
+                        TextSpan(children: [
+                          if (c.good)
+                            TextSpan(text: c.value.isEmpty ? '✓' : '✓ ', style: TextStyle(color: t.remaining, fontWeight: FontWeight.w700)),
+                          TextSpan(text: c.value),
+                        ]),
+                        style: TextStyle(color: c.good ? t.text : t.secondary, fontSize: 12),
+                      ),
+                      last: r == rows - 1,
+                    );
+                  }(),
+              ],
+            ),
+          ),
+      ];
+
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (var i = 0; i < tiers.length; i++)
+            Positioned(
+              left: colX(i),
+              top: 0,
+              bottom: 0,
+              width: colW,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: _picked(tiers[i]) ? t.selected : t.surface,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: _picked(tiers[i]) ? t.primary : t.border, width: _picked(tiers[i]) ? 2 : 1),
+                ),
+              ),
+            ),
+          Table(
+            columnWidths: {
+              0: FixedColumnWidth(labelW),
+              for (var i = 0; i < tiers.length; i++) ...{
+                i * 2 + 1: const FixedColumnWidth(gap),
+                i * 2 + 2: FixedColumnWidth(colW),
+              },
+            },
+            defaultVerticalAlignment: TableCellVerticalAlignment.intrinsicHeight,
+            children: [head, ...body],
+          ),
+          // 「推荐」角标压在卡片上沿，跟时长卡片的「推荐选择」一样。
+          for (var i = 0; i < tiers.length; i++)
+            if (tiers[i].recommended && me?.tier != tiers[i].tier && !_seatBlocked(tiers[i]))
+              Positioned(
+                left: colX(i) + 10,
+                top: -8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(8)),
+                  child: Text('推荐', style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
+                ),
+              ),
+        ],
+      );
+    });
   }
 }
 
