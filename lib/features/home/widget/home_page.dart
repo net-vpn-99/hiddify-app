@@ -28,6 +28,7 @@ import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/home/widget/line_bar.dart';
 import 'package:hiddify/features/home/widget/other_vpn_banner.dart';
 import 'package:hiddify/features/notice/notice_sheet.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
@@ -371,7 +372,10 @@ class _SiteButton extends StatelessWidget {
     final theme = Theme.of(context);
     final path = link.iconPath;
     return InkWell(
-      onTap: () => UriUtils.tryLaunch(Uri.parse(link.url)),
+      onTap: () {
+        UriUtils.tryLaunch(Uri.parse(link.url));
+        PanelApi().reportSiteClick(link.id);
+      },
       customBorder: const CircleBorder(),
       child: SizedBox(
         width: math.max(36, _labelWidth(link.name)),

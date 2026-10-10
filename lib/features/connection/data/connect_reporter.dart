@@ -265,6 +265,8 @@ class ConnectReporter {
     if (probeLog != null && probeLog.isNotEmpty) payload['probe_n'] = probeLog;
     if (_sub.isNotEmpty) payload['sub'] = _sub;
     if (_tcp != null) payload['tcp'] = _tcp;
+    final errMsg = _errMsg(engineError);
+    if (errMsg.isNotEmpty) payload['err_msg'] = errMsg;
 
     String? bundle;
     final sig = '$failStage|$_nodeTag|${_host(_primaryApiBase())}';
@@ -272,6 +274,15 @@ class ConnectReporter {
       bundle = await _buildBundle(failStage);
     }
     await _send(payload, bundle);
+  }
+
+  /// 后台「客户端报错」一列：引擎原始报错去换行、截 240 字。先抹掉 UUID 和长串密钥，
+  /// 免得订阅 uuid / token 混在报错里被存下来。
+  static String _errMsg(String raw) {
+    var s = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    s = s.replaceAll(RegExp('[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'), '<uuid>');
+    s = s.replaceAll(RegExp(r'[A-Za-z0-9_\-]{32,}'), '<key>');
+    return s.length > 240 ? s.substring(0, 240) : s;
   }
 
   /// tunnel 阶段的诊断：VPN 授权状态 / 是否疑似被别的 VPN 占用 / 路由是否起来 / 一句话原因。

@@ -248,6 +248,18 @@ class PanelApi {
     }
   }
 
+  /// 首页常用网站那一排被点了：匿名记一次（src=android_quick，跟官网 /sites/ 同一个埋点）。
+  /// 服务端按「IP + 网站 + 天」去重算 30 天热度。发不出去不管、不重试。
+  Future<void> reportSiteClick(String siteId) async {
+    if (!RegExp(r'^[a-z0-9-]{1,32}$').hasMatch(siteId)) return;
+    try {
+      await _dio.post<dynamic>(
+        '/api/v1/guest/gsl_invite/hit',
+        data: {'event': 'site_click', 'site': siteId, 'src': 'android_quick'},
+      );
+    } catch (_) {}
+  }
+
   /// 注册选项（站点是否要邮箱验证 / 是否强制邀请码 / 是否有人机验证）。
   /// 走 guest/comm/config，免登录。出错时返回保守默认（要验证码、不强制邀请、无 recaptcha）。
   Future<({bool emailVerify, bool inviteForce, bool recaptcha})> getRegisterOptions() async {
