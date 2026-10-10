@@ -195,6 +195,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                       selectedPlanId: selected?.planId,
                       me: state.me,
                       moreLine: _proPerDayMore(state),
+                      badge: byPlan.values.expand((x) => x).map((o) => o.badge).firstWhere((b) => b != null && b.isNotEmpty, orElse: () => null),
                       onTap: (tier) => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
                     ),
                   )
@@ -225,7 +226,8 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                     ),
                   ),
               ],
-              const SizedBox(height: 10),
+              // 有版本表时跟时长卡片拉开一点，别贴着表格底边。
+              SizedBox(height: state.tiers.length >= 2 ? 18 : 10),
               for (final entry in byPlan.entries) ...[
                 if (state.tiers.length >= 2 && selected != null && entry.key != selected.planId)
                   const SizedBox.shrink()
@@ -339,7 +341,10 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final paidMbps = acc?.paidThrottleMbps ?? 0;
     String? speedLine;
     if (paid > 0 && paidMbps > 0) {
-      speedLine = '每天 ${formatDailyAmount(paid)} 高速，超出后 ${paidMbps}Mbps';
+      // 选的是精品版：说清每天高速里精品线路占多少，别让人以为精品线路每天都有这么多。
+      final pro = ref.watch(purchaseNotifierProvider).tiers.where((x) => x.planId == offer?.planId && x.tier == 'pro' && x.dailyGb > 0);
+      final share = pro.isEmpty ? '' : '，其中精品线路 ${pro.first.dailyGb} GB';
+      speedLine = '每天 ${formatDailyAmount(paid)} 高速$share，超出后 ${paidMbps}Mbps';
       final own = acc?.dailyQuota ?? 0;
       if (acc?.dailyTier == 'trial' && own > 0) {
         speedLine = '$speedLine（试用是每天 ${formatDailyAmount(own)}）';
@@ -973,10 +978,13 @@ class _TierCompareTable extends StatelessWidget {
     required this.me,
     required this.moreLine,
     required this.onTap,
+    this.badge,
   });
 
   final PurchaseTokens t;
   final List<ShopTier> tiers;
+  /// 推荐角标的字，跟时长卡片的角标同一句；没有就写「推荐」。
+  final String? badge;
   final int? selectedPlanId;
   final ShopMe? me;
   final String? moreLine;
@@ -1047,7 +1055,14 @@ class _TierCompareTable extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(tiers[i].name, style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700)),
+                  Row(children: [
+                    Flexible(child: Text(tiers[i].name, style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700))),
+                    // 选中打勾，跟下面时长卡片一样。
+                    if (_picked(tiers[i])) ...[
+                      const SizedBox(width: 4),
+                      Text('✓', style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+                  ]),
                   for (final n in _notes(tiers[i]))
                     Padding(
                       padding: const EdgeInsets.only(top: 1),
@@ -1108,7 +1123,8 @@ class _TierCompareTable extends StatelessWidget {
               width: colW,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: _picked(tiers[i]) ? t.selected : t.surface,
+                  // 买不了的那档（精品会员看标准版 / 满员）整张压成灰底，看着就不能选。
+                  color: _picked(tiers[i]) ? t.selected : (_stdBlocked(tiers[i]) || _seatBlocked(tiers[i])) ? t.fill : t.surface,
                   borderRadius: BorderRadius.circular(13),
                   border: Border.all(color: _picked(tiers[i]) ? t.primary : t.border, width: _picked(tiers[i]) ? 2 : 1),
                 ),
@@ -1125,7 +1141,7 @@ class _TierCompareTable extends StatelessWidget {
             defaultVerticalAlignment: TableCellVerticalAlignment.intrinsicHeight,
             children: [head, ...body],
           ),
-          // 「推荐」角标压在卡片上沿，跟时长卡片的「推荐选择」一样。
+          // 推荐角标压在卡片上沿，字跟时长卡片的角标一样。
           for (var i = 0; i < tiers.length; i++)
             if (tiers[i].recommended && me?.tier != tiers[i].tier && !_seatBlocked(tiers[i]))
               Positioned(
@@ -1134,7 +1150,7 @@ class _TierCompareTable extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(8)),
-                  child: Text('推荐', style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
+                  child: Text(badge ?? '推荐', style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               ),
         ],
