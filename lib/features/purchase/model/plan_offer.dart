@@ -166,7 +166,11 @@ class ShopTier {
     this.dailyGb = 0,
     this.points = const [],
     this.recommended = false,
+    this.compare = const [],
   });
+
+  /// 对比表里这一档的一列（GslShop 1.10.0 起下发），各档按行号并排。
+  final List<CompareCell> compare;
 
   final String tier;
   final int planId;
@@ -195,7 +199,15 @@ class ShopTier {
       final seats = row['seats_left'];
       final pts = row['points'];
       final rec = row['recommended'];
+      final cmp = row['compare'];
       out.add(ShopTier(
+        compare: cmp is List
+            ? [
+                for (final c in cmp)
+                  if (c is Map)
+                    CompareCell(label: '${c['label'] ?? ''}', value: '${c['value'] ?? ''}', good: c['good'] == true),
+              ]
+            : const [],
         points: pts is List ? [for (final p in pts) if ('$p'.trim().isNotEmpty) '$p'.trim()] : const [],
         recommended: rec is bool ? rec : '${row['tier']}' == 'pro',
         tier: '${row['tier'] ?? ''}',
@@ -211,6 +223,16 @@ class ShopTier {
     }
     return out;
   }
+}
+
+class CompareCell {
+  const CompareCell({required this.label, required this.value, required this.good});
+
+  final String label;
+  final String value;
+
+  /// true：前面打 ✓、用正常字色；值为空时只显示 ✓。
+  final bool good;
 }
 
 class PeriodQuote {

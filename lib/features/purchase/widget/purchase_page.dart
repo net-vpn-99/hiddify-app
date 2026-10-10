@@ -185,7 +185,21 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               ),
               if (state.tiers.length >= 2) ...[
                 const SizedBox(height: 14),
-                // 屏幕窄，两张上下排，精品版（推荐档）在上。
+                // GslShop 1.10.0 起每档带 compare：画对比表，精品版在左带「推荐」，点一列选那一档。
+                if (state.tiers.every((t) => t.compare.isNotEmpty))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, bottom: 10),
+                    child: _TierCompareTable(
+                      t: t,
+                      tiers: _orderedTiers(state.tiers),
+                      selectedPlanId: selected?.planId,
+                      me: state.me,
+                      moreLine: _proPerDayMore(state),
+                      onTap: (tier) => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
+                    ),
+                  )
+                else
+                // 老插件没有 compare：两张卡片上下排，精品版（推荐档）在上。
                 for (final tier in _orderedTiers(state.tiers))
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
@@ -945,6 +959,163 @@ class _TierCard extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 版本对比表：左边项目，右边每档一列。选中的一列整列高亮，点哪一格都选那一档。
+class _TierCompareTable extends StatelessWidget {
+  const _TierCompareTable({
+    required this.t,
+    required this.tiers,
+    required this.selectedPlanId,
+    required this.me,
+    required this.moreLine,
+    required this.onTap,
+  });
+
+  final PurchaseTokens t;
+  final List<ShopTier> tiers;
+  final int? selectedPlanId;
+  final ShopMe? me;
+  final String? moreLine;
+  final ValueChanged<ShopTier> onTap;
+
+  // 「比标准版每天多」：浅色下主色金太浅，用深金（同官网 --gold-deep）。
+  Color get _gold => t == PurchaseTokens.light ? const Color(0xFF8D6C32) : t.primary;
+
+  bool _seatBlocked(ShopTier tier) => tier.full && me?.tier != 'pro';
+  bool _stdBlocked(ShopTier tier) => tier.tier == 'std' && me?.canBuyStd == false;
+  bool _picked(ShopTier tier) => !_stdBlocked(tier) && selectedPlanId == tier.planId;
+
+  List<(String, Color, bool)> _notes(ShopTier tier) {
+    final current = me?.tier == tier.tier;
+    final gift = me != null && tier.tier == 'std' && (me!.trial == 'locked' || me!.trial == 'offer');
+    return [
+      if (current) ('✓ 你现在用的', t.remaining, false),
+      if (_seatBlocked(tier) && !current) ('本月名额已满', t.secondary, false),
+      if (_stdBlocked(tier)) ('精品版已包含，不用另买', t.secondary, false),
+      if (tier.tier == 'pro' && !current && moreLine != null) (moreLine!, _gold, true),
+      if (tier.tier == 'pro' && tier.dailyGb > 0) ('精品线路每天 ${tier.dailyGb}GB 高速', t.secondary, false),
+      if (gift) ((me!.trialMinutes == 60) ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验', t.remaining, false),
+      if (tier.seatsLeft != null && tier.seatsLeft! > 0) ('剩 ${tier.seatsLeft} 个名额', t.warning, false),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = tiers.map((x) => x.compare.length).fold(0, (a, b) => a > b ? a : b);
+
+    // 每一格：选中列加底色和左右金边；最后一行再加底边。
+    Widget cell(int col, Widget child, {bool head = false, bool bottom = false, EdgeInsets? pad}) {
+      final tier = col > 0 ? tiers[col - 1] : null;
+      final picked = tier != null && _picked(tier);
+      final gold = BorderSide(color: t.primary, width: 2);
+      Widget box = Container(
+        padding: pad ?? const EdgeInsets.fromLTRB(10, 7, 6, 7),
+        decoration: BoxDecoration(
+          color: picked ? t.selected : null,
+          border: picked
+              ? Border(left: gold, right: gold, top: head ? gold : BorderSide.none, bottom: bottom ? gold : BorderSide.none)
+              : null,
+        ),
+        child: child,
+      );
+      if (tier != null) {
+        final dim = _seatBlocked(tier) || _stdBlocked(tier);
+        box = GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _seatBlocked(tier) ? null : () => onTap(tier),
+          child: Opacity(opacity: dim ? 0.55 : 1, child: box),
+        );
+      }
+      return box;
+    }
+
+    TableRow line(List<Widget> cells) => TableRow(
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: t.border))),
+          children: cells,
+        );
+
+    final head = TableRow(children: [
+      cell(0, const SizedBox.shrink(), head: true),
+      for (var i = 0; i < tiers.length; i++)
+        cell(
+          i + 1,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(tiers[i].name, style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700)),
+                  if (tiers[i].recommended && me?.tier != tiers[i].tier && !_seatBlocked(tiers[i]))
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(8)),
+                      child: Text('推荐', style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
+                    ),
+                ],
+              ),
+              for (final n in _notes(tiers[i]))
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: Text(n.$1,
+                      style: TextStyle(color: n.$2, fontSize: 11, fontWeight: n.$3 ? FontWeight.w700 : FontWeight.normal)),
+                ),
+            ],
+          ),
+          head: true,
+          bottom: rows == 0,
+          pad: const EdgeInsets.fromLTRB(10, 10, 6, 8),
+        ),
+    ]);
+
+    final body = <TableRow>[
+      for (var r = 0; r < rows; r++)
+        line([
+          cell(
+            0,
+            Text(
+              tiers.map((x) => r < x.compare.length ? x.compare[r].label : '').firstWhere((s) => s.isNotEmpty, orElse: () => ''),
+              style: TextStyle(color: t.secondary, fontSize: 12),
+            ),
+            bottom: r == rows - 1,
+          ),
+          for (var i = 0; i < tiers.length; i++)
+            () {
+              final c = r < tiers[i].compare.length ? tiers[i].compare[r] : const CompareCell(label: '', value: '', good: false);
+              return cell(
+                i + 1,
+                Text.rich(
+                  TextSpan(children: [
+                    if (c.good) TextSpan(text: c.value.isEmpty ? '✓' : '✓ ', style: TextStyle(color: t.remaining, fontWeight: FontWeight.w700)),
+                    TextSpan(text: c.value),
+                  ]),
+                  style: TextStyle(color: c.good ? t.text : t.secondary, fontSize: 12),
+                ),
+                bottom: r == rows - 1,
+              );
+            }(),
+        ]),
+    ];
+
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.border),
+      ),
+      child: Table(
+        columnWidths: {
+          0: const FlexColumnWidth(),
+          for (var i = 0; i < tiers.length; i++) i + 1: const FlexColumnWidth(1.25),
+        },
+        defaultVerticalAlignment: TableCellVerticalAlignment.intrinsicHeight,
+        children: [head, ...body],
       ),
     );
   }
