@@ -223,7 +223,7 @@ class _HomeLink extends StatelessWidget {
         visualDensity: VisualDensity.compact,
       ),
       onPressed: () => UriUtils.tryLaunch(group ?? Uri.parse(Constants.websiteUrl)),
-      child: Text(group != null ? '交流群 ↗' : '官网 ↗'),
+      child: Text(group != null ? 'TG 频道 ↗' : '官网 ↗'),
     );
   }
 }

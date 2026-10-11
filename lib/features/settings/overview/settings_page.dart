@@ -224,7 +224,7 @@ class _TelegramGroupRowState extends State<_TelegramGroupRow> {
     return Material(
       child: ListTile(
         leading: const Icon(Icons.forum_outlined),
-        title: const Text('加入交流群'),
+        title: const Text('TG 官方频道'),
         trailing: const Icon(Icons.chevron_right_rounded),
         onTap: () => UriUtils.tryLaunch(Uri.parse(url)),
       ),
