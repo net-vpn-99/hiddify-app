@@ -22,10 +22,13 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
   final _scroll = ScrollController();
   int _lastCount = 0;
 
+  // dispose 里不能再用 ref（页面已卸载会抛错，10-10 诊断包里见过），先在 initState 存一份。
+  late final SupportChatNotifier _notifier;
+
   @override
   void initState() {
     super.initState();
-    final notifier = ref.read(supportChatNotifierProvider.notifier);
+    final notifier = _notifier = ref.read(supportChatNotifierProvider.notifier);
     notifier.bindIdentity(
       email: ref.read(panelAuthProvider).email,
       version: ref.read(appInfoProvider).valueOrNull?.version,
@@ -39,7 +42,7 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
 
   @override
   void dispose() {
-    ref.read(supportChatNotifierProvider.notifier).dialogClosed();
+    _notifier.dialogClosed();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
