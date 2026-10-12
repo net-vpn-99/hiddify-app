@@ -12,6 +12,8 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/theme/theme_extensions.dart';
 import 'package:hiddify/core/widget/animated_text.dart';
+import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
+import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
@@ -186,10 +188,30 @@ class ConnectionButton extends HookConsumerWidget {
           final ticket = beginConnectFlow();
           final progressCtl = ref.read(connectProgressProvider.notifier);
           bool stopped() => !connectFlowAlive(ticket) || !context.mounted;
-          void stepTo(int n) => progressCtl.state = ConnectProgress(step: n);
-          void failAt(int n, String title, String message) =>
-              progressCtl.state = ConnectProgress(failedStep: n, title: title, message: message);
-          void clear() => progressCtl.state = const ConnectProgress();
+          void stepTo(int n) {
+            ConnectFlowClock.at(n);
+            progressCtl.state = ConnectProgress(step: n);
+          }
+
+          void failAt(int n, String title, String message) {
+            progressCtl.state = ConnectProgress(failedStep: n, title: title, message: message);
+            // 前三步停下的：上报写清停在哪步、什么原因（以前这几步失败服务器一条都没有）。
+            // 第 4 步的失败由 connection_notifier 按连接尝试报，这里不重复。
+            if (n <= 3) {
+              final stage = switch (n) {
+                1 => 'account',
+                2 => 'sub_download',
+                _ => 'route_pick',
+              };
+              unawaited(ref.read(connectReporterProvider).reportStepFailure(n, stage, '$title：$message'));
+            }
+          }
+
+          // 不是失败也不是取消（去登录 / 去续费 / 没同意提示）：计时收掉，别算到下一次头上。
+          void clear() {
+            ConnectFlowClock.end('stop');
+            progressCtl.state = const ConnectProgress();
+          }
           ref.read(deadLineProvider.notifier).state = false;
 
           // ① 开通账号：没账号先把游客号补开一次（首页开号可能还没跑完，或者上次网络

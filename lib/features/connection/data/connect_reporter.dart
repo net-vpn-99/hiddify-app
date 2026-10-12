@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
+import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
@@ -209,6 +210,7 @@ class ConnectReporter {
       ..['proxy'] = {'result': 'ok', 'ms': max(0, proxyMs)}
       ..['egress'] = {'result': 'unknown'};
     if (_sub.isNotEmpty) payload['sub'] = _sub;
+    ConnectFlowClock.end('ok');
     await _send(payload, null);
   }
 
@@ -233,6 +235,9 @@ class ConnectReporter {
     _done = true;
 
     captureCoreLogSync();
+    // 每步用时现在就取：下面的 TCP 探测要好几秒，计时不能算到那时候。
+    final steps = ConnectFlowClock.text();
+    ConnectFlowClock.end('fail');
 
     var failStage = forcedStage ?? _mapFailStage(engineError, _reached);
 
@@ -261,6 +266,7 @@ class ConnectReporter {
     final payload = _basePayload('fail')
       ..['fail_stage'] = failStage
       ..['reached_stage'] = _reached;
+    if (steps.isNotEmpty) payload['step_ms'] = steps;
     if (appForeground != null) payload['app_fg'] = appForeground;
     if (probeLog != null && probeLog.isNotEmpty) payload['probe_n'] = probeLog;
     if (_sub.isNotEmpty) payload['sub'] = _sub;
@@ -318,7 +324,13 @@ class ConnectReporter {
 
   /// Connect was pressed but there is no profile and a resync did not fix it.
   /// The last subscription fetch is why.
-  Future<void> reportNoRoute() async {
+  Future<void> reportNoRoute() => reportStepFailure(2, 'sub_download', '没有可用线路（没有订阅）');
+
+  /// 一键连接在前三步就停了（开通账号 / 获取线路 / 选择线路）：还没有连接尝试，单开一条。
+  /// 第 2 步以最近一次拉订阅的结果为准（sub_download / sub_parse），[stageHint] 是兜底。
+  Future<void> reportStepFailure(int step, String stageHint, String message) async {
+    final steps = ConnectFlowClock.text();
+    ConnectFlowClock.end('fail');
     _attemptId = _mintId();
     _startedAt = DateTime.now();
     _done = true;
@@ -327,15 +339,68 @@ class ConnectReporter {
     _nodeTag = '';
     _nodeHost = null;
     _nodePort = null;
-    _sub = await _readSubFetch();
-    final subStage = _sub.remove('_stage') as int? ?? 0;
-    final subFail = _sub.remove('_fail_stage') as String?;
-
+    var stage = stageHint;
+    var reached = step >= 3 ? stageNodesParsed : 0;
+    _sub = {};
+    if (step == 2) {
+      _sub = await _readSubFetch();
+      reached = _sub.remove('_stage') as int? ?? 0;
+      stage = _sub.remove('_fail_stage') as String? ?? stageHint;
+    }
     final payload = _basePayload('fail')
-      ..['fail_stage'] = subFail ?? 'sub_download'
-      ..['reached_stage'] = max(1, subStage);
+      ..['fail_stage'] = stage
+      ..['reached_stage'] = reached;
+    if (steps.isNotEmpty) payload['step_ms'] = steps;
+    final errMsg = _errMsg('第 $step 步：$message');
+    if (errMsg.isNotEmpty) payload['err_msg'] = errMsg;
     if (_sub.isNotEmpty) payload['sub'] = _sub;
+    ConnectFlowClock.log?.call('connect step $step failed ($stage): $message');
     await _send(payload, null);
+  }
+
+  /// 连接过程中他自己点了取消。[stepSlug]：account / nodes / route_pick / connect / verify。
+  /// 第 4、5 步连接尝试已经开着，就记到那一条上（不再悄悄丢掉）。
+  Future<void> reportCancel(String stepSlug) async {
+    final steps = ConnectFlowClock.text();
+    ConnectFlowClock.end('cancel');
+    final open = attemptOpen;
+    if (!open) {
+      _attemptId = _mintId();
+      _startedAt = DateTime.now();
+      _nodeTag = '';
+      _sub = {};
+    }
+    _done = true;
+    final payload = _basePayload('cancel')
+      ..['fail_stage'] = stepSlug
+      ..['reached_stage'] = open ? _reached : 0;
+    if (steps.isNotEmpty) payload['step_ms'] = steps;
+    ConnectFlowClock.log?.call('connect cancelled at $stepSlug');
+    await _send(payload, null);
+  }
+
+  /// 连上（已确认网通）之后又断了：[kind] 是哪项检查判的（engine_gone / dead_tunnel /
+  /// egress_mismatch），[detail] 写已连多久、探测结果、前后台。不算连接失败率（outcome=drop），
+  /// 线路沿用上一次连接的。也带一份诊断包（同样限频）。
+  Future<void> reportDrop(String kind, String detail) async {
+    _attemptId = _mintId();
+    _startedAt = DateTime.now();
+    _done = true;
+    _snapDone = false;
+    _tcp = null;
+    _reached = stageProxyRequest;
+    captureCoreLogSync();
+    final payload = _basePayload('drop')
+      ..['fail_stage'] = kind
+      ..['reached_stage'] = stageProxyRequest;
+    payload.remove('step_ms');
+    if (_tcp != null) payload['tcp'] = _tcp;
+    final errMsg = _errMsg(detail);
+    if (errMsg.isNotEmpty) payload['err_msg'] = errMsg;
+    ConnectFlowClock.log?.call('connection dropped ($kind): $detail');
+    String? bundle;
+    if (await _bundleRateLimitOk('drop|$kind|$_nodeTag')) bundle = await _buildBundle(kind);
+    await _send(payload, bundle);
   }
 
   // -------------------------------------------------------------- payload
@@ -351,6 +416,8 @@ class ConnectReporter {
     };
     if (_nodeTag.isNotEmpty) m['node_tag'] = _nodeTag;
     if (_subName.isNotEmpty) m['sub_name'] = _subName;
+    final steps = ConnectFlowClock.text();
+    if (steps.isNotEmpty) m['step_ms'] = steps;
     // Fallback only -- the server prefers the account resolved from the token.
     final e = _email();
     if (e != null) m['email'] = e;

@@ -47,7 +47,11 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
             // OneRay：新用户打开 App 时看手机上是不是开着别家 VPN（我们自己的没连时才问）。
             OtherVpnActive("other_vpn_active"),
             OpenVpnSettings("open_vpn_settings"),
+            // OneRay：用着用着断了 / 线路不通被断开 —— 发一条系统通知（App 在后台也看得到）。
+            ShowDropNotice("show_drop_notice"),
         }
+        private const val dropChannel = "connection_drop"
+        private const val dropNotificationId = 2
     }
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -195,6 +199,40 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
                         cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
                     }
                     success(active)
+                }.onFailure { result.success(false) }
+            }
+
+            Trigger.ShowDropNotice.method -> {
+                result.runCatching {
+                    val args = call.arguments as? Map<*, *>
+                    val title = args?.get("title") as? String ?: "光速雷达已断开"
+                    val text = args?.get("text") as? String ?: ""
+                    val ctx = Application.application
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Application.notification.createNotificationChannel(
+                            android.app.NotificationChannel(
+                                dropChannel, "连接断开提醒", android.app.NotificationManager.IMPORTANCE_DEFAULT
+                            )
+                        )
+                    }
+                    val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                        android.app.PendingIntent.FLAG_IMMUTABLE else 0
+                    val open = android.app.PendingIntent.getActivity(
+                        ctx, 1,
+                        Intent(ctx, MainActivity::class.java).setFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+                        flags
+                    )
+                    val n = androidx.core.app.NotificationCompat.Builder(ctx, dropChannel)
+                        .setSmallIcon(R.drawable.ic_stat_logo)
+                        .setContentTitle(title)
+                        .setContentText(text)
+                        .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(text))
+                        .setAutoCancel(true)
+                        .setContentIntent(open)
+                        .build()
+                    // 没通知权限时 notify 什么都不做，不会崩。
+                    Application.notification.notify(dropNotificationId, n)
+                    success(true)
                 }.onFailure { result.success(false) }
             }
 

@@ -8,9 +8,11 @@ import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/app/notifier/app_foreground.dart';
+import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/connection_data_providers.dart';
 import 'package:hiddify/features/connection/data/connection_repository.dart';
+import 'package:hiddify/features/connection/data/drop_notice.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
@@ -48,6 +50,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
 
   @override
   Stream<ConnectionStatus> build() async* {
+    // 一键连接每一步的计时写进 app.log（以前安卓的点击流程一行日志都没有）。
+    ConnectFlowClock.log = (line) => loggy.info(line);
     if (Platform.isIOS) {
       await _connectionRepo.setup().mapLeft((l) {
         loggy.error("error setting up connection repository", l);
@@ -123,10 +127,13 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       final reporter = ref.read(connectReporterProvider);
       switch (event) {
         case Connecting():
+          // 第 4 步（启动连接）。换线路 / 自动连这种不经过按钮的，从这里开始计时。
+          ConnectFlowClock.at(4);
           reporter.markStage(ConnectReporter.stageCoreStarted);
           ref.read(deadLineProvider.notifier).state = false;
           ref.read(homeFaultProvider.notifier).state = '';
         case Connected():
+          if (!ref.read(stabilityProvider).confirmed) ConnectFlowClock.at(5);
           _wasUp = true;
           _userStop = false;
           reporter.markStage(ConnectReporter.stageTunnelReady);
@@ -146,6 +153,27 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         case Disconnected() || Disconnecting():
           if (event is Disconnected && _wasUp && !_userStop && ref.read(homeFaultProvider).isEmpty) {
             ref.read(homeFaultProvider.notifier).state = 'engine';
+            // 不是他自己断的，也不是我们判断开的：核心自己退了（被系统 / 别的 VPN 关掉）。
+            if (ref.read(stabilityProvider).confirmed) {
+              // 用着用着断的：单报一条「掉线」，并发系统通知（App 在后台也看得到）。
+              final secs = ref.read(stabilityProvider.notifier).confirmedSeconds;
+              final fg = ref.read(appForegroundProvider) ? '前台' : '后台';
+              final failure = event.connectionFailure;
+              unawaited(reporter.reportDrop(
+                'engine_gone',
+                '已连 $secs 秒｜核心退出${failure == null ? '' : '：${_truncate(failure.toString(), 120)}'}｜App 在$fg',
+              ));
+              unawaited(DropNotice.show('连接被系统或其他 VPN 关掉了。打开光速雷达点「连接」恢复'));
+            } else if (reporter.attemptOpen) {
+              // 第 5 步还没确认网通核心就退了：这是一次失败（以前直接丢掉，后台看不到）。
+              reporter.captureCoreLogSync();
+              unawaited(reporter.reportFailure(
+                '确认网通前核心退出${event.connectionFailure == null ? '' : '：${event.connectionFailure}'}',
+                forcedStage: 'engine_gone',
+                appForeground: ref.read(appForegroundProvider),
+                probeLog: ref.read(stabilityProvider.notifier).probeLog(),
+              ));
+            }
           }
           if (event is Disconnected) _wasUp = false;
           _userStop = false;
@@ -310,6 +338,11 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           await _connect();
         case Connected():
           // default:
+          // 还没确认网通（第 5 步）就点了：这是取消，记一条（看大家在哪一步等不及）。
+          final reporter = ref.read(connectReporterProvider);
+          if (!ref.read(stabilityProvider).confirmed && reporter.attemptOpen) {
+            unawaited(reporter.reportCancel(ConnectFlowClock.slug(5)));
+          }
           _userAskedToConnect = false;
           await haptic.mediumImpact();
           await ref.read(Preferences.startedByUser.notifier).update(false);

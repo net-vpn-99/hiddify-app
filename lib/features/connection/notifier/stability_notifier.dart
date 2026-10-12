@@ -5,6 +5,7 @@ import 'package:hiddify/core/http_client/http_client_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/app/notifier/app_foreground.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
+import 'package:hiddify/features/connection/data/drop_notice.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -73,8 +74,13 @@ class StabilityNotifier extends Notifier<StabilityState> {
   int _gen = 0;
   bool _probing = false;
   final List<String> _probeNotes = [];
+  DateTime? _confirmedAt;
 
   bool get isRunning => _running;
+
+  /// 这次连接确认网通到现在多少秒（上报「掉线」用）；没确认过是 0。
+  int get confirmedSeconds =>
+      _confirmedAt == null ? 0 : DateTime.now().difference(_confirmedAt!).inSeconds;
 
   /// 这次连接的探测结果，最多 10 个，例如 `142,err,timeout`。
   String probeLog() => _probeNotes.join(',');
@@ -193,7 +199,10 @@ class StabilityNotifier extends Notifier<StabilityState> {
         reporter.markStage(ConnectReporter.stageProxyRequest);
         unawaited(reporter.reportSuccess(1));
       }
-      if (!_confirmed) _confirmed = true;
+      if (!_confirmed) {
+        _confirmed = true;
+        _confirmedAt = DateTime.now();
+      }
       _armSteady(gen);
       _rememberedScore = 10;
       state = StabilityState(10, confirmed: true, egressAudit: audit);
@@ -221,15 +230,33 @@ class StabilityNotifier extends Notifier<StabilityState> {
       return;
     }
     _timer?.cancel();
-    _timer = Timer(const Duration(seconds: 30), () => _probe(gen));
+    _timer = Timer(const Duration(seconds: 20), () => _probe(gen));
   }
 
+  /// 确认通之后每分钟探一次（一个很小的请求）。以前是 5 分钟：线路断了最晚要 5 分半
+  /// 才发现，人早就以为是自己网不好了（10-12 洛杉矶 05 断网那次）。现在约 1 分 20 秒内发现。
   void _armSteady(int gen) {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(minutes: 5), (_) => _probe(gen));
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) => _probe(gen));
   }
 
   void _fault(String kind) {
+    final reporter = ref.read(connectReporterProvider);
+    final stage = kind == 'egress' ? 'egress_mismatch' : 'dead_tunnel';
+    if (_confirmed) {
+      // 用着用着断的：上一次连接早报过成功了，单报一条「掉线」，再发系统通知。
+      final secs = _confirmedAt == null ? 0 : DateTime.now().difference(_confirmedAt!).inSeconds;
+      final fg = ref.read(appForegroundProvider) ? '前台' : '后台';
+      unawaited(reporter.reportDrop(stage, '已连 $secs 秒｜探测：${probeLog()}｜App 在$fg'));
+      final line = ref.read(Preferences.lastNodeName).trim();
+      unawaited(DropNotice.show(kind == 'egress'
+          ? '网络被别的 VPN 或安全软件接管了。关掉它们后，打开光速雷达点「连接」'
+          : '${line.isEmpty ? '这条线路' : line} 连不上了。换一条线路试试，或者稍后再点「连接」'));
+    } else if (kind == 'egress' && reporter.attemptOpen) {
+      // 还没确认网通就发现出口是国内：第 5 步失败（以前被 abortConnection 当成取消丢掉了）。
+      unawaited(reporter.reportFailure('出口是国内 IP，流量没走隧道', forcedStage: 'egress_mismatch',
+          probeLog: probeLog()));
+    }
     if (kind == 'line') ref.read(deadLineProvider.notifier).state = true;
     ref.read(homeFaultProvider.notifier).state = kind;
     unawaited(ref.read(connectionNotifierProvider.notifier).abortConnection());

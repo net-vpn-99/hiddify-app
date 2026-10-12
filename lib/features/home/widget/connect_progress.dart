@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
+import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 一键连接的 5 步进度（两端统一，Windows 见 ConnectionController::connectStep）：
@@ -28,12 +32,20 @@ const connectStepLabels = ['开通账号', '获取线路', '选择线路', '启�
 /// 都看一眼票还有没有效，作废了就停下 —— 取消靠这个，不靠计时。
 int _flowTicket = 0;
 
-int beginConnectFlow() => ++_flowTicket;
+int beginConnectFlow() {
+  ConnectFlowClock.begin();
+  return ++_flowTicket;
+}
 
 bool connectFlowAlive(int ticket) => ticket == _flowTicket;
 
 void cancelConnectFlow(WidgetRef ref) {
   _flowTicket++;
+  // 准备那几步（1~3）他点了取消：记一条，看大家在哪一步等不及。
+  final step = ref.read(connectProgressProvider).step;
+  if (ConnectFlowClock.isOpen && step >= 1 && step <= 3) {
+    unawaited(ref.read(connectReporterProvider).reportCancel(ConnectFlowClock.slug(step)));
+  }
   ref.read(connectProgressProvider.notifier).state = const ConnectProgress();
 }
 
