@@ -224,12 +224,19 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
     loggy.info("active profile is not the account's, switching back to [${own.id}]");
     final ok = await _profilesRepo.setAsActive(own.id).match((_) => false, (_) => true).run();
     if (!ok) return false;
-    // 等 activeProfileProvider（DB watch）跟上，否则紧接着的连接可能还拿到旧的那份。
-    for (var i = 0; i < 30; i++) {
-      if ((await ref.read(activeProfileProvider.future))?.id == own.id) return true;
-      await Future.delayed(const Duration(milliseconds: 100));
+    // 等 activeProfileProvider（DB watch）真的换过来再往下走，否则紧接着的连接可能还拿到
+    // 旧的那份。以前是每 0.1 秒看一次、看 30 次（靠猜）；现在盯着它变，变了立刻继续。
+    // 5 秒还没变 = 数据库那边出了问题，判失败，别拿旧订阅去连。
+    final ownId = own.id;
+    final switched = Completer<bool>();
+    final sub = ref.listen(activeProfileProvider, (_, next) {
+      if (next.valueOrNull?.id == ownId && !switched.isCompleted) switched.complete(true);
+    }, fireImmediately: true);
+    try {
+      return await switched.future.timeout(const Duration(seconds: 5), onTimeout: () => false);
+    } finally {
+      sub.close();
     }
-    return true;
   }
 
   TaskEither<ProfileFailure, Unit> _upsertAndBind(String url, UserOverride userOverride) {
