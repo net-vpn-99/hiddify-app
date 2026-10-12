@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
+import 'package:hiddify/features/connection/data/system_settings.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -14,7 +15,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// （Connecting），第 5 步看 stabilityProvider.confirmed（第一次经隧道的请求成功）。
 /// 哪一步失败就停在那一步，[failedStep] + [title] / [message] 说原因和下一步。
 class ConnectProgress {
-  const ConnectProgress({this.step = 0, this.failedStep = 0, this.title = '', this.message = ''});
+  const ConnectProgress({
+    this.step = 0,
+    this.failedStep = 0,
+    this.title = '',
+    this.message = '',
+    this.action = SettingsAction.none,
+  });
 
   /// 点击流程正在做第几步（1~4），0 = 没在跑。
   final int step;
@@ -23,28 +30,37 @@ class ConnectProgress {
   final int failedStep;
   final String title;
   final String message;
+
+  /// 失败时按钮下面多给的一个「去设置」按钮（没有就是 none）。
+  final SettingsAction action;
 }
 
 final connectProgressProvider = StateProvider<ConnectProgress>((ref) => const ConnectProgress());
 
 const connectStepLabels = ['开通账号', '获取线路', '选择线路', '启动连接', '检查网络'];
 
-/// 第 4 步（启动连接）失败时给客户看的标题和「下一步怎么做」。两端统一，
-/// Windows 见 ConnectionController::engineFaultCopy。原始报错只进上报和 app.log，不给客户看。
-({String title, String message}) connectFailCopy(Object? err) => switch (err) {
-  MissingVpnPermission() => (
-    title: '需要你允许一次',
-    message: '系统问「是否允许建立 VPN 连接」时，请点「确定」，然后再点一下按钮',
+/// 第 4 步（启动连接）失败时给客户看的：标题直说要允许什么、「下一步怎么做」、能直接去的设置页。
+/// 两端统一，Windows 见 ConnectionController::engineFaultCopy。原始报错只进上报和 app.log。
+ConnectProgress connectFailProgress(Object? err) => switch (err) {
+  MissingVpnPermission() => const ConnectProgress(
+    failedStep: 4,
+    title: '请允许光速雷达建立 VPN 连接',
+    message: '再点一下按钮，手机弹出「连接请求」时请点「确定」。没有弹出的话，点「打开 VPN 设置」关掉别的 VPN 的「始终开启」',
+    action: SettingsAction.vpn,
   ),
-  MissingNotificationPermission() => (
-    title: '需要你允许通知',
-    message: '请在手机设置里允许光速雷达发通知，然后再点一下按钮',
+  MissingNotificationPermission() => const ConnectProgress(
+    failedStep: 4,
+    title: '请允许光速雷达发通知',
+    message: '连接要在通知栏显示才能一直开着。点「打开通知设置」允许后，再点一下按钮',
+    action: SettingsAction.notifications,
   ),
-  MissingPrivilege() || BackgroundCoreNotAvailable() => (
-    title: '光速雷达被拦住了',
-    message: '请在手机管家里允许光速雷达后台运行，再点一下按钮。如果还不行，请到官网下载最新版重新安装',
+  MissingPrivilege() || BackgroundCoreNotAvailable() => const ConnectProgress(
+    failedStep: 4,
+    title: '请允许光速雷达在后台运行',
+    message: '点「允许后台运行」，在弹出的窗口里选「允许」，再点一下按钮。还不行的话，请到官网下载最新版重新安装',
+    action: SettingsAction.battery,
   ),
-  _ => (title: '连接没成功', message: '请再点一下按钮。如果还不行，请换一条线路'),
+  _ => const ConnectProgress(failedStep: 4, title: '连接没成功', message: '请再点一下按钮。如果还不行，请换一条线路'),
 };
 
 /// 点击流程的「票」：每点一次连接领一张新票，点取消就作废当前这张。流程每走完一步

@@ -403,7 +403,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         loggy.warning("error reconnecting", err);
         state = AsyncError(err, StackTrace.current);
         // 给客户看「下一步怎么做」，原始报错只进 app.log。
-        final copy = connectFailCopy(err);
+        final copy = connectFailProgress(err);
         await ref.read(dialogNotifierProvider.notifier).showCustomAlert(title: copy.title, message: copy.message);
       }).run();
     }
@@ -535,12 +535,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
       // 原来弹 Hiddify 的报错框（原始报错，客户看不懂）。现在进度条停在第 4 步，
       // 写「下一步怎么做」（connectFailCopy，两端统一）；原始报错只进上报和 app.log。
-      final copy = connectFailCopy(err);
-      ref.read(connectProgressProvider.notifier).state = ConnectProgress(
-        failedStep: 4,
-        title: copy.title,
-        message: copy.message,
-      );
+      ref.read(connectProgressProvider.notifier).state = connectFailProgress(err);
       loggy.warning(err);
       if (err.toString().contains("panic")) {
         await Sentry.captureException(Exception(err.toString()));

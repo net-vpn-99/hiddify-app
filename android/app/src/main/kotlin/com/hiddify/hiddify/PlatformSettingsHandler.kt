@@ -51,6 +51,8 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
             ShowDropNotice("show_drop_notice"),
             // OneRay：核心最近一次是怎么停的（见 BoxService.lastStopReason）。
             LastStopReason("last_stop_reason"),
+            // OneRay：连接失败「请允许光速雷达发通知」那个按钮。
+            OpenNotificationSettings("open_notification_settings"),
         }
         private const val dropChannel = "connection_drop"
         private const val dropNotificationId = 2
@@ -201,6 +203,22 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
                         cm.getNetworkCapabilities(n)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
                     }
                     success(active)
+                }.onFailure { result.success(false) }
+            }
+
+            Trigger.OpenNotificationSettings.method -> {
+                result.runCatching {
+                    val ctx = activity ?: Application.application
+                    val pkg = Application.application.packageName
+                    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, pkg)
+                    } else {
+                        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg"))
+                    }
+                    if (activity == null) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    ctx.startActivity(intent)
+                    success(true)
                 }.onFailure { result.success(false) }
             }
 

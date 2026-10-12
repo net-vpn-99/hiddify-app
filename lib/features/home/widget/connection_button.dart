@@ -14,6 +14,7 @@ import 'package:hiddify/core/theme/theme_extensions.dart';
 import 'package:hiddify/core/widget/animated_text.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
+import 'package:hiddify/features/connection/data/system_settings.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
@@ -139,11 +140,8 @@ class ConnectionButton extends HookConsumerWidget {
       // 停在第 4 步并说下一步。授权弹窗是在 Connecting 之前问的，所以第 4 步进行中也算。
       final failedNow = next is AsyncError || (s is Disconnected && s.connectionFailure != null);
       if ((prev?.valueOrNull is Connecting || p.step == 4) && failedNow) {
-        final copy = connectFailCopy(next is AsyncError ? next.error : (s is Disconnected ? s.connectionFailure : null));
-        ref.read(connectProgressProvider.notifier).state = ConnectProgress(
-          failedStep: 4,
-          title: copy.title,
-          message: copy.message,
+        ref.read(connectProgressProvider.notifier).state = connectFailProgress(
+          next is AsyncError ? next.error : (s is Disconnected ? s.connectionFailure : null),
         );
       }
     });
@@ -331,6 +329,8 @@ class ConnectionButton extends HookConsumerWidget {
           ? progress.message
           : null,
       steps: stepsBar,
+      // 失败时能直接去的设置页（授权 / 通知 / 后台运行），没有就不显示。
+      hintAction: shownFailed == 4 ? progress.action : SettingsAction.none,
       buttonColor: switch (connectionStatus) {
         AsyncData(value: Connected()) when requiresReconnect == true => Colors.teal,
         AsyncData(value: Connected()) when !confirmed => const Color.fromARGB(255, 185, 176, 103),
@@ -370,7 +370,10 @@ class _ConnectionButton extends StatelessWidget {
     required this.secureLabel,
     this.hint,
     this.steps,
+    this.hintAction = SettingsAction.none,
   });
+
+  final SettingsAction hintAction;
 
   final VoidCallback onTap;
   final bool enabled;
@@ -439,6 +442,10 @@ class _ConnectionButton extends StatelessWidget {
                     context,
                   ).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
+              ],
+              if (hintAction != SettingsAction.none) ...[
+                const Gap(4),
+                TextButton(onPressed: hintAction.open, child: Text(hintAction.label)),
               ],
               if (secureLabel.isNotEmpty) ...[
                 Row(
