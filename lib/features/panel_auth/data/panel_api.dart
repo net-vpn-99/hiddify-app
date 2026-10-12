@@ -380,7 +380,7 @@ class PanelApi {
   /// 取回同一个老号时给不出原文。空不是错误，别拿它判断成功失败。
   ///
   /// onVerify：服务端要先算题（开着别的 VPN、IP 在国外，GslGuest 1.8.2+）、开始算之前调一次，
-  /// 首页借它把「正在开通免费试用…」换成「正在做安全验证」。
+  /// 首页借它把「正在开通免费试用…」换成「正在进行人机验证」。
   Future<({String? token, String? hasAccountMask, String? password, bool hasInviter})> guestLogin(
       String deviceId, {String? inviteCode, void Function()? onVerify}) async {
     final sw = Stopwatch()..start();
