@@ -94,6 +94,23 @@ class HomePage extends HookConsumerWidget {
       if (loggedIn) loadGift();
       return null;
     }, [loggedIn]);
+    // 从 TG 机器人点「打开光速雷达，一键领取」进来：问一次能不能领，能领就直接拉起 Telegram。
+    final fromLink = useValueListenable(giftFromLink);
+    useEffect(() {
+      if (!fromLink || !loggedIn) return null;
+      giftFromLink.value = false;
+      Future(() async {
+        final g = await ref.read(panelAuthProvider.notifier).tgGift();
+        if (!context.mounted) return;
+        gift.value = g;
+        if (g?['state'] == 'open') {
+          await openTgGift(g!);
+        } else if (g?['state'] == 'claimed') {
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('这个账号已经领过了')));
+        }
+      });
+      return null;
+    }, [fromLink, loggedIn]);
     useOnAppLifecycleStateChange((_, state) {
       if (state != AppLifecycleState.resumed || gift.value?['state'] != 'open') return;
       loadGift();
@@ -259,18 +276,7 @@ class _HomeLinkState extends State<_HomeLink> {
   Future<void> _open() async {
     final gift = widget.gift;
     if (gift != null) {
-      // 装了 Telegram 直接拉起机器人；没装（拉不起来）就开官网中转页，那里有下载入口。
-      final tg = gift['tg'] as String? ?? '';
-      final page = gift['page'] as String? ?? '';
-      var ok = false;
-      if (tg.isNotEmpty) {
-        try {
-          ok = await launchUrl(Uri.parse(tg), mode: LaunchMode.externalApplication);
-        } catch (_) {
-          ok = false;
-        }
-      }
-      if (!ok && page.isNotEmpty) await UriUtils.tryLaunch(Uri.parse(page));
+      await openTgGift(gift);
       return;
     }
     final group = widget.group;
@@ -645,4 +651,19 @@ class _RouteRulesEntry extends HookConsumerWidget {
       ),
     );
   }
+}
+
+/// 关注 TG 频道再领一天：装了 Telegram 直接拉起机器人（链接带着账号）；拉不起来就开官网中转页，那里有下载入口。
+Future<void> openTgGift(Map<String, dynamic> gift) async {
+  final tg = gift['tg'] as String? ?? '';
+  final page = gift['page'] as String? ?? '';
+  var ok = false;
+  if (tg.isNotEmpty) {
+    try {
+      ok = await launchUrl(Uri.parse(tg), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      ok = false;
+    }
+  }
+  if (!ok && page.isNotEmpty) await UriUtils.tryLaunch(Uri.parse(page));
 }

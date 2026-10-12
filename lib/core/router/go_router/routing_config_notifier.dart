@@ -76,6 +76,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         if (state.uri.scheme == 'oneray' && state.uri.host == 'invite') {
           final code = state.uri.queryParameters['code'] ?? '';
           if (code.isNotEmpty) pendingInviteFromLink = code;
+          if (state.uri.queryParameters['gift'] == '1') giftFromLink.value = true;
           return '/home';
         }
         if (LinkParser.protocols.contains(state.uri.scheme)) {
