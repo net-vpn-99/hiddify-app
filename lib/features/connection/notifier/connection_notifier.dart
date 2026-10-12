@@ -151,39 +151,76 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           // 人在后台时先不下这个结论，回到前台再给 10 秒。
           _armUnconfirmedDeadline(serial);
         case Disconnected() || Disconnecting():
+          var judging = false;
           if (event is Disconnected && _wasUp && !_userStop && ref.read(homeFaultProvider).isEmpty) {
-            ref.read(homeFaultProvider.notifier).state = 'engine';
-            // 不是他自己断的，也不是我们判断开的：核心自己退了（被系统 / 别的 VPN 关掉）。
-            if (ref.read(stabilityProvider).confirmed) {
-              // 用着用着断的：单报一条「掉线」，并发系统通知（App 在后台也看得到）。
-              final secs = ref.read(stabilityProvider.notifier).confirmedSeconds;
-              final fg = ref.read(appForegroundProvider) ? '前台' : '后台';
-              final failure = event.connectionFailure;
-              unawaited(reporter.reportDrop(
-                'engine_gone',
-                '已连 $secs 秒｜核心退出${failure == null ? '' : '：${_truncate(failure.toString(), 120)}'}｜App 在$fg',
-              ));
-              unawaited(DropNotice.show('连接被系统或其他 VPN 关掉了。打开光速雷达点「连接」恢复'));
-            } else if (reporter.attemptOpen) {
-              // 第 5 步还没确认网通核心就退了：这是一次失败（以前直接丢掉，后台看不到）。
-              reporter.captureCoreLogSync();
-              unawaited(reporter.reportFailure(
-                '确认网通前核心退出${event.connectionFailure == null ? '' : '：${event.connectionFailure}'}',
-                forcedStage: 'engine_gone',
-                appForeground: ref.read(appForegroundProvider),
-                probeLog: ref.read(stabilityProvider.notifier).probeLog(),
-              ));
-            }
+            // App 里没点断开、也不是我们判断开的。先问原生那边是谁停的：通知栏「停止」、
+            // 下拉快捷开关也是用户自己停的，不能说成「被系统关掉」。问完再定（上报要等它）。
+            judging = true;
+            unawaited(_judgeUnexpectedStop(event));
           }
-          if (event is Disconnected) _wasUp = false;
-          _userStop = false;
+          if (event is Disconnected) {
+            _wasUp = false;
+            // 只在真断开了才清：以前 Disconnecting 就清掉了，紧跟着的 Disconnected 以为不是他点的，
+            // 自己点断开也显示「连接被系统关掉了」（10-13 运营真机）。
+            _userStop = false;
+          }
           _deadlineHeld = false;
           _stopQuotaPoll();
           _stopDeviceKeepWarm();
-          reporter.abandon();
+          if (!judging) reporter.abandon();
       }
       loggy.info("connection status: ${event.format()}");
     });
+  }
+
+  /// 核心停了，但不是在 App 里点的断开、也不是我们判断开的：按原生记下的停止原因定性。
+  ///  - user：通知栏「停止」/ 下拉快捷开关 —— 他自己停的，什么都不说。
+  ///  - revoked：系统收回了 VPN（开了别的 VPN，或在系统设置里断开）。
+  ///  - 其他（空）：核心进程没走正常停止就没了（被系统杀掉 / 崩溃）。
+  Future<void> _judgeUnexpectedStop(Disconnected event) async {
+    final reporter = ref.read(connectReporterProvider);
+    final confirmed = ref.read(stabilityProvider).confirmed;
+    final secs = ref.read(stabilityProvider.notifier).confirmedSeconds;
+    final fg = ref.read(appForegroundProvider) ? '前台' : '后台';
+    final probeLog = ref.read(stabilityProvider.notifier).probeLog();
+    final reason = await NativeStopReason.read();
+    // 问的这一下他已经又点了连接：这次断开的结论作废。
+    if (state.valueOrNull is! Disconnected || ref.read(homeFaultProvider).isNotEmpty) {
+      reporter.abandon();
+      return;
+    }
+    if (reason == 'user') {
+      if (confirmed) {
+        reporter.abandon();
+      } else if (reporter.attemptOpen) {
+        unawaited(reporter.reportCancel(ConnectFlowClock.slug(5)));
+      }
+      return;
+    }
+    final revoked = reason == 'revoked';
+    ref.read(homeFaultProvider.notifier).state = revoked ? 'revoked' : 'engine';
+    final failure = event.connectionFailure;
+    final why = revoked ? '系统收回 VPN（别的 VPN / 系统设置）' : '核心没走正常停止就没了';
+    if (confirmed) {
+      // 用着用着断的：单报一条「掉线」，并发系统通知（App 在后台也看得到）。
+      unawaited(reporter.reportDrop(
+        'engine_gone',
+        '已连 $secs 秒｜$why${failure == null ? '' : '：${_truncate(failure.toString(), 120)}'}｜App 在$fg',
+      ));
+      unawaited(DropNotice.show(revoked
+          ? '连接被别的 VPN 或系统设置断开了。关掉别的 VPN 后，打开光速雷达点「连接」'
+          : '连接被系统关掉了。打开光速雷达点「连接」恢复'));
+      reporter.abandon();
+    } else if (reporter.attemptOpen) {
+      // 第 5 步还没确认网通核心就停了：这是一次失败（以前直接丢掉，后台看不到）。
+      reporter.captureCoreLogSync();
+      unawaited(reporter.reportFailure(
+        '确认网通前$why${failure == null ? '' : '：$failure'}',
+        forcedStage: 'engine_gone',
+        appForeground: ref.read(appForegroundProvider),
+        probeLog: probeLog,
+      ));
+    }
   }
 
   void _armUnconfirmedDeadline(int serial) {

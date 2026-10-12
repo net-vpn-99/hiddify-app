@@ -130,14 +130,15 @@ class ConnectionButton extends HookConsumerWidget {
     ref.listen(connectionNotifierProvider, (prev, next) {
       final p = ref.read(connectProgressProvider);
       final s = next.valueOrNull;
-      // 引擎接手了：第 4 步之后由连接状态自己说话。
-      if (p.step == 4 && (s is Connecting || s is Connected)) {
+      // 引擎接手了：第 4 步之后由连接状态自己说话（之前停在第 4 步的失败也一并收掉）。
+      if ((p.step == 4 || p.failedStep == 4) && (s is Connecting || s is Connected)) {
         ref.read(connectProgressProvider.notifier).state = const ConnectProgress();
         return;
       }
-      // 在「启动连接」这一步倒下了（不是他自己断开的）：停在第 4 步。
+      // 在「启动连接」这一步倒下了：核心说了为什么（拒绝 VPN 授权、启动失败……）才算失败，
+      // 停在第 4 步并说下一步。授权弹窗是在 Connecting 之前问的，所以第 4 步进行中也算。
       final failedNow = next is AsyncError || (s is Disconnected && s.connectionFailure != null);
-      if (prev?.valueOrNull is Connecting && failedNow) {
+      if ((prev?.valueOrNull is Connecting || p.step == 4) && failedNow) {
         final copy = connectFailCopy(next is AsyncError ? next.error : (s is Disconnected ? s.connectionFailure : null));
         ref.read(connectProgressProvider.notifier).state = ConnectProgress(
           failedStep: 4,
@@ -289,14 +290,10 @@ class ConnectionButton extends HookConsumerWidget {
 
           // ④ 启动连接。之后的进度由连接状态推（上面的 ref.listen）。
           stepTo(4);
+          // 第 4 步的结果只看连接状态的事件（上面的 ref.listen）：Connecting / Connected 往前走，
+          // 核心报了失败（含拒绝 VPN 授权）就停在第 4 步。以前这里在 toggleConnection 一返回就
+          // 看状态，那时核心常常还没报 Connecting，把正在连的当成「被拒绝授权」（10-13 TEST 真机）。
           await ref.read(connectionNotifierProvider.notifier).toggleConnection();
-          // 系统「允许 VPN」被拒、或者没动静就回到断开：不能让进度条停在第 4 步干转。
-          if (connectFlowAlive(ticket) && ref.read(connectProgressProvider).step == 4) {
-            final now = ref.read(connectionNotifierProvider).valueOrNull;
-            if (now is Disconnected) {
-              failAt(4, '需要你允许一次', '系统问「是否允许建立 VPN 连接」时，请点「确定」，然后再点一下按钮');
-            }
-          }
         },
         AsyncData(value: Connected()) => () async {
           if (requiresReconnect == true &&

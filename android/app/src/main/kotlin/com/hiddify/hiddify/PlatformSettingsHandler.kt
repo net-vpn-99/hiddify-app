@@ -49,6 +49,8 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
             OpenVpnSettings("open_vpn_settings"),
             // OneRay：用着用着断了 / 线路不通被断开 —— 发一条系统通知（App 在后台也看得到）。
             ShowDropNotice("show_drop_notice"),
+            // OneRay：核心最近一次是怎么停的（见 BoxService.lastStopReason）。
+            LastStopReason("last_stop_reason"),
         }
         private const val dropChannel = "connection_drop"
         private const val dropNotificationId = 2
@@ -200,6 +202,10 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
                     }
                     success(active)
                 }.onFailure { result.success(false) }
+            }
+
+            Trigger.LastStopReason.method -> {
+                result.success(com.hiddify.hiddify.bg.BoxService.lastStopReason)
             }
 
             Trigger.ShowDropNotice.method -> {

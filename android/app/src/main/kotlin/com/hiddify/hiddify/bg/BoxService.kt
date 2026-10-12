@@ -98,6 +98,13 @@ class BoxService(
             ContextCompat.startForegroundService(Application.application, intent)
         }
 
+        // OneRay：最近一次是怎么停的，Dart 用来分「他自己停的」和「被系统 / 别的 VPN 断开」。
+        // user = 走 SERVICE_CLOSE（App 断开 / 通知栏停止 / 快捷开关）；revoked = 系统收回 VPN；
+        // 空 = 没走正常停止（进程被杀 / 崩溃）。每次启动清空。
+        @Volatile
+        @JvmStatic
+        var lastStopReason: String = ""
+
         fun stop() {
             Application.application.sendBroadcast(
                     Intent(Action.SERVICE_CLOSE).setPackage(
@@ -121,6 +128,7 @@ class BoxService(
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 Action.SERVICE_CLOSE -> {
+                    lastStopReason = "user"
                     stopService()
                 }
 
@@ -323,6 +331,7 @@ class BoxService(
     internal fun onStartCommand(): Int {
         if (status.value != Status.Stopped) return Service.START_NOT_STICKY
         status.value = Status.Starting
+        lastStopReason = ""
 
         if (!receiverRegistered) {
             ContextCompat.registerReceiver(service, receiver, IntentFilter().apply {
@@ -357,6 +366,7 @@ class BoxService(
     }
 
     fun onRevoke() {
+        lastStopReason = "revoked"
         stopService()
     }
 

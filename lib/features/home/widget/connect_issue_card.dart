@@ -25,7 +25,8 @@ class ConnectIssueCard extends ConsumerWidget {
     final outage = ref.watch(stabilityProvider.select((s) => s.outage));
 
     final bool dead = (deadLine || fault == 'line') && status is Disconnected;
-    final bool engine = fault == 'engine' && status is Disconnected;
+    final bool revoked = fault == 'revoked' && status is Disconnected;
+    final bool engine = (fault == 'engine' || revoked) && status is Disconnected;
     final bool egress = fault == 'egress' && status is Disconnected;
     final bool broken = !dead && !engine && !egress && outage && status is Connected;
     if (!dead && !engine && !egress && !broken) return const SizedBox.shrink();
@@ -37,7 +38,10 @@ class ConnectIssueCard extends ConsumerWidget {
 
     final String title;
     final String body;
-    if (engine) {
+    if (revoked) {
+      title = '连接断了';
+      body = '连接被别的 VPN 或系统设置断开了。关掉别的 VPN 后，点「重新连接」';
+    } else if (engine) {
       title = '连接断了';
       body = '连接被系统关掉了，点「重新连接」恢复';
     } else if (egress) {

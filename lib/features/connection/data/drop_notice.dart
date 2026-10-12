@@ -17,3 +17,20 @@ class DropNotice {
     } catch (_) {}
   }
 }
+
+/// 核心最近一次是怎么停的（原生 BoxService.lastStopReason）：
+/// `user` = 通知栏「停止」/ 快捷开关 / App 里断开；`revoked` = 系统收回 VPN；空 = 没走正常停止。
+class NativeStopReason {
+  NativeStopReason._();
+
+  static const _channel = MethodChannel('com.hiddify.app/platform');
+
+  static Future<String> read() async {
+    if (!Platform.isAndroid) return '';
+    try {
+      return await _channel.invokeMethod<String>('last_stop_reason') ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+}
