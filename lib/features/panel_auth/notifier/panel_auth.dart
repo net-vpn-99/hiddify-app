@@ -263,7 +263,8 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
 
   /// 免注册试用：按本机 ANDROID_ID 开 / 取回游客号，成功返回订阅地址。
   /// 这台设备登过正式账号时返回 hasAccountMask（让用户直接登录），不开游客。
-  Future<({String? subscribeUrl, String? error, String? hasAccountMask, bool? isNetworkError, String? action})> guestLogin() async {
+  Future<({String? subscribeUrl, String? error, String? hasAccountMask, bool? isNetworkError, String? action})> guestLogin(
+      {void Function()? onVerify}) async {
     if (state.loading) return (subscribeUrl: null, error: null, hasAccountMask: null, isNetworkError: null, action: null);
     final deviceId = await DeviceId.read();
     if (deviceId == null) {
@@ -272,7 +273,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     state = state.copyWith(loading: true);
     try {
       final pending = _inviteOrDefault(ref.read(Preferences.pendingInviteCode));
-      final r = await _api.guestLogin(deviceId, inviteCode: pending.isEmpty ? null : pending);
+      final r = await _api.guestLogin(deviceId, inviteCode: pending.isEmpty ? null : pending, onVerify: onVerify);
       final token = r.token;
       if (token == null) {
         state = state.copyWith(loading: false);

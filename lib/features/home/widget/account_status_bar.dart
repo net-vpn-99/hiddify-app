@@ -214,7 +214,7 @@ class AccountStatusBar extends HookConsumerWidget {
     DateTime now,
   ) {
     if (!loggedIn) {
-      if (boot.working) return ('正在开通免费试用…', '', _Tone.plain, '');
+      if (boot.working) return (boot.message ?? '正在开通免费试用…', '', _Tone.plain, '');
       final mask = boot.knownAccountMask;
       if (mask != null) {
         return (mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask', '登录', _Tone.warn, 'login');

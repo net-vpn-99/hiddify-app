@@ -47,6 +47,7 @@ class GuestBootstrapState {
   final String? deviceAccountNo;
 
   /// 正在开号：首页显示「正在准备…」，连接按钮先别让点。
+  /// working 时 message 非空 = 正在做安全验证（首页状态条直接显示这句）。
   final bool working;
 
   /// null = 没有障碍（已登录，或者游客号已经开好了）。
@@ -178,7 +179,10 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
         return;
       }
 
-      final r = await ref.read(panelAuthProvider.notifier).guestLogin();
+      final r = await ref.read(panelAuthProvider.notifier).guestLogin(
+        // 开着别的 VPN 时服务端要先算一道题，几秒钟：首页说清在干什么（message 只在 working 时这样用）。
+        onVerify: () => state = const GuestBootstrapState(working: true, message: '正在做安全验证，几秒钟就好…'),
+      );
       if (r.hasAccountMask != null) {
         _done = true;
         final mask = r.hasAccountMask!;

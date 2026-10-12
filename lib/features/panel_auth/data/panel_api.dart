@@ -378,8 +378,11 @@ class PanelApi {
   ///
   /// password 只有**这次是新开的号**才有值（GslGuest 1.3.0）：服务端只存哈希，
   /// 取回同一个老号时给不出原文。空不是错误，别拿它判断成功失败。
+  ///
+  /// onVerify：服务端要先算题（开着别的 VPN、IP 在国外，GslGuest 1.8.2+）、开始算之前调一次，
+  /// 首页借它把「正在开通免费试用…」换成「正在做安全验证」。
   Future<({String? token, String? hasAccountMask, String? password, bool hasInviter})> guestLogin(
-      String deviceId, {String? inviteCode}) async {
+      String deviceId, {String? inviteCode, void Function()? onVerify}) async {
     final sw = Stopwatch()..start();
     // 绝大多数 IP 没被封，服务端不看答案。先不带答案发；只有 400 才算题，再发一次。
     Future<Response<dynamic>> post(String? altcha) {
@@ -403,6 +406,7 @@ class PanelApi {
       throw PanelApiException.network(e, _networkMessage(e));
     }
     if (res.statusCode == 400) {
+      onVerify?.call();
       final altcha = await solveAltcha(_dio);
       if (altcha != null && altcha.isNotEmpty) {
         try {
