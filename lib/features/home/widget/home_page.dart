@@ -43,6 +43,7 @@ import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/utils/number_formatters.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 常用网站快捷一排是否正在显示。测试谷歌和这一排共用，避免各算一遍。
 final homeQuickSitesVisibleProvider = StateProvider<bool>((ref) => false);
@@ -209,21 +210,53 @@ class _SpeedLine extends ConsumerWidget {
   }
 }
 
-/// 顶栏右边那个链接。没群时是官网；有群时是交流群，始终是文字。
-class _HomeLink extends StatelessWidget {
+/// 顶栏右边那个链接。没群时是官网；有群时是 TG 频道，始终是文字。
+/// TG 频道没点过时右上角亮个小红点（跟 Windows 一致），点过一次就不再亮。
+class _HomeLink extends StatefulWidget {
   const _HomeLink({required this.group});
 
   final Uri? group;
 
   @override
+  State<_HomeLink> createState() => _HomeLinkState();
+}
+
+class _HomeLinkState extends State<_HomeLink> {
+  static const _visitedKey = 'oneray.tg.visited';
+  bool _visited = true;
+
+  @override
+  void initState() {
+    super.initState();
+    SharedPreferences.getInstance().then((prefs) {
+      if (mounted) setState(() => _visited = prefs.getBool(_visitedKey) ?? false);
+    });
+  }
+
+  Future<void> _open() async {
+    final group = widget.group;
+    await UriUtils.tryLaunch(group ?? Uri.parse(Constants.websiteUrl));
+    if (group == null || _visited) return;
+    setState(() => _visited = true);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_visitedKey, true);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final group = widget.group;
     return TextButton(
       style: TextButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         visualDensity: VisualDensity.compact,
       ),
-      onPressed: () => UriUtils.tryLaunch(group ?? Uri.parse(Constants.websiteUrl)),
-      child: Text(group != null ? 'TG 频道 ↗' : '官网 ↗'),
+      onPressed: _open,
+      child: Badge(
+        smallSize: 6,
+        isLabelVisible: group != null && !_visited,
+        offset: const Offset(6, -2),
+        child: Text(group != null ? 'TG 频道 ↗' : '官网 ↗'),
+      ),
     );
   }
 }
