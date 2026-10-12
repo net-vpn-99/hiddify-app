@@ -237,7 +237,7 @@ class _HomeLink extends StatefulWidget {
 
   final Uri? group;
 
-  /// 关注频道送时长还能领时不为空（服务端 gsl_tg/gift 的 data）：这时入口叫「关注 TG 送 1 天」。
+  /// 关注频道送时长还能领时不为空（服务端 gsl_tg/gift 的 data）：这时入口用服务端给的 label（试用号「关注TG频道再领一天试用」）。
   final Map<String, dynamic>? gift;
 
   @override
@@ -294,7 +294,13 @@ class _HomeLinkState extends State<_HomeLink> {
         smallSize: 6,
         isLabelVisible: widget.gift != null || (group != null && !_visited),
         offset: const Offset(6, -2),
-        child: Text(widget.gift != null ? '关注 TG 送 1 天' : (group != null ? 'TG 频道 ↗' : '官网 ↗')),
+        child: Text(
+          widget.gift != null
+              ? (widget.gift!['label'] as String? ?? '关注TG频道再领一天')
+              : (group != null ? 'TG 频道 ↗' : '官网 ↗'),
+          style: widget.gift != null ? const TextStyle(fontSize: 13) : null,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }
