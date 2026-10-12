@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:hiddify/core/haptic/haptic_service.dart';
-import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
@@ -16,6 +15,7 @@ import 'package:hiddify/features/connection/data/drop_notice.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
+import 'package:hiddify/features/home/widget/connect_progress.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
@@ -365,9 +365,9 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       await _connectionRepo.reconnect(profile, ref.read(Preferences.disableMemoryLimit)).mapLeft((err) async {
         loggy.warning("error reconnecting", err);
         state = AsyncError(err, StackTrace.current);
-        await ref
-            .read(dialogNotifierProvider.notifier)
-            .showCustomAlertFromErr(err.present(ref.read(translationsProvider).requireValue));
+        // 给客户看「下一步怎么做」，原始报错只进 app.log。
+        final copy = connectFailCopy(err);
+        await ref.read(dialogNotifierProvider.notifier).showCustomAlert(title: copy.title, message: copy.message);
       }).run();
     }
   }
@@ -496,9 +496,14 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           tunnelNote: tunnelNote,
         ));
       }
-      await ref
-          .read(dialogNotifierProvider.notifier)
-          .showCustomAlertFromErr(err.present(ref.read(translationsProvider).requireValue));
+      // 原来弹 Hiddify 的报错框（原始报错，客户看不懂）。现在进度条停在第 4 步，
+      // 写「下一步怎么做」（connectFailCopy，两端统一）；原始报错只进上报和 app.log。
+      final copy = connectFailCopy(err);
+      ref.read(connectProgressProvider.notifier).state = ConnectProgress(
+        failedStep: 4,
+        title: copy.title,
+        message: copy.message,
+      );
       loggy.warning(err);
       if (err.toString().contains("panic")) {
         await Sentry.captureException(Exception(err.toString()));
@@ -515,7 +520,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       loggy.warning("error disconnecting", err);
       ref
           .read(dialogNotifierProvider.notifier)
-          .showCustomAlertFromErr(err.present(ref.read(translationsProvider).requireValue));
+          .showCustomAlert(title: '断开没成功', message: '请再点一下按钮。如果还不行，请把光速雷达关掉再打开');
       state = AsyncError(err, StackTrace.current);
     }).run();
   }

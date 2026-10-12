@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
+import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 一键连接的 5 步进度（两端统一，Windows 见 ConnectionController::connectStep）：
@@ -27,6 +28,24 @@ class ConnectProgress {
 final connectProgressProvider = StateProvider<ConnectProgress>((ref) => const ConnectProgress());
 
 const connectStepLabels = ['开通账号', '获取线路', '选择线路', '启动连接', '检查网络'];
+
+/// 第 4 步（启动连接）失败时给客户看的标题和「下一步怎么做」。两端统一，
+/// Windows 见 ConnectionController::engineFaultCopy。原始报错只进上报和 app.log，不给客户看。
+({String title, String message}) connectFailCopy(Object? err) => switch (err) {
+  MissingVpnPermission() => (
+    title: '需要你允许一次',
+    message: '系统问「是否允许建立 VPN 连接」时，请点「确定」，然后再点一下按钮',
+  ),
+  MissingNotificationPermission() => (
+    title: '需要你允许通知',
+    message: '请在手机设置里允许光速雷达发通知，然后再点一下按钮',
+  ),
+  MissingPrivilege() || BackgroundCoreNotAvailable() => (
+    title: '光速雷达被拦住了',
+    message: '请在手机管家里允许光速雷达后台运行，再点一下按钮。如果还不行，请到官网下载最新版重新安装',
+  ),
+  _ => (title: '连接没成功', message: '请再点一下按钮。如果还不行，请换一条线路'),
+};
 
 /// 点击流程的「票」：每点一次连接领一张新票，点取消就作废当前这张。流程每走完一步
 /// 都看一眼票还有没有效，作废了就停下 —— 取消靠这个，不靠计时。

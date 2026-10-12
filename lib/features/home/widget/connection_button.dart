@@ -138,10 +138,11 @@ class ConnectionButton extends HookConsumerWidget {
       // 在「启动连接」这一步倒下了（不是他自己断开的）：停在第 4 步。
       final failedNow = next is AsyncError || (s is Disconnected && s.connectionFailure != null);
       if (prev?.valueOrNull is Connecting && failedNow) {
-        ref.read(connectProgressProvider.notifier).state = const ConnectProgress(
+        final copy = connectFailCopy(next is AsyncError ? next.error : (s is Disconnected ? s.connectionFailure : null));
+        ref.read(connectProgressProvider.notifier).state = ConnectProgress(
           failedStep: 4,
-          title: '没连上',
-          message: '点一下再试；还不行就换一条线路',
+          title: copy.title,
+          message: copy.message,
         );
       }
     });
@@ -293,7 +294,7 @@ class ConnectionButton extends HookConsumerWidget {
           if (connectFlowAlive(ticket) && ref.read(connectProgressProvider).step == 4) {
             final now = ref.read(connectionNotifierProvider).valueOrNull;
             if (now is Disconnected) {
-              failAt(4, '没连上', '如果弹出了系统的「连接请求」，请点「确定」后再点一次');
+              failAt(4, '需要你允许一次', '系统问「是否允许建立 VPN 连接」时，请点「确定」，然后再点一下按钮');
             }
           }
         },
