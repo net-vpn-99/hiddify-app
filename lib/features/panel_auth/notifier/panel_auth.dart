@@ -311,6 +311,13 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     }
   }
 
+  /// 关注 TG 频道送 1 天：能不能领 + 领取链接。没登录 / 查不到返回 null。
+  Future<Map<String, dynamic>?> tgGift() async {
+    final token = await currentToken();
+    if (token == null || token.isEmpty) return null;
+    return _api.fetchTgGift(token);
+  }
+
   /// 记下邀请码。还没登录就先存着，下次开号带上；已经登录就写到这个号上。
   /// 成功返回 null。已经有推荐人时服务端不覆盖，这里也当成功收起输入行。
   Future<String?> applyInviteCode(String code) async {

@@ -44,6 +44,7 @@ import 'package:hiddify/utils/number_formatters.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 常用网站快捷一排是否正在显示。测试谷歌和这一排共用，避免各算一遍。
 final homeQuickSitesVisibleProvider = StateProvider<bool>((ref) => false);
@@ -79,6 +80,25 @@ class HomePage extends HookConsumerWidget {
       });
       return null;
     }, const []);
+
+    // 关注 TG 频道送 1 天：能领时顶栏「TG 频道」变成领取入口。从 Telegram 回来时再问一次，
+    // 领完了入口变回普通频道链接，到期时间也顺手刷新。
+    final loggedIn = ref.watch(panelAuthProvider.select((s) => s.loggedIn));
+    final gift = useState<Map<String, dynamic>?>(null);
+    Future<void> loadGift() async {
+      final g = await ref.read(panelAuthProvider.notifier).tgGift();
+      if (context.mounted) gift.value = g;
+    }
+
+    useEffect(() {
+      if (loggedIn) loadGift();
+      return null;
+    }, [loggedIn]);
+    useOnAppLifecycleStateChange((_, state) {
+      if (state != AppLifecycleState.resumed || gift.value?['state'] != 'open') return;
+      loadGift();
+      ref.read(panelAuthProvider.notifier).fetchAccount();
+    });
 
     useEffect(() {
       final code = pendingInviteFromLink;
@@ -133,7 +153,7 @@ class HomePage extends HookConsumerWidget {
         actions: [
           // 有交流群链接时这里是「交流群 ↗」；没有就仍是「官网 ↗」。官网入口在「我的」。
           // 定制线路不放顶栏，跟「查看分流规则」同一排。
-          _HomeLink(group: telegramGroup.value),
+          _HomeLink(group: telegramGroup.value, gift: gift.value?['state'] == 'open' ? gift.value : null),
           if (ref.watch(panelAuthProvider).loggedIn) const NoticeBell(),
           const Gap(8),
         ],
@@ -213,9 +233,12 @@ class _SpeedLine extends ConsumerWidget {
 /// 顶栏右边那个链接。没群时是官网；有群时是 TG 频道，始终是文字。
 /// TG 频道没点过时右上角亮个小红点（跟 Windows 一致），点过一次就不再亮。
 class _HomeLink extends StatefulWidget {
-  const _HomeLink({required this.group});
+  const _HomeLink({required this.group, this.gift});
 
   final Uri? group;
+
+  /// 关注频道送时长还能领时不为空（服务端 gsl_tg/gift 的 data）：这时入口叫「关注 TG 送 1 天」。
+  final Map<String, dynamic>? gift;
 
   @override
   State<_HomeLink> createState() => _HomeLinkState();
@@ -234,6 +257,22 @@ class _HomeLinkState extends State<_HomeLink> {
   }
 
   Future<void> _open() async {
+    final gift = widget.gift;
+    if (gift != null) {
+      // 装了 Telegram 直接拉起机器人；没装（拉不起来）就开官网中转页，那里有下载入口。
+      final tg = gift['tg'] as String? ?? '';
+      final page = gift['page'] as String? ?? '';
+      var ok = false;
+      if (tg.isNotEmpty) {
+        try {
+          ok = await launchUrl(Uri.parse(tg), mode: LaunchMode.externalApplication);
+        } catch (_) {
+          ok = false;
+        }
+      }
+      if (!ok && page.isNotEmpty) await UriUtils.tryLaunch(Uri.parse(page));
+      return;
+    }
     final group = widget.group;
     await UriUtils.tryLaunch(group ?? Uri.parse(Constants.websiteUrl));
     if (group == null || _visited) return;
@@ -253,9 +292,9 @@ class _HomeLinkState extends State<_HomeLink> {
       onPressed: _open,
       child: Badge(
         smallSize: 6,
-        isLabelVisible: group != null && !_visited,
+        isLabelVisible: widget.gift != null || (group != null && !_visited),
         offset: const Offset(6, -2),
-        child: Text(group != null ? 'TG 频道 ↗' : '官网 ↗'),
+        child: Text(widget.gift != null ? '关注 TG 送 1 天' : (group != null ? 'TG 频道 ↗' : '官网 ↗')),
       ),
     );
   }

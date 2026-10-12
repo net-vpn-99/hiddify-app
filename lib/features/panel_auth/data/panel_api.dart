@@ -584,6 +584,22 @@ class PanelApi {
     return status is String ? status : 'ok';
   }
 
+  /// 关注 TG 频道送时长（GslStats 1.19.0）。state：open 能领 / claimed 领过 / forever 长期有效 / off 关着；
+  /// tg = tg:// 直接拉起机器人（带专属码），page = 官网 /gift/ 中转页（没装 Telegram 时用）。查不到返回 null。
+  Future<Map<String, dynamic>?> fetchTgGift(String token) async {
+    try {
+      final res = await _dio.get<dynamic>(
+        '/api/v1/user/gsl_tg/gift',
+        queryParameters: {'source': 'app'},
+        options: Options(headers: {'auth_data': token, 'Authorization': token}),
+      );
+      if (res.statusCode != null && res.statusCode! >= 400) return null;
+      return _dataOf(res.data);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 免注册号自己设密码（GslGuest 1.3.0）。账号编号 + 这个密码 = 换手机也能登回来。
   /// 成功返回 null，失败抛 [PanelApiException]。
   Future<void> setGuestPassword(String token, String password) async {
