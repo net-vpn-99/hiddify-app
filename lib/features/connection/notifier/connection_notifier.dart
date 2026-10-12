@@ -224,7 +224,9 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   void _armUnconfirmedDeadline(int serial) {
-    Future<void>.delayed(const Duration(seconds: 15), () async {
+    // 10 秒一次都没通 = 这条线不通（两端统一，Windows armDeadTunnelCheck）。正常 2~4 秒就通，
+    // 到 10 秒还不通，就算线路没坏也是我们的问题，不能让人再等。
+    Future<void>.delayed(const Duration(seconds: 10), () async {
       if (serial != _connectedSerial) return;
       if (state.valueOrNull is! Connected) return;
       if (ref.read(stabilityProvider).confirmed) return;

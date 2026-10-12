@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:hiddify/core/http_client/http_client_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/app/notifier/app_foreground.dart';
@@ -10,8 +11,8 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 连接稳定性（0~10）。默认满分，探测连着失败才降；恢复即回满。
-/// 连接后直接问核心测当前出站（不读界面上那条会断的流）：确认通之前每 3 秒一次，
-/// 确认之后每 15 秒一次。没测到（通道断了）不算失败。
+/// 连接后经隧道问出口 IP：确认通之前每秒一次（每次最多 4 秒，和 Windows 一样），
+/// 确认之后每分钟一次，不通 20 秒后再探一次。10 秒一次都没通由 connection_notifier 断开。
 ///
 /// **故意做得迟钝**（1.1.29）：客户盯着这行字看，一会儿「很稳」一会儿「一般」比
 /// 不显示还糟。所以 —— 偶尔一次探测没回来不降级、切后台再回来不重测也不回
@@ -131,9 +132,9 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _timer?.cancel();
     final gen = _gen;
     if (immediate) unawaited(_probe(gen));
-    // 确认通之前 3 秒一探：首页要尽快从「连接中」变「已连接」，不通的线在 10 秒
-    // 截止前也要试够几次。确认后在 _probe 里换成 5 分钟一次。
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _probe(gen));
+    // 确认通之前每秒一探（和 Windows 一样；上一次没回来不会叠着发，见 _probing）：
+    // 隧道一通就立刻亮绿，不用等到下一个 3 秒。确认后在 _probe 里换成 1 分钟一次。
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _probe(gen));
     _ifaceTimer?.cancel();
     _ifaceTimer = Timer.periodic(const Duration(seconds: 5), (_) => _watchIfaces(gen));
   }
@@ -212,7 +213,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     final cn = exit != null && exit.cc.toUpperCase() == 'CN';
     if (!_confirmed) {
       state = StabilityState(_rememberedScore, egressAudit: audit);
-      // 15 秒一直核不到由 connection_notifier 的 _armUnconfirmedDeadline 处理
+      // 10 秒一直核不到由 connection_notifier 的 _armUnconfirmedDeadline 处理
       // （它先查流量用完、在后台时等回到前台），这里只管出口是国内这一种。
       if (cn) _fault('egress');
       return;
@@ -266,17 +267,38 @@ class StabilityNotifier extends Notifier<StabilityState> {
     final client = ref.read(httpClientProvider);
     // 本进程被排除在 VPN 之外，直接请求会绕过隧道。走本地 mixed 端口、不指定出站，
     // 和系统流量进隧道后走的是同一套规则。内核停了这个端口也不在。
-    for (final url in const ['https://api.ip.sb/geoip', 'https://ipinfo.io/json']) {
+    //
+    // 两个地址同时问，谁先答出来用谁；这一次最多 4 秒（和 Windows 一样）。以前用通用 HTTP
+    // 客户端的 15 秒超时 + 自动重试、两个地址挨个试，卡住一次最坏要一分钟，期间不发新的
+    // 探测，所以安卓只能把「10 秒不通」放宽成 15 秒（10-13 排查）。
+    final cancel = CancelToken();
+    final timer = Timer(const Duration(seconds: 4), () => cancel.cancel('probe timeout'));
+    Future<_Exit?> ask(String url) async {
       try {
-        final res = await client.get<dynamic>(url, proxyOnly: true);
+        final res = await client.get<dynamic>(url, proxyOnly: true, cancelToken: cancel);
         final data = res.data;
-        if (data is! Map) continue;
+        if (data is! Map) return null;
         final ip = '${data['ip'] ?? ''}'.trim();
         final cc = '${data['country_code'] ?? data['country'] ?? ''}'.trim();
-        if (ip.isNotEmpty) return _Exit(ip, cc);
-      } catch (_) {}
+        return ip.isEmpty ? null : _Exit(ip, cc);
+      } catch (_) {
+        return null;
+      }
     }
-    return null;
+
+    final done = Completer<_Exit?>();
+    var pending = 2;
+    for (final url in const ['https://api.ip.sb/geoip', 'https://ipinfo.io/json']) {
+      unawaited(ask(url).then((exit) {
+        pending--;
+        if (done.isCompleted) return;
+        if (exit != null || pending == 0) done.complete(exit);
+      }));
+    }
+    final exit = await done.future;
+    timer.cancel();
+    if (!cancel.isCancelled) cancel.cancel('answered');
+    return exit;
   }
 
   bool _proves(_Exit exit, String line) {
