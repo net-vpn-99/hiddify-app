@@ -20,6 +20,8 @@ class RegionItem {
     required this.mine,
     required this.canVote,
     required this.reachedAt,
+    this.tier = 'std',
+    this.locked = '',
   });
 
   final String code;
@@ -31,8 +33,12 @@ class RegionItem {
   final bool mine;
   final bool canVote;
   final int reachedAt;
+  // 'pro' = 精品线路（编号带 +，如 JP+）。locked == 'pro_only'：精品线路，我不是精品版会员，不能投。
+  final String tier;
+  final String locked;
 
   bool get reached => status == 'reached';
+  String get iso => code.endsWith('+') ? code.substring(0, code.length - 1) : code;
 
   factory RegionItem.fromMap(Map raw) {
     return RegionItem(
@@ -45,6 +51,8 @@ class RegionItem {
       mine: raw['mine'] == true,
       canVote: raw['can_vote'] != false,
       reachedAt: raw['reached_at'] is num ? (raw['reached_at'] as num).toInt() : 0,
+      tier: '${raw['tier'] ?? 'std'}',
+      locked: '${raw['locked'] ?? ''}',
     );
   }
 }
@@ -61,6 +69,7 @@ class RegionBoard {
     this.canVote = false,
     this.canCreate = false,
     this.voter = '',
+    this.isPro = false,
     this.threshold = 20,
     this.promiseDays = 3,
     this.regions = const [],
@@ -82,6 +91,7 @@ class RegionBoard {
   final bool canVote;
   final bool canCreate;
   final String voter;
+  final bool isPro;
   final int threshold;
   final int promiseDays;
   final List<RegionItem> regions;
@@ -106,6 +116,7 @@ class RegionBoard {
     bool? canVote,
     bool? canCreate,
     String? voter,
+    bool? isPro,
     int? threshold,
     int? promiseDays,
     List<RegionItem>? regions,
@@ -130,6 +141,7 @@ class RegionBoard {
       canVote: canVote ?? this.canVote,
       canCreate: canCreate ?? this.canCreate,
       voter: voter ?? this.voter,
+      isPro: isPro ?? this.isPro,
       threshold: threshold ?? this.threshold,
       promiseDays: promiseDays ?? this.promiseDays,
       regions: regions ?? this.regions,
@@ -318,6 +330,10 @@ class RegionVoteNotifier extends Notifier<RegionBoard> {
       state = next.copyWith(inputHint: '30 天内只能发起 1 个新地区');
       return;
     }
+    if (reason == 'pro_only') {
+      state = next.copyWith(inputHint: '精品线路只有精品版会员能投');
+      return;
+    }
     final name = '${body['name'] ?? ''}';
     final need = next.threshold > 0 ? next.threshold : 20;
     if (body['reached_now'] == true) {
@@ -367,6 +383,7 @@ RegionBoard _boardFrom(dynamic body, RegionBoard prev) {
     canVote: data['can_vote'] == true || (voter.isEmpty && member),
     canCreate: member && data['can_create'] != false,
     voter: voter.isEmpty ? (member ? 'member' : 'guest') : voter,
+    isPro: data['is_pro'] == true,
     threshold: threshold > 0 ? threshold : 20,
     promiseDays: days > 0 ? days : 3,
     regions: regions,
@@ -410,6 +427,7 @@ class _RegionSheet extends ConsumerStatefulWidget {
 class _RegionSheetState extends ConsumerState<_RegionSheet> {
   final _field = TextEditingController();
   String _picked = '';
+  bool _pickPro = false;
   Timer? _suggestTimer;
 
   @override
@@ -443,7 +461,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
-              '够 ${board.threshold} 票，${board.promiseDays} 天内开通。每人 1 票，可以改投。',
+              '够 ${board.threshold} 票，${board.promiseDays} 天内开通。每人 1 票，可以改投。精品线路只有精品版会员能投。',
               style: TextStyle(fontSize: 12, color: tokens.secondary),
             ),
           ),
@@ -536,8 +554,8 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
         children: [
           Row(
             children: [
-              if (row.code.length == 2)
-                CircleFlag(row.code.toLowerCase(), size: 18)
+              if (row.iso.length == 2)
+                CircleFlag(row.iso.toLowerCase(), size: 18)
               else
                 Text(row.flag, style: const TextStyle(fontSize: 16)),
               const SizedBox(width: 8),
@@ -553,6 +571,10 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                 )
               else
                 Text('${row.votes} / ${board.threshold}', style: TextStyle(fontSize: 11, color: tokens.secondary)),
+              if (!showButton && board.member && !row.reached && row.locked == 'pro_only') ...[
+                const SizedBox(width: 8),
+                Text('精品版会员可投', style: TextStyle(fontSize: 11, color: tokens.secondary)),
+              ],
               if (showButton) ...[
                 const SizedBox(width: 8),
                 Material(
@@ -622,6 +644,25 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
               child: Text(hint.name, style: TextStyle(fontSize: 13, color: tokens.text)),
             ),
           ),
+        if (board.isPro)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Text('发起', style: TextStyle(fontSize: 12, color: tokens.secondary)),
+                const SizedBox(width: 8),
+                for (final pro in const [false, true]) ...[
+                  ChoiceChip(
+                    label: Text(pro ? '精品线路' : '标准线路'),
+                    selected: _pickPro == pro,
+                    onSelected: board.voting ? null : (_) => setState(() => _pickPro = pro),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+              ],
+            ),
+          ),
         Row(
           children: [
             Expanded(
@@ -654,7 +695,8 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                           _localHint();
                           return;
                         }
-                        ref.read(regionVoteProvider.notifier).vote(_picked, creating: true);
+                        final code = board.isPro && _pickPro ? '$_picked+' : _picked;
+                        ref.read(regionVoteProvider.notifier).vote(code, creating: true);
                         setState(() {
                           _picked = '';
                           _field.clear();
@@ -679,7 +721,8 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                     children: [
                       Text('已经有${board.resultName}线路了 · ', style: TextStyle(fontSize: 12, color: tokens.empty)),
                       GestureDetector(
-                        onTap: () => Navigator.of(context).pop(board.resultName),
+                        // 线路列表按地区名定位：「香港（精品）」去掉后缀才对得上。
+                        onTap: () => Navigator.of(context).pop(board.resultName.replaceAll('（精品）', '')),
                         child: Text('去看看', style: TextStyle(fontSize: 12, color: tokens.remaining, decoration: TextDecoration.underline)),
                       ),
                     ],
