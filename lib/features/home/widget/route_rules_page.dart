@@ -172,7 +172,7 @@ class _RouteRulesPageState extends ConsumerState<RouteRulesPage> {
     };
 
     return Scaffold(
-      appBar: AppBar(title: const Text('分流规则')),
+      appBar: AppBar(title: const Text('智能分流')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),

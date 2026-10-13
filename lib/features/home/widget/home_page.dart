@@ -637,7 +637,7 @@ class _RouteRulesEntry extends HookConsumerWidget {
             icon: warn
                 ? const Icon(Icons.circle, size: 8, color: Color(0xFFCF8A3B))
                 : const Icon(Icons.help_outline, size: 16),
-            label: const Text('查看分流规则'),
+            label: const Text('智能分流'),
           ),
           if (customUrl.value != null) ...[
             Container(width: 1, height: 12, color: theme.colorScheme.outlineVariant),

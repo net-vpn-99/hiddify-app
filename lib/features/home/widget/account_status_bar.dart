@@ -245,7 +245,7 @@ class AccountStatusBar extends HookConsumerWidget {
       default:
         if (guest) {
           if (acc.dailyThrottled && acc.dailyTier == 'trial') {
-            final limited = '今日高速已用完，限速 ${acc.dailyThrottleMbps}Mbps';
+            final limited = '今日标准高速已用完，限速 ${acc.dailyThrottleMbps}Mbps';
             final paid = acc.paidQuota > 0 ? formatDailyAmount(acc.paidQuota) : '';
             return (
               paid.isEmpty ? limited : '$limited · 买套餐每天 $paid 高速',
@@ -255,7 +255,7 @@ class AccountStatusBar extends HookConsumerWidget {
             );
           }
           if (acc.dailyThrottled) {
-            return ('免费试用中 · 今日高速已用完 · 0 点恢复', '看套餐', _Tone.warn, 'purchase');
+            return ('免费试用中 · 今日标准高速已用完 · 0 点重置后恢复高速', '看套餐', _Tone.warn, 'purchase');
           }
           final left = acc.remainingClock(now);
           return (left == null ? '免费试用中' : '免费试用中 · 剩 $left', '看套餐', _Tone.good, 'purchase');
@@ -265,7 +265,7 @@ class AccountStatusBar extends HookConsumerWidget {
         // 被读成「去开通会员」的广告 —— 分不清是在说我的状态还是在推销。
         final name = acc.planName?.trim().isNotEmpty == true ? acc.planName!.trim() : '会员';
         if (acc.dailyThrottled) {
-          return ('$name · 今日高速已用完 · 0 点恢复', acc.lifetime ? '我的套餐' : '续费', _Tone.warn, 'purchase');
+          return ('$name · 今日标准高速已用完 · 0 点重置后恢复高速', acc.lifetime ? '我的套餐' : '续费', _Tone.warn, 'purchase');
         }
         if (acc.lifetime) return ('$name · 长期有效', '我的套餐', _Tone.plain, 'purchase');
         final left = acc.remainingClock(now);
