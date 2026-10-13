@@ -175,6 +175,123 @@ class ConnectionButton extends HookConsumerWidget {
         ? ConnectStepsBar(step: shownStep, failedStep: shownFailed, done: justDone.value && shownStep == 0)
         : null;
 
+    // 一键连接 = 多米诺（按钮和「没连接时选了线路」共用这一套）。
+    Future<void> connectFlow() async {
+      final ticket = beginConnectFlow();
+      final progressCtl = ref.read(connectProgressProvider.notifier);
+      bool stopped() => !connectFlowAlive(ticket) || !context.mounted;
+      void stepTo(int n) {
+        ConnectFlowClock.at(n);
+        progressCtl.state = ConnectProgress(step: n);
+      }
+
+      void failAt(int n, String title, String message) {
+        progressCtl.state = ConnectProgress(failedStep: n, title: title, message: message);
+        // 前三步停下的：上报写清停在哪步、什么原因（以前这几步失败服务器一条都没有）。
+        // 第 4 步的失败由 connection_notifier 按连接尝试报，这里不重复。
+        if (n <= 3) {
+          final stage = switch (n) {
+            1 => 'account',
+            2 => 'sub_download',
+            _ => 'route_pick',
+          };
+          unawaited(ref.read(connectReporterProvider).reportStepFailure(n, stage, '$title：$message'));
+        }
+      }
+
+      // 不是失败也不是取消（去登录 / 去续费 / 没同意提示）：计时收掉，别算到下一次头上。
+      void clear() {
+        ConnectFlowClock.end('stop');
+        progressCtl.state = const ConnectProgress();
+      }
+      ref.read(deadLineProvider.notifier).state = false;
+
+      // ① 开通账号：没账号先把游客号补开一次（首页开号可能还没跑完，或者上次网络
+      // 不好失败了）。1.1.28 起不再直接把人踢去登录页：首页不拦人，点下去才说话。
+      stepTo(1);
+      if (!ref.read(Preferences.panelLoggedIn)) {
+        await ref.read(guestBootstrapProvider.notifier).ensure();
+        if (stopped()) return;
+        final boot = ref.read(guestBootstrapProvider);
+        if (!ref.read(Preferences.panelLoggedIn) && boot.knownAccountMask != null) {
+          clear();
+          if (context.mounted) context.pushNamed('login');
+          return;
+        }
+        if (!ref.read(Preferences.panelLoggedIn) && boot.reason != GuestBlockReason.unavailable) {
+          await ref.read(Preferences.guestOptOut.notifier).update(false);
+          ref.read(guestBootstrapProvider.notifier).reset();
+          await ref.read(guestBootstrapProvider.notifier).ensure();
+        }
+        if (stopped()) return;
+        if (!ref.read(Preferences.panelLoggedIn)) {
+          final why = ref.read(guestBootstrapProvider).message ?? '';
+          failAt(1, '账号没开通', why.isEmpty ? '检查网络后再点一次' : why);
+          await ref.read(dialogNotifierProvider.notifier).showNeedAccount(message: why);
+          return;
+        }
+      }
+      if (stopped()) return;
+
+      // ② 获取线路。开号那一步（guest_bootstrap）通常已经把线路导进来了 ——
+      // **这里重新看一眼**，有了就直接往下走（以前用的是点按钮那一刻的旧判断）。
+      stepTo(2);
+      if ((await ref.read(activeProfileProvider.future)) == null) {
+        // 登录了却没有可用订阅：多半是试用 / 会员到期或流量用完。补一次账号再判断，
+        // 别再给用户看「还没有 VPN 服务器？免费设置一个」那种误导文案。
+        try {
+          await ref.read(panelAuthProvider.notifier).syncAccountQuietly();
+        } catch (_) {}
+        if (stopped()) return;
+        final acc = ref.read(panelAuthProvider).account;
+        if (acc != null && (acc.exhausted || acc.stateSlug == 'no_plan')) {
+          clear();
+          await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc, force: true);
+          return;
+        }
+        // 账号正常却没订阅 —— 订阅同步掉了，重新拉一次地址并导入（跟登录时同一条路）。
+        final url = await ref.read(panelAuthProvider.notifier).refreshSubscribeUrl();
+        if (stopped()) return;
+        if (url == null || url.isEmpty) {
+          failAt(2, '线路没拿到', '检查网络后再点一次；还不行在「我的」页联系客服');
+          return;
+        }
+        await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
+        if (stopped()) return;
+        if (ref.read(addProfileNotifierProvider) is AsyncError) {
+          failAt(2, '线路没拿到', '检查网络后再点一次；还不行在「我的」页联系客服');
+          return;
+        }
+      }
+
+      // ③ 选择线路：选中的是别家订阅（旧版能导入别家的）→ 连之前切回自家那份。
+      stepTo(3);
+      if (!await ref.read(addProfileNotifierProvider.notifier).ensureAccountProfileActive()) {
+        if (stopped()) return;
+        failAt(3, '线路没切换过来', '稍后再点一次；还不行在「我的」页联系客服');
+        return;
+      }
+      if (stopped()) return;
+      if (!await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
+        clear();
+        return;
+      }
+      if (stopped()) return;
+
+      // ④ 启动连接。之后的进度由连接状态推（上面的 ref.listen）。
+      stepTo(4);
+      // 第 4 步的结果只看连接状态的事件（上面的 ref.listen）：Connecting / Connected 往前走，
+      // 核心报了失败（含拒绝 VPN 授权）就停在第 4 步。以前这里在 toggleConnection 一返回就
+      // 看状态，那时核心常常还没报 Connecting，把正在连的当成「被拒绝授权」（10-13 TEST 真机）。
+      await ref.read(connectionNotifierProvider.notifier).toggleConnection();
+    }
+
+    ref.listen<int>(connectRequestProvider, (prev, next) {
+      if (next == prev || preparing.value) return;
+      final now = ref.read(connectionNotifierProvider);
+      if (now is AsyncError || now.valueOrNull is Disconnected) guard(connectFlow)();
+    });
+
     return _ConnectionButton(
       onTap: guard(switch (connectionStatus) {
         AsyncData(value: Connected()) when requiresReconnect == true => () async {
@@ -184,115 +301,7 @@ class ConnectionButton extends HookConsumerWidget {
         // OneRay：一键连接 = 多米诺。每一步做完立刻接着下一步，任何一步失败就停在那一步
         // 说原因；点一下按钮随时取消（guard 里作废这张票）。以前这里开号 / 导入线路之后
         // 直接 return，用户得再点一次才真的连（10-12 查出来的断链）。
-        AsyncData(value: Disconnected()) || AsyncError() => () async {
-          final ticket = beginConnectFlow();
-          final progressCtl = ref.read(connectProgressProvider.notifier);
-          bool stopped() => !connectFlowAlive(ticket) || !context.mounted;
-          void stepTo(int n) {
-            ConnectFlowClock.at(n);
-            progressCtl.state = ConnectProgress(step: n);
-          }
-
-          void failAt(int n, String title, String message) {
-            progressCtl.state = ConnectProgress(failedStep: n, title: title, message: message);
-            // 前三步停下的：上报写清停在哪步、什么原因（以前这几步失败服务器一条都没有）。
-            // 第 4 步的失败由 connection_notifier 按连接尝试报，这里不重复。
-            if (n <= 3) {
-              final stage = switch (n) {
-                1 => 'account',
-                2 => 'sub_download',
-                _ => 'route_pick',
-              };
-              unawaited(ref.read(connectReporterProvider).reportStepFailure(n, stage, '$title：$message'));
-            }
-          }
-
-          // 不是失败也不是取消（去登录 / 去续费 / 没同意提示）：计时收掉，别算到下一次头上。
-          void clear() {
-            ConnectFlowClock.end('stop');
-            progressCtl.state = const ConnectProgress();
-          }
-          ref.read(deadLineProvider.notifier).state = false;
-
-          // ① 开通账号：没账号先把游客号补开一次（首页开号可能还没跑完，或者上次网络
-          // 不好失败了）。1.1.28 起不再直接把人踢去登录页：首页不拦人，点下去才说话。
-          stepTo(1);
-          if (!ref.read(Preferences.panelLoggedIn)) {
-            await ref.read(guestBootstrapProvider.notifier).ensure();
-            if (stopped()) return;
-            final boot = ref.read(guestBootstrapProvider);
-            if (!ref.read(Preferences.panelLoggedIn) && boot.knownAccountMask != null) {
-              clear();
-              if (context.mounted) context.pushNamed('login');
-              return;
-            }
-            if (!ref.read(Preferences.panelLoggedIn) && boot.reason != GuestBlockReason.unavailable) {
-              await ref.read(Preferences.guestOptOut.notifier).update(false);
-              ref.read(guestBootstrapProvider.notifier).reset();
-              await ref.read(guestBootstrapProvider.notifier).ensure();
-            }
-            if (stopped()) return;
-            if (!ref.read(Preferences.panelLoggedIn)) {
-              final why = ref.read(guestBootstrapProvider).message ?? '';
-              failAt(1, '账号没开通', why.isEmpty ? '检查网络后再点一次' : why);
-              await ref.read(dialogNotifierProvider.notifier).showNeedAccount(message: why);
-              return;
-            }
-          }
-          if (stopped()) return;
-
-          // ② 获取线路。开号那一步（guest_bootstrap）通常已经把线路导进来了 ——
-          // **这里重新看一眼**，有了就直接往下走（以前用的是点按钮那一刻的旧判断）。
-          stepTo(2);
-          if ((await ref.read(activeProfileProvider.future)) == null) {
-            // 登录了却没有可用订阅：多半是试用 / 会员到期或流量用完。补一次账号再判断，
-            // 别再给用户看「还没有 VPN 服务器？免费设置一个」那种误导文案。
-            try {
-              await ref.read(panelAuthProvider.notifier).syncAccountQuietly();
-            } catch (_) {}
-            if (stopped()) return;
-            final acc = ref.read(panelAuthProvider).account;
-            if (acc != null && (acc.exhausted || acc.stateSlug == 'no_plan')) {
-              clear();
-              await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(acc, force: true);
-              return;
-            }
-            // 账号正常却没订阅 —— 订阅同步掉了，重新拉一次地址并导入（跟登录时同一条路）。
-            final url = await ref.read(panelAuthProvider.notifier).refreshSubscribeUrl();
-            if (stopped()) return;
-            if (url == null || url.isEmpty) {
-              failAt(2, '线路没拿到', '检查网络后再点一次；还不行在「我的」页联系客服');
-              return;
-            }
-            await ref.read(addProfileNotifierProvider.notifier).addAccountSubscription(url);
-            if (stopped()) return;
-            if (ref.read(addProfileNotifierProvider) is AsyncError) {
-              failAt(2, '线路没拿到', '检查网络后再点一次；还不行在「我的」页联系客服');
-              return;
-            }
-          }
-
-          // ③ 选择线路：选中的是别家订阅（旧版能导入别家的）→ 连之前切回自家那份。
-          stepTo(3);
-          if (!await ref.read(addProfileNotifierProvider.notifier).ensureAccountProfileActive()) {
-            if (stopped()) return;
-            failAt(3, '线路没切换过来', '稍后再点一次；还不行在「我的」页联系客服');
-            return;
-          }
-          if (stopped()) return;
-          if (!await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
-            clear();
-            return;
-          }
-          if (stopped()) return;
-
-          // ④ 启动连接。之后的进度由连接状态推（上面的 ref.listen）。
-          stepTo(4);
-          // 第 4 步的结果只看连接状态的事件（上面的 ref.listen）：Connecting / Connected 往前走，
-          // 核心报了失败（含拒绝 VPN 授权）就停在第 4 步。以前这里在 toggleConnection 一返回就
-          // 看状态，那时核心常常还没报 Connecting，把正在连的当成「被拒绝授权」（10-13 TEST 真机）。
-          await ref.read(connectionNotifierProvider.notifier).toggleConnection();
-        },
+        AsyncData(value: Disconnected()) || AsyncError() => connectFlow,
         AsyncData(value: Connected()) => () async {
           if (requiresReconnect == true &&
               await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {

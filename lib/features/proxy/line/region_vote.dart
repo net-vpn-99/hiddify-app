@@ -746,6 +746,8 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
       title = '你的会员已到期，之前投的票暂时不算';
       sub = '续费后自动恢复';
       button = '去续费';
+    } else if (voter == 'gifted') {
+      sub = '你的会员是赠送的，付费开通后就能投票';
     } else if (voter == 'member') {
       final last = board.lastCreated;
       title = '你 ${_mmdd(last?['at'] is num ? (last!['at'] as num).toInt() : 0)} 发起过${last?['name'] ?? ''}';

@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/home/widget/connect_progress.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
@@ -271,13 +273,18 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     );
   }
 
-  /// 选线路：只记偏好 + 立即更新首页显示；实际切换由 autoLineFixer 统一做
-  /// （已连接 → 立刻切；没连接 → 下次连接时按名字切）。
+  /// 选线路：记偏好 + 立即更新首页显示；已连接时由 autoLineFixer 立刻切过去。
+  /// 没连接时选了线路 = 要用这条：直接走一键连接（跟点连接按钮同一套，有进度条）。
+  /// 以前只记下来什么都不发生，选完没反馈（10-14 运营真机）。
   Future<void> _pick(BuildContext context, WidgetRef ref, LineOption o) async {
     await ref.read(Preferences.preferredLineName.notifier).update(o.name);
     await ref.read(Preferences.lastNodeName.notifier).update(o.name);
     await ref.read(Preferences.lastNodeDesc.notifier).update(o.desc);
     if (context.mounted) Navigator.of(context).pop();
+    final now = ref.read(connectionNotifierProvider);
+    if (now is AsyncError || now.valueOrNull is Disconnected) {
+      ref.read(connectRequestProvider.notifier).state++;
+    }
   }
 
   /// 点了连不上的线路：按他缺什么给什么（有账号但到期 → 买套餐；没账号 → 登录 / 试用）。

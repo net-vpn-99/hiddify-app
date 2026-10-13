@@ -399,6 +399,22 @@ class _NoticeDetailState extends State<_NoticeDetail> {
   Color? _link;
   ({String href, String text})? _button;
   bool _centered = false;
+  // 正文比卡片长时，底部渐隐 + 「下滑查看更多」（10-14 运营真机：长公告看不出下面还有内容）。
+  final _scroll = ScrollController();
+  bool _more = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_checkMore);
+  }
+
+  void _checkMore() {
+    if (!_scroll.hasClients) return;
+    final p = _scroll.position;
+    final more = p.maxScrollExtent - p.pixels > 8;
+    if (more != _more) setState(() => _more = more);
+  }
 
   @override
   void didChangeDependencies() {
@@ -438,6 +454,7 @@ class _NoticeDetailState extends State<_NoticeDetail> {
     for (final r in _recognizers) {
       r.dispose();
     }
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -445,7 +462,12 @@ class _NoticeDetailState extends State<_NoticeDetail> {
   Widget build(BuildContext context) {
     final t = widget.tokens;
     final button = _button;
-    return ListView(
+    // 换了一条公告 / 第一次排版完：内容高度变了，重新看一下下面还有没有。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkMore();
+    });
+    final list = ListView(
+      controller: _scroll,
       shrinkWrap: true,
       padding: const EdgeInsets.fromLTRB(26, 0, 26, 10),
       children: [
@@ -489,6 +511,32 @@ class _NoticeDetailState extends State<_NoticeDetail> {
             ),
           ),
         ],
+      ],
+    );
+    return Stack(
+      children: [
+        Scrollbar(controller: _scroll, child: list),
+        if (_more)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: 64,
+                alignment: Alignment.bottomCenter,
+                padding: const EdgeInsets.only(bottom: 4),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [t.raised.withValues(alpha: 0), t.raised],
+                  ),
+                ),
+                child: Text('下滑查看更多  ⌄', style: TextStyle(fontSize: 12, color: t.secondary)),
+              ),
+            ),
+          ),
       ],
     );
   }

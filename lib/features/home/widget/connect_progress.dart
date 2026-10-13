@@ -37,6 +37,10 @@ class ConnectProgress {
 
 final connectProgressProvider = StateProvider<ConnectProgress>((ref) => const ConnectProgress());
 
+/// 别的地方要「像点了连接按钮一样」走一遍一键连接（没连接时在线路列表里选了线路，10-14 运营定）。
+/// 数字加一 = 请求一次；首页连接按钮听到后，没在连就走同一套多米诺流程。
+final connectRequestProvider = StateProvider<int>((ref) => 0);
+
 const connectStepLabels = ['开通账号', '获取线路', '选择线路', '启动连接', '检查网络'];
 
 /// 第 4 步（启动连接）失败时给客户看的：标题直说要允许什么、「下一步怎么做」、能直接去的设置页。
