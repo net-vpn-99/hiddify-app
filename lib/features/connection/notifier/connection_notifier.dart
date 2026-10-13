@@ -209,7 +209,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       ));
       unawaited(DropNotice.show(revoked
           ? '连接被别的 VPN 或系统设置断开了。关掉别的 VPN 后，打开光速雷达点「连接」'
-          : '连接被系统关掉了。打开光速雷达点「连接」恢复'));
+          : '连接意外断开了。打开光速雷达点「连接」恢复'));
       reporter.abandon();
     } else if (reporter.attemptOpen) {
       // 第 5 步还没确认网通核心就停了：这是一次失败（以前直接丢掉，后台看不到）。

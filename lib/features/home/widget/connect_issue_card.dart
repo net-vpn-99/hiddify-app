@@ -16,6 +16,11 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 ///  - 用着用着约 1 分钟不通 → 不断开，显示「网络中断了约 1 分钟」，恢复后自己收起。
 ///
 /// **不自动换线**：「换一条线路」只打开线路列表，让用户自己选。
+///
+/// 10-13：只说查到的事实。「连接意外断开」（核心没走正常停止就没了）和「网页没走线路」
+/// 原因查不到 → 给「怎么办」打开「原因不明」兜底卡；连续第二次自动弹（两端统一）。
+final unknownFaultStreakProvider = StateProvider<int>((ref) => 0);
+
 class ConnectIssueCard extends ConsumerWidget {
   const ConnectIssueCard({super.key});
 
@@ -26,6 +31,16 @@ class ConnectIssueCard extends ConsumerWidget {
     final fault = ref.watch(homeFaultProvider);
     final outage = ref.watch(stabilityProvider.select((s) => s.outage));
     final unreachable = ref.watch(unreachableNodesProvider);
+
+    ref.listen<String>(homeFaultProvider, (prev, next) {
+      if (next != 'engine' && next != 'egress') return;
+      final n = ref.read(unknownFaultStreakProvider) + 1;
+      ref.read(unknownFaultStreakProvider.notifier).state = n;
+      if (n >= 2) showUnknownFaultGuide(context);
+    });
+    ref.listen<bool>(stabilityProvider.select((s) => s.confirmed), (prev, next) {
+      if (next) ref.read(unknownFaultStreakProvider.notifier).state = 0;
+    });
     final lastHost = ref.read(connectReporterProvider).lastNodeHost;
 
     // 断开后直接碰：两台不同的节点都没回音、接口服务器却通 → 自动弹一次引导卡（攒到 2 个那一刻）。
@@ -56,10 +71,10 @@ class ConnectIssueCard extends ConsumerWidget {
       body = '连接被别的 VPN 或系统设置断开了。关掉别的 VPN 后，点「重新连接」';
     } else if (engine) {
       title = '连接断了';
-      body = '连接被系统关掉了，点「重新连接」恢复';
+      body = '连接意外断开了，点「重新连接」恢复。如果反复断开，点「怎么办」';
     } else if (egress) {
-      title = '流量没有经过线路';
-      body = '可能被别的 VPN 或安全软件接管了网络，关掉它们后点「重新连接」';
+      title = '网页没有经过线路';
+      body = '原因还没查到，点「怎么办」';
     } else if (netBlocked) {
       title = '你的网络连不上我们的线路';
       body = '试了 ${unreachable.length} 条线路都没有回应，换线路也没用';
@@ -117,6 +132,12 @@ class ConnectIssueCard extends ConsumerWidget {
             Wrap(
               spacing: 4,
               children: [
+                if ((engine && !revoked) || egress)
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
+                    onPressed: () => showUnknownFaultGuide(context),
+                    child: const Text('怎么办'),
+                  ),
                 if (netBlocked)
                   TextButton(
                     style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),

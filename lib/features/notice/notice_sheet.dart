@@ -121,6 +121,24 @@ class NoticeStrip extends ConsumerWidget {
   }
 }
 
+// 公告（10-13 改轻，跟邮件一个感觉；两端统一，Windows 是 NoticePanel.qml）：
+//   列表：不套框，条目之间一根细线；没看过的金点 + 粗标题 + 一行摘要，看过的只剩普通字标题和日期。
+//   详情：点一条，整个面板换成这一条，像读一封邮件；正文里单独一段的链接另起一个金色整行按钮。
+final _soloLink = RegExp(r'<p>\s*<a href="([^"]*)">([\s\S]*?)</a>\s*</p>');
+final _anyLink = RegExp(r'<a href="([^"]*)">([\s\S]*?)</a>');
+
+({String href, String text})? _firstLink(String html) {
+  final m = _soloLink.firstMatch(html) ?? _anyLink.firstMatch(html);
+  if (m == null) return null;
+  final text = m.group(2)!.replaceAll(RegExp('<[^>]*>'), '').trim();
+  return text.isEmpty ? null : (href: m.group(1)!, text: text);
+}
+
+void _openLink(String url) {
+  final uri = Uri.tryParse(url);
+  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) UriUtils.tryLaunch(uri);
+}
+
 class _NoticeSheet extends ConsumerStatefulWidget {
   const _NoticeSheet();
 
@@ -129,12 +147,12 @@ class _NoticeSheet extends ConsumerStatefulWidget {
 }
 
 class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
-  int _expanded = 0;
+  int _open = 0;
 
   @override
   void initState() {
     super.initState();
-    _expanded = ref.read(noticeProvider).expandId;
+    _open = ref.read(noticeProvider).expandId;
   }
 
   @override
@@ -142,92 +160,181 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
     final state = ref.watch(noticeProvider);
     final tokens = PurchaseTokens.of(context);
     final height = MediaQuery.sizeOf(context).height * 0.85;
-    final link = Theme.of(context).brightness == Brightness.dark ? tokens.remaining : const Color(0xFF1F6F59);
-    return SizedBox(
-      height: height,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Text('公告', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: tokens.text)),
-          ),
-          Expanded(
-            child: state.items.isEmpty
-                ? Center(
-                    child: state.loading
-                        ? const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2))
-                        : Text('暂时没有公告', style: TextStyle(fontSize: 13, color: tokens.secondary.withValues(alpha: 0.7))),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                    children: [
-                      for (final item in state.items) ...[
-                        _NoticeCard(
-                          item: item,
-                          unread: state.openUnread.contains(item.id),
-                          expanded: _expanded == item.id,
-                          tokens: tokens,
-                          link: link,
-                          onTap: () => setState(() => _expanded = _expanded == item.id ? 0 : item.id),
+    final link = tokens.warning;
+    NoticeItem? current;
+    for (final it in state.items) {
+      if (it.id == _open) current = it;
+    }
+    return PopScope(
+      canPop: current == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) setState(() => _open = 0);
+      },
+      child: SizedBox(
+        height: height,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 0, 16, 8),
+              child: current == null
+                  ? Text('公告', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: tokens.text))
+                  : Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          foregroundColor: tokens.secondary,
+                          padding: EdgeInsets.zero,
+                          minimumSize: const Size(48, 36),
                         ),
-                        const SizedBox(height: 8),
-                      ],
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4, bottom: 4),
-                        child: Center(
-                          child: Text.rich(
-                            TextSpan(
-                              style: TextStyle(fontSize: 12, color: tokens.secondary.withValues(alpha: 0.7)),
-                              children: [
-                                const TextSpan(text: '更早的公告在'),
-                                WidgetSpan(
-                                  alignment: PlaceholderAlignment.middle,
-                                  child: GestureDetector(
-                                    onTap: () => UriUtils.tryLaunch(Uri.parse(Constants.panelProfileUrl)),
-                                    child: Text('官网会员中心', style: TextStyle(fontSize: 12, color: link)),
+                        onPressed: () => setState(() => _open = 0),
+                        child: const Text('‹  公告', style: TextStyle(fontSize: 14)),
+                      ),
+                    ),
+            ),
+            Expanded(
+              child: current != null
+                  ? _NoticeDetail(item: current, tokens: tokens, link: link)
+                  : state.items.isEmpty
+                      ? Center(
+                          child: state.loading
+                              ? const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2))
+                              : Text('暂时没有公告', style: TextStyle(fontSize: 13, color: tokens.secondary.withValues(alpha: 0.7))),
+                        )
+                      : ListView(
+                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                          children: [
+                            for (var i = 0; i < state.items.length; i++)
+                              _NoticeRow(
+                                item: state.items[i],
+                                unread: state.openUnread.contains(state.items[i].id),
+                                last: i == state.items.length - 1,
+                                tokens: tokens,
+                                onTap: () => setState(() => _open = state.items[i].id),
+                              ),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 14, bottom: 4),
+                              child: Center(
+                                child: Text.rich(
+                                  TextSpan(
+                                    style: TextStyle(fontSize: 12, color: tokens.secondary.withValues(alpha: 0.7)),
+                                    children: [
+                                      const TextSpan(text: '更早的公告在 '),
+                                      WidgetSpan(
+                                        alignment: PlaceholderAlignment.middle,
+                                        child: GestureDetector(
+                                          onTap: () => UriUtils.tryLaunch(Uri.parse(Constants.panelProfileUrl)),
+                                          child: Text('官网会员中心', style: TextStyle(fontSize: 12, color: link)),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _NoticeCard extends StatefulWidget {
-  const _NoticeCard({
+class _NoticeRow extends StatelessWidget {
+  const _NoticeRow({
     required this.item,
     required this.unread,
-    required this.expanded,
+    required this.last,
     required this.tokens,
-    required this.link,
     required this.onTap,
   });
 
   final NoticeItem item;
   final bool unread;
-  final bool expanded;
+  final bool last;
   final PurchaseTokens tokens;
-  final Color link;
   final VoidCallback onTap;
 
   @override
-  State<_NoticeCard> createState() => _NoticeCardState();
+  Widget build(BuildContext context) {
+    final ink3 = tokens.secondary.withValues(alpha: 0.7);
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 14, 10, 14),
+        decoration: BoxDecoration(
+          border: last ? null : Border(bottom: BorderSide(color: tokens.border.withValues(alpha: 0.6))),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(color: unread ? tokens.primary : Colors.transparent, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: unread ? FontWeight.w600 : FontWeight.w400,
+                      color: unread ? tokens.text : tokens.secondary,
+                    ),
+                  ),
+                ),
+                if (item.important) ...[
+                  const SizedBox(width: 8),
+                  Text('重要', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.warning)),
+                ],
+                if (item.date.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Text(item.date, style: TextStyle(fontSize: 12, color: ink3)),
+                ],
+              ],
+            ),
+            if (unread && item.preview.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 15, top: 4),
+                child: Text(
+                  item.preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, color: tokens.secondary),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _NoticeCardState extends State<_NoticeCard> {
+class _NoticeDetail extends StatefulWidget {
+  const _NoticeDetail({required this.item, required this.tokens, required this.link});
+
+  final NoticeItem item;
+  final PurchaseTokens tokens;
+  final Color link;
+
+  @override
+  State<_NoticeDetail> createState() => _NoticeDetailState();
+}
+
+class _NoticeDetailState extends State<_NoticeDetail> {
   final _recognizers = <TapGestureRecognizer>[];
   List<InlineSpan> _spans = const [];
   String? _html;
   Color? _link;
+  ({String href, String text})? _button;
 
   @override
   void didChangeDependencies() {
@@ -236,7 +343,7 @@ class _NoticeCardState extends State<_NoticeCard> {
   }
 
   @override
-  void didUpdateWidget(covariant _NoticeCard oldWidget) {
+  void didUpdateWidget(covariant _NoticeDetail oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncSpans();
   }
@@ -249,15 +356,15 @@ class _NoticeCardState extends State<_NoticeCard> {
     }
     _recognizers.clear();
     _html = widget.item.content;
+    _button = _firstLink(widget.item.content);
+    // 单独一段的那个链接已经变成底部金色按钮，正文里不再重复显示。
+    final body = _button != null ? widget.item.content.replaceFirst(_soloLink, '') : widget.item.content;
     _spans = NoticeHtml.spans(
-      widget.item.content,
-      TextStyle(fontSize: 13, height: 1.7, color: widget.tokens.text),
+      body,
+      TextStyle(fontSize: 14, height: 1.6, color: widget.tokens.text),
       widget.link,
       keep: _recognizers.add,
-      onLink: (url) {
-        final uri = Uri.tryParse(url);
-        if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) UriUtils.tryLaunch(uri);
-      },
+      onLink: _openLink,
     );
   }
 
@@ -271,84 +378,36 @@ class _NoticeCardState extends State<_NoticeCard> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = widget.tokens;
-    final ink3 = tokens.secondary.withValues(alpha: 0.7);
-    final dot = Theme.of(context).brightness == Brightness.dark ? const Color(0xFFEC6A5C) : const Color(0xFFD9473A);
-    return Material(
-      color: tokens.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: tokens.border),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: widget.onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (widget.unread) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Expanded(
-                    child: Text(
-                      widget.item.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.text),
-                    ),
-                  ),
-                  if (widget.item.important) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                      decoration: BoxDecoration(color: tokens.primary, borderRadius: BorderRadius.circular(5)),
-                      child: Text('重要', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.onPrimary)),
-                    ),
-                  ],
-                  const SizedBox(width: 8),
-                  Transform.rotate(
-                    angle: widget.expanded ? 1.5708 : 0,
-                    child: Text('›', style: TextStyle(fontSize: 16, height: 1, color: ink3)),
-                  ),
-                ],
-              ),
-              if (widget.item.date.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(widget.item.date, style: TextStyle(fontSize: 11, color: ink3)),
-                ),
-              if (!widget.expanded)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    widget.item.preview,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: tokens.secondary),
-                  ),
-                )
-              else
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text.rich(TextSpan(children: _spans)),
-                ),
-            ],
+    final t = widget.tokens;
+    final button = _button;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      children: [
+        Text(widget.item.title, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w600, color: t.text, height: 1.35)),
+        if (widget.item.date.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(widget.item.date, style: TextStyle(fontSize: 12, color: t.secondary.withValues(alpha: 0.7))),
           ),
-        ),
-      ),
+        const SizedBox(height: 16),
+        Text.rich(TextSpan(children: _spans)),
+        if (button != null) ...[
+          const SizedBox(height: 22),
+          SizedBox(
+            height: 48,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: t.primary,
+                foregroundColor: t.onPrimary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              ),
+              onPressed: () => _openLink(button.href),
+              child: Text(button.text, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

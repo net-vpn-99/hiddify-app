@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -18,72 +19,33 @@ class QuotaEndedDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final slug = account.stateSlug;
     final bonus = ref.watch(inviteTextsProvider).valueOrNull?.bonus;
-    final bonusBit = (bonus != null && bonus.isNotEmpty) ? '好友用起来后双方各得 $bonus' : '双方都能再获得体验';
     final isGuest = ref.watch(panelAuthProvider).isGuest && slug != 'no_plan';
 
+    // 10-13 换成引导卡样式（两端统一，Windows QuotaPrompt.qml），只讲重点。
     final (title, body) = isGuest
-        ? ('免费试用已结束', '买个套餐就能接着用，不用先注册。以前买过？登录你的账号就行。')
+        ? ('免费试用已结束', '买个套餐就能接着用，不用先注册。')
         : switch (slug) {
-            'traffic_exhausted' => ('本期流量已用完', '续费或升级套餐后继续用。也可以邀请好友，$bonusBit。'),
-            'expired' => ('会员已到期', '续费后就能接着用。也可以邀请好友，$bonusBit。'),
+            'traffic_exhausted' => ('本期流量已用完', '续费后马上就能接着用。'),
+            'expired' => ('会员已到期', '续费后马上就能接着用。'),
             _ => ('还没有套餐', '选一个套餐就能开始用。'),
           };
     final showInvite = slug != 'no_plan';
 
-    return Dialog(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Icon(
-              slug == 'traffic_exhausted' ? Icons.data_usage_outlined : Icons.event_busy_outlined,
-              size: 36,
-              color: theme.colorScheme.primary,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              body,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: () => context.pop(QuotaEndedAction.purchase),
-              child: Text(slug == 'no_plan' || isGuest ? '去买套餐' : '去续费'),
-            ),
-            if (showInvite) ...[
-              const SizedBox(height: 8),
-              OutlinedButton(
-                onPressed: () => context.pop(QuotaEndedAction.invite),
-                child: Text(isGuest ? '邀请好友' : '邀请好友试用'),
-              ),
-            ],
-            if (isGuest)
-              TextButton(
-                onPressed: () => context.pop(QuotaEndedAction.login),
-                child: const Text('已有账号？登录'),
-              ),
-            TextButton(
-              onPressed: () => context.pop(),
-              child: const Text('稍后再说'),
-            ),
-          ],
-        ),
-      ),
+    return GuideCard(
+      title: title,
+      body: body,
+      tipTitle: showInvite ? '邀请好友，双方都有奖励' : '',
+      tipText: (bonus != null && bonus.isNotEmpty) ? '好友用起来后，你们各得 $bonus。' : '好友用起来后，你们都能再获得体验。',
+      actionText: slug == 'no_plan' || isGuest ? '去买套餐' : '去续费',
+      onAction: () => context.pop(QuotaEndedAction.purchase),
+      secondaryText: showInvite ? '邀请好友' : '',
+      onSecondary: () => context.pop(QuotaEndedAction.invite),
+      links: [
+        if (isGuest) GuideLink('以前买过？登录你的账号', () => context.pop(QuotaEndedAction.login)),
+        GuideLink('稍后再说', () => context.pop()),
+      ],
     );
   }
 }
@@ -97,47 +59,14 @@ class NeedAccountDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Dialog(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Icon(Icons.vpn_key_outlined, size: 36, color: theme.colorScheme.primary),
-            const SizedBox(height: 12),
-            Text(
-              '还差一步就能连',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              message ?? '登录已有账号，或者买个套餐就能用。',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: () => context.pop(QuotaEndedAction.login),
-              child: const Text('登录账号'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: () => context.pop(QuotaEndedAction.purchase),
-              child: const Text('看看套餐'),
-            ),
-            TextButton(
-              onPressed: () => context.pop(),
-              child: const Text('稍后再说'),
-            ),
-          ],
-        ),
-      ),
+    return GuideCard(
+      title: '还差一步就能连',
+      body: message ?? '登录已有账号，或者买个套餐就能用。',
+      actionText: '登录账号',
+      onAction: () => context.pop(QuotaEndedAction.login),
+      secondaryText: '看看套餐',
+      onSecondary: () => context.pop(QuotaEndedAction.purchase),
+      links: [GuideLink('稍后再说', () => context.pop())],
     );
   }
 }

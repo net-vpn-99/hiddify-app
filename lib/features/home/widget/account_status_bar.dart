@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
@@ -141,31 +142,23 @@ class AccountStatusBar extends HookConsumerWidget {
                       onTap: () {
                         showDialog(
                           context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('为什么领不了免费试用'),
-                            content: Text(text),
-                            actions: [
-                              if (action.isNotEmpty && route != 'login')
-                                TextButton(
-                                  onPressed: () async {
-                                    Navigator.of(context).pop();
-                                    await handleAction();
-                                  },
-                                  child: Text(action),
-                                ),
-                              // 开着别的 VPN 这类：主按钮是「重试」（关掉再试），注册也是一条路，一起给。
-                              if (isFixable)
-                                TextButton(
-                                  onPressed: () {
-                                    Navigator.of(context).pop();
-                                    context.pushNamed('register');
-                                  },
-                                  child: const Text('去注册'),
-                                ),
-                              TextButton(
-                                onPressed: () => Navigator.of(context).pop(),
-                                child: const Text('知道了'),
-                              ),
+                          // 10-13 换成引导卡样式（两端统一）。
+                          builder: (dctx) => GuideCard(
+                            title: '为什么领不了免费试用',
+                            body: text,
+                            actionText: (action.isNotEmpty && route != 'login') ? action : '知道了',
+                            onAction: () async {
+                              Navigator.of(dctx).pop();
+                              if (action.isNotEmpty && route != 'login') await handleAction();
+                            },
+                            // 开着别的 VPN 这类：主按钮是「重试」（关掉再试），注册也是一条路，一起给。
+                            secondaryText: isFixable ? '去注册' : '',
+                            onSecondary: () {
+                              Navigator.of(dctx).pop();
+                              context.pushNamed('register');
+                            },
+                            links: [
+                              if (action.isNotEmpty && route != 'login') GuideLink('知道了', () => Navigator.of(dctx).pop()),
                             ],
                           ),
                         );

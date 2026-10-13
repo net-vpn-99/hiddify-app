@@ -260,7 +260,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
       unawaited(reporter.reportDrop(stage, '已连 $secs 秒｜探测：${probeLog()}｜App 在$fg'));
       final line = ref.read(Preferences.lastNodeName).trim();
       unawaited(DropNotice.show(kind == 'egress'
-          ? '网络被别的 VPN 或安全软件接管了。关掉它们后，打开光速雷达点「连接」'
+          ? '网页没有经过光速雷达的线路。打开光速雷达看看怎么办'
           : '${line.isEmpty ? '这条线路' : line} 连不上了。换一条线路试试，或者稍后再点「连接」'));
     } else if (kind == 'egress' && reporter.attemptOpen) {
       // 还没确认网通就发现出口是国内：第 5 步失败（以前被 abortConnection 当成取消丢掉了）。
