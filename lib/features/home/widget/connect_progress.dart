@@ -86,10 +86,11 @@ void cancelConnectFlow(WidgetRef ref) {
 
 /// 连接进度条（10-13 改，两端统一；Windows 是 qml/components/ConnectSteps.qml，两边一起改）：
 ///   一根细长的条，从左往右线性地走，像加载条。
-///   **只画这一次真要做的步骤**：已经登录的人没有「开通账号」，已经有线路的人没有「获取线路」——
-///   第一次看到的那一步（_first）往后才算，几步就平分几格，格与格之间留一道细缝当刻度。
-///   正在做的那一格匀速往前爬到八成五就停住等；这一步真做完了（step 往前走）才一下补满这一格、
-///   进下一格。爬只是画面，连接逻辑不看时间。失败：停在那一格，那一格变红。连上：整根补满变绿。
+///   **一整根，不分格、不露出有几步**（运营定：别让人看出我们做了几步）。里面还是按步骤算：
+///   只算这一次真要做的步骤（已经登录的人没有「开通账号」，已经有线路的人没有「获取线路」），
+///   第一次看到的那一步（_first）往后几步平分整根；正在做的那一段匀速往前爬到八成五就停住等，
+///   这一步真做完了（step 往前走）才补满这一段、接着爬。爬只是画面，连接逻辑不看时间。
+///   失败：原地停住变红。连上：整根补满变绿。
 ///   正在做什么写在按钮下面那行字里，条上不写字。
 class ConnectStepsBar extends StatefulWidget {
   const ConnectStepsBar({super.key, required this.step, required this.failedStep, required this.done});
@@ -195,49 +196,36 @@ class _ConnectStepsBarState extends State<ConnectStepsBar> with SingleTickerProv
     if (n == 0) return const SizedBox(width: 180, height: 4);
     return Semantics(
       label: _mode == 'fail'
-          ? '这一步没有完成'
+          ? '连接没有完成'
           : _mode == 'done'
           ? '连接完成'
-          : '第 ${widget.step - _first + 1} 步，共 $n 步',
+          : '正在连接',
       child: SizedBox(
         width: 180,
         height: 4,
         child: AnimatedBuilder(
           animation: _fill,
-          builder: (context, _) => Row(
-            children: [
-              for (var i = 0; i < n; i++) ...[
-                if (i > 0) const SizedBox(width: 2),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, box) {
-                      final failed = _mode == 'fail' && _first + i == widget.failedStep;
-                      final local = ((_fill.value - i / n) * n).clamp(0.0, 1.0);
-                      final color = _mode == 'done'
-                          ? green
-                          : failed
-                          ? scheme.error
-                          : gold;
-                      return Stack(
-                        children: [
-                          Container(
-                            decoration: BoxDecoration(
-                              color: failed ? scheme.error.withValues(alpha: 0.3) : scheme.outlineVariant,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                          Container(
-                            width: box.maxWidth * local,
-                            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
-                          ),
-                        ],
-                      );
-                    },
+          builder: (context, _) {
+            final color = _mode == 'done'
+                ? green
+                : _mode == 'fail'
+                ? scheme.error
+                : gold;
+            return Stack(
+              children: [
+                Container(
+                  decoration: BoxDecoration(color: scheme.outlineVariant, borderRadius: BorderRadius.circular(2)),
+                ),
+                FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: _fill.value,
+                  child: Container(
+                    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
                   ),
                 ),
               ],
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
