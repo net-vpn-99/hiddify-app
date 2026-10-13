@@ -62,6 +62,12 @@ final stabilityProvider =
 /// 下次点连接 / 换线路 / 手动关掉时清掉。
 final deadLineProvider = StateProvider<bool>((ref) => false);
 
+/// 本次运行里，断开后绕开 VPN 直接碰也没回音的不同节点地址（connection_notifier 填）。
+/// 同一时刻我们的接口服务器能连上、这里攒到 2 个 → 首页说「你的网络连不上我们的线路」，
+/// 不再叫他换线路（10-13 运营定：查实了才说，两端统一；Windows 见 ConnectionController::onNodeProbed）。
+/// 任何一次确认网通就清空。
+final unreachableNodesProvider = StateProvider<Set<String>>((ref) => const {});
+
 /// 首页故障原因。空 = 没有。engine / egress / line。
 final homeFaultProvider = StateProvider<String>((ref) => '');
 
@@ -203,6 +209,9 @@ class StabilityNotifier extends Notifier<StabilityState> {
       if (!_confirmed) {
         _confirmed = true;
         _confirmedAt = DateTime.now();
+      }
+      if (ref.read(unreachableNodesProvider).isNotEmpty) {
+        ref.read(unreachableNodesProvider.notifier).state = const {};
       }
       _armSteady(gen);
       _rememberedScore = 10;

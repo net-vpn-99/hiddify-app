@@ -262,7 +262,25 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
       ref.read(deadLineProvider.notifier).state = true;
       await abortConnection();
+      await _probeDeadLineDirect(reporter);
     });
+  }
+
+  /// 「这条线路现在不通」断开之后：绕开 VPN 直接碰节点 + 接口服务器，只按碰的结果下结论（10-13）。
+  /// 接口通、节点没回音 → 记下这个节点地址；攒到 2 个不同地址，首页改说「你的网络连不上我们的线路」。
+  Future<void> _probeDeadLineDirect(ConnectReporter reporter) async {
+    final host = reporter.lastNodeHost;
+    if (host == null) return;
+    final r = await reporter.probeLastNodeDirect();
+    final set = {...ref.read(unreachableNodesProvider)};
+    if (r.nodeOk) {
+      set.remove(host);
+    } else if (r.noAnswer && r.apiOk) {
+      set.add(host);
+    } else {
+      return;
+    }
+    ref.read(unreachableNodesProvider.notifier).state = set;
   }
 
   ConnectionRepository get _connectionRepo => ref.read(connectionRepositoryProvider);

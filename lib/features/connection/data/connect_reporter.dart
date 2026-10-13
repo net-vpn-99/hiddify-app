@@ -91,6 +91,31 @@ class ConnectReporter {
 
   String _primaryApiBase() => PanelApiBase.current;
 
+  /// 最近一次连接用的节点（上报结束后 _nodeHost 会清掉，这两个留着给断开后的直接探测）。
+  String? lastNodeHost;
+  int? lastNodePort;
+
+  /// 断开（VPN 已经拆掉）之后直接碰一下刚才的节点，同时碰一下我们的接口服务器作对照。
+  /// 返回 (节点通不通, 节点没回音（超时 / 不可达）, 接口服务器通不通)。
+  /// Android 错误码：110 超时、113 主机不可达、101 网络不可达。
+  Future<({bool nodeOk, bool noAnswer, bool apiOk})> probeLastNodeDirect() async {
+    final host = lastNodeHost;
+    final port = lastNodePort;
+    if (host == null || port == null) return (nodeOk: false, noAnswer: false, apiOk: false);
+    final node = await _probeTcp(host, port);
+    if (node['ok'] == true) return (nodeOk: true, noAnswer: false, apiOk: true);
+    final errno = node['errno'] as int? ?? -1;
+    final msg = (node['err'] as String? ?? '').toLowerCase();
+    final noAnswer = errno == 110 || errno == 113 || errno == 101 || msg.contains('timed out');
+    final api = Uri.tryParse(_primaryApiBase());
+    var apiOk = false;
+    if (api != null && api.host.isNotEmpty) {
+      final r = await _probeTcp(api.host, api.hasPort ? api.port : 443);
+      apiOk = r['ok'] == true;
+    }
+    return (nodeOk: false, noAnswer: noAnswer, apiOk: apiOk);
+  }
+
   String _host(String url) => Uri.tryParse(url)?.host ?? url;
 
   /// 按 Unicode 码位截断，不按 UTF-16 code unit（`String.substring` 那样）——线路名
@@ -159,6 +184,8 @@ class ConnectReporter {
     _nodeTag = _truncateRunes(node.tag, 64);
     _nodeHost = node.host;
     _nodePort = node.port;
+    lastNodeHost = node.host;
+    lastNodePort = node.port;
 
     _sub = await _readSubFetch();
     final subStage = _sub.remove('_stage') as int? ?? 0;

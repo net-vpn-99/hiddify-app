@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/features/common/guide_card.dart';
+import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
@@ -23,8 +25,19 @@ class ConnectIssueCard extends ConsumerWidget {
     final deadLine = ref.watch(deadLineProvider);
     final fault = ref.watch(homeFaultProvider);
     final outage = ref.watch(stabilityProvider.select((s) => s.outage));
+    final unreachable = ref.watch(unreachableNodesProvider);
+    final lastHost = ref.read(connectReporterProvider).lastNodeHost;
+
+    // 断开后直接碰：两台不同的节点都没回音、接口服务器却通 → 自动弹一次引导卡（攒到 2 个那一刻）。
+    ref.listen<Set<String>>(unreachableNodesProvider, (prev, next) {
+      if (next.length >= 2 && (prev?.length ?? 0) < 2) {
+        showNetBlockedGuide(context, next.length);
+      }
+    });
 
     final bool dead = (deadLine || fault == 'line') && status is Disconnected;
+    final bool netBlocked = dead && unreachable.length >= 2;
+    final bool thisLineBlocked = dead && !netBlocked && lastHost != null && unreachable.contains(lastHost);
     final bool revoked = fault == 'revoked' && status is Disconnected;
     final bool engine = (fault == 'engine' || revoked) && status is Disconnected;
     final bool egress = fault == 'egress' && status is Disconnected;
@@ -47,6 +60,12 @@ class ConnectIssueCard extends ConsumerWidget {
     } else if (egress) {
       title = '流量没有经过线路';
       body = '可能被别的 VPN 或安全软件接管了网络，关掉它们后点「重新连接」';
+    } else if (netBlocked) {
+      title = '你的网络连不上我们的线路';
+      body = '试了 ${unreachable.length} 条线路都没有回应，换线路也没用';
+    } else if (thisLineBlocked) {
+      title = '这条线路现在不通';
+      body = '你的网络连不上这条线路，换一条试试';
     } else if (dead) {
       title = '这条线路现在不通';
       body = '换一条线路试试，或者稍后点「重新连接」';
@@ -98,7 +117,13 @@ class ConnectIssueCard extends ConsumerWidget {
             Wrap(
               spacing: 4,
               children: [
-                if (dead)
+                if (netBlocked)
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
+                    onPressed: () => showNetBlockedGuide(context, unreachable.length),
+                    child: const Text('怎么办'),
+                  ),
+                if (dead && !netBlocked)
                   TextButton(
                     style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
                     onPressed: () {
