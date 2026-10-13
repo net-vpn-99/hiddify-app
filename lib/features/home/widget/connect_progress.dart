@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/system_settings.dart';
+import 'package:hiddify/features/connection/data/vpn_permission.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -46,12 +47,7 @@ const connectStepLabels = ['开通账号', '获取线路', '选择线路', '启�
 /// 第 4 步（启动连接）失败时给客户看的：标题直说要允许什么、「下一步怎么做」、能直接去的设置页。
 /// 两端统一，Windows 见 ConnectionController::engineFaultCopy。原始报错只进上报和 app.log。
 ConnectProgress connectFailProgress(Object? err) => switch (err) {
-  MissingVpnPermission() => const ConnectProgress(
-    failedStep: 4,
-    title: '请允许光速雷达建立 VPN 连接',
-    message: '再点一下按钮，手机弹出「连接请求」时请点「确定」。没有弹出的话，点「打开 VPN 设置」关掉别的 VPN 的「始终开启」',
-    action: SettingsAction.vpn,
-  ),
+  MissingVpnPermission() => _vpnDeniedProgress(),
   MissingNotificationPermission() => const ConnectProgress(
     failedStep: 4,
     title: '请允许光速雷达发通知',
@@ -66,6 +62,24 @@ ConnectProgress connectFailProgress(Object? err) => switch (err) {
   ),
   _ => const ConnectProgress(failedStep: 4, title: '连接没成功', message: '请再点一下按钮。如果还不行，请换一条线路'),
 };
+
+/// 系统没让光速雷达建 VPN：按证据分两种说，不把两种情况塞进一句话（10-14 运营：看着脑壳疼）。
+ConnectProgress _vpnDeniedProgress() {
+  VpnPermission.noteDenied(_flowTicket);
+  if (VpnPermission.otherVpnBeforeConnect || VpnPermission.deniedStreak >= 2) {
+    return const ConnectProgress(
+      failedStep: 4,
+      title: '先关掉手机上的另一个 VPN',
+      message: '另一个 VPN 软件占着手机的 VPN 连接，光速雷达连不上。点「打开 VPN 设置」，把那个 VPN 断开；如果它开着「始终开启的 VPN」，也要关掉。然后回来再点一下按钮。',
+      action: SettingsAction.vpn,
+    );
+  }
+  return const ConnectProgress(
+    failedStep: 4,
+    title: '需要你允许一次',
+    message: '再点一下按钮，手机弹出「网络连接请求」时，请点「确定」。',
+  );
+}
 
 /// 点击流程的「票」：每点一次连接领一张新票，点取消就作废当前这张。流程每走完一步
 /// 都看一眼票还有没有效，作废了就停下 —— 取消靠这个，不靠计时。

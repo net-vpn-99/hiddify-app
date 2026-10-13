@@ -12,18 +12,23 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/theme/theme_extensions.dart';
 import 'package:hiddify/core/widget/animated_text.dart';
+import 'package:hiddify/features/common/guide_card.dart';
+import 'package:hiddify/features/common/line_icon.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/system_settings.dart';
+import 'package:hiddify/features/connection/data/vpn_permission.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/home/widget/connect_progress.dart';
+import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
+import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
 import 'package:hiddify/gen/assets.gen.dart';
@@ -149,6 +154,7 @@ class ConnectionButton extends HookConsumerWidget {
     final justDone = useState(false);
     ref.listen<bool>(stabilityProvider.select((s) => s.confirmed), (prev, next) {
       if (next && prev != true) {
+        VpnPermission.noteConnected();
         justDone.value = true;
         Future.delayed(const Duration(milliseconds: 1500), () {
           if (context.mounted) justDone.value = false;
@@ -280,6 +286,26 @@ class ConnectionButton extends HookConsumerWidget {
 
       // ④ 启动连接。之后的进度由连接状态推（上面的 ref.listen）。
       stepTo(4);
+      // 被系统拒了要知道是不是别的 VPN 占着（我们自己的这时还没连，不会把自己算进去）。
+      VpnPermission.otherVpnBeforeConnect = await OtherVpn.isActive();
+      if (stopped()) return;
+      // 这台手机还没允许过光速雷达建 VPN：系统马上要弹「网络连接请求」，先说清楚点哪个
+      // （10-14 客户 ID 1725 看到系统那段「监控网络流量…请勿接受」不敢点，一直连不上）。
+      if (!VpnPermission.otherVpnBeforeConnect && !await VpnPermission.granted()) {
+        if (stopped() || !context.mounted) return;
+        await showGuideCard(
+          context,
+          title: '允许光速雷达建立 VPN 连接',
+          body: '第一次连接时，手机会弹出「网络连接请求」。请点「确定」，光速雷达才能连接。',
+          illustration: const _VpnPromptSketch(),
+          tipTitle: '这是安卓系统的固定提示',
+          tipText: '所有 VPN 软件第一次连接都会弹出这个窗口。光速雷达不记录你的上网内容。',
+          tipIcon: LineIconName.shield,
+          actionText: '好的，继续',
+          showContact: false,
+        );
+        if (stopped()) return;
+      }
       // 第 4 步的结果只看连接状态的事件（上面的 ref.listen）：Connecting / Connected 往前走，
       // 核心报了失败（含拒绝 VPN 授权）就停在第 4 步。以前这里在 toggleConnection 一返回就
       // 看状态，那时核心常常还没报 Connecting，把正在连的当成「被拒绝授权」（10-13 TEST 真机）。
@@ -476,6 +502,50 @@ class _ConnectionButton extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 说明卡里的示意图：照着系统「网络连接请求」画个缩小版，「确定」高亮。
+class _VpnPromptSketch extends StatelessWidget {
+  const _VpnPromptSketch();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = PurchaseTokens.of(context);
+    Widget button(String text, bool primary) => Expanded(
+      child: Container(
+        height: 34,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: primary ? const Color(0xFF2F7CF6) : t.fill,
+          borderRadius: BorderRadius.circular(17),
+          border: primary ? Border.all(color: const Color(0xFFF2C230), width: 2) : null,
+        ),
+        child: Text(text, style: TextStyle(fontSize: 13, color: primary ? Colors.white : t.text)),
+      ),
+    );
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: t.raised,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: t.border),
+      ),
+      child: Column(
+        children: [
+          Text('网络连接请求', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: t.text)),
+          const SizedBox(height: 6),
+          Text('“光速雷达”想要设置一个 VPN 连接…', style: TextStyle(fontSize: 11, color: t.secondary)),
+          const SizedBox(height: 12),
+          Row(children: [button('取消', false), const SizedBox(width: 10), button('确定', true)]),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text('点这里  ↑', style: TextStyle(fontSize: 11, color: t.warning)),
+          ),
+        ],
+      ),
     );
   }
 }
