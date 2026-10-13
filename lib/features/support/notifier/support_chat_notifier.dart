@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hiddify/features/support/data/support_chat_service.dart';
 import 'package:hiddify/features/support/model/support_message.dart';
@@ -77,6 +78,10 @@ class SupportChatNotifier extends Notifier<SupportChatState> {
   bool _starting = false;
   bool _dialogOpen = false;
   bool _appActive = true;
+  // 最近一次给客服发出消息的时间。之后 2 小时内 App 退后台，交给原生继续盯回复（SupportWatch）。
+  DateTime? _lastSentAt;
+  static const _watchWindow = Duration(hours: 2);
+  static const _platform = MethodChannel('com.hiddify.app/platform');
   int _lastSeenMessageId = 0;
   int _localSeq = 0;
 
@@ -130,13 +135,43 @@ class SupportChatNotifier extends Notifier<SupportChatState> {
     if (!active) {
       _poll?.cancel();
       _poll = null;
-    } else if (_authToken != null) {
+      unawaited(_startBackgroundWatch());
+    } else {
+      unawaited(_stopBackgroundWatch());
+    }
+    if (active && _authToken != null) {
       _fetchMessages();
       _applyPoll();
     }
   }
 
   Future<void> refreshNow() => _fetchMessages();
+
+  /// 退后台：刚给客服发过消息（2 小时内）才交给原生盯，平时不耗电。
+  Future<void> _startBackgroundWatch() async {
+    if (!Platform.isAndroid) return;
+    final sent = _lastSentAt;
+    final token = _authToken;
+    if (sent == null || token == null) return;
+    final until = sent.add(_watchWindow);
+    if (DateTime.now().isAfter(until)) return;
+    try {
+      await _platform.invokeMethod<bool>('support_watch_start', {
+        'url': await SupportChatService.messagesUrl(),
+        'token': token,
+        'lastSeen': _lastSeenMessageId,
+        'until': until.millisecondsSinceEpoch,
+      });
+    } catch (_) {}
+  }
+
+  /// 回前台：界面自己轮询，原生停掉。
+  Future<void> _stopBackgroundWatch() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _platform.invokeMethod<bool>('support_watch_stop');
+    } catch (_) {}
+  }
 
   Future<void> sendText(String text) async {
     final trimmed = text.trim();
@@ -358,6 +393,7 @@ class SupportChatNotifier extends Notifier<SupportChatState> {
   Future<void> _afterSend(SupportMessage local, int status, bool creating) async {
     if (status >= 200 && status < 300) {
       if (creating) _hasConversation = true;
+      _lastSentAt = DateTime.now();
       _pending.removeWhere((m) => m.id == local.id);
       state = state.copyWith(messages: _display(), error: null);
       await _fetchMessages();

@@ -49,6 +49,9 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
             OpenVpnSettings("open_vpn_settings"),
             // OneRay：这台手机有没有允许过光速雷达建 VPN（没允许过，第一次连接前先弹说明卡）。
             VpnPermissionGranted("vpn_permission_granted"),
+            // OneRay：App 退后台后盯客服回复（见 SupportWatch），回前台停。
+            SupportWatchStart("support_watch_start"),
+            SupportWatchStop("support_watch_stop"),
             // OneRay：用着用着断了 / 线路不通被断开 —— 发一条系统通知（App 在后台也看得到）。
             ShowDropNotice("show_drop_notice"),
             // OneRay：核心最近一次是怎么停的（见 BoxService.lastStopReason）。
@@ -258,6 +261,27 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
                         .build()
                     // 没通知权限时 notify 什么都不做，不会崩。
                     Application.notification.notify(dropNotificationId, n)
+                    success(true)
+                }.onFailure { result.success(false) }
+            }
+
+            Trigger.SupportWatchStart.method -> {
+                result.runCatching {
+                    val args = call.arguments as Map<*, *>
+                    SupportWatch.start(
+                        Application.application,
+                        args["url"] as String,
+                        args["token"] as String,
+                        (args["lastSeen"] as Number).toLong(),
+                        (args["until"] as Number).toLong(),
+                    )
+                    success(true)
+                }.onFailure { result.success(false) }
+            }
+
+            Trigger.SupportWatchStop.method -> {
+                result.runCatching {
+                    SupportWatch.stop(Application.application)
                     success(true)
                 }.onFailure { result.success(false) }
             }

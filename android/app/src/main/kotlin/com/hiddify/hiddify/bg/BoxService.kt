@@ -190,6 +190,14 @@ class BoxService(
                 return
             }
             status.postValue(Status.Started)
+            // OneRay：连着的时候顺手每分钟看一眼客服回复（只在 App 退后台、刚给客服发过消息时才真去查）。
+            supportTicker?.cancel()
+            supportTicker = GlobalScope.launch(Dispatchers.IO) {
+                while (true) {
+                    kotlinx.coroutines.delay(60_000L)
+                    com.hiddify.hiddify.SupportWatch.checkFromService(service)
+                }
+            }
 
             if (Settings.startCoreAfterStartingService){
                 Mobile.start("","")
@@ -271,6 +279,8 @@ class BoxService(
     private fun stopService() {
         if (status.value == Status.Stopped) return
         status.value = Status.Stopping
+        supportTicker?.cancel()
+        supportTicker = null
         if (receiverRegistered) {
             service.unregisterReceiver(receiver)
             receiverRegistered = false
@@ -328,6 +338,8 @@ class BoxService(
 
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("SameReturnValue")
+    private var supportTicker: kotlinx.coroutines.Job? = null
+
     internal fun onStartCommand(): Int {
         if (status.value != Status.Stopped) return Service.START_NOT_STICKY
         status.value = Status.Starting

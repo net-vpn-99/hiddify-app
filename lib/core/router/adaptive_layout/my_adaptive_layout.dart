@@ -8,6 +8,7 @@ import 'package:hiddify/core/router/adaptive_layout/shell_route_action.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
 import 'package:hiddify/core/router/go_router/routing_config_notifier.dart';
 import 'package:hiddify/features/stats/widget/side_bar_stats_overview.dart';
+import 'package:hiddify/features/support/notifier/support_chat_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class MyAdaptiveLayout extends HookConsumerWidget {
@@ -25,6 +26,8 @@ class MyAdaptiveLayout extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(translationsProvider).requireValue;
+    // 有没看的客服回复：底部「我的」亮红点（以前只有「我的」页里那一格有，人在首页看不到）。
+    final supportUnseen = ref.watch(supportChatNotifierProvider.select((s) => s.unseenAgentCount)) > 0;
     // focus switch management
     final primaryFocusHash = useState<int?>(null);
     final navScopeNode = useFocusScopeNode();
@@ -84,7 +87,7 @@ class MyAdaptiveLayout extends HookConsumerWidget {
                 node: navScopeNode,
                 child: NavigationBar(
                   selectedIndex: navigationShell.currentIndex <= 1 ? navigationShell.currentIndex : 0,
-                  destinations: _navDests(_actions(t, showProfilesAction, isMobileBreakpoint)),
+                  destinations: _navDests(_actions(t, showProfilesAction, isMobileBreakpoint), supportUnseen),
                   onDestinationSelected: (index) => _onTap(context, index),
                 ),
               )
@@ -107,8 +110,14 @@ class MyAdaptiveLayout extends HookConsumerWidget {
     if (!isMobileBreakpoint) ShellRouteAction(Icons.info_rounded, t.pages.about.title),
   ];
 
-  List<NavigationDestination> _navDests(List<ShellRouteAction> actions) =>
-      actions.map((e) => NavigationDestination(icon: Icon(e.icon), label: e.title)).toList();
+  List<NavigationDestination> _navDests(List<ShellRouteAction> actions, bool supportUnseen) => actions
+      .map(
+        (e) => NavigationDestination(
+          icon: Badge(isLabelVisible: supportUnseen && e.title == '我的', smallSize: 8, child: Icon(e.icon)),
+          label: e.title,
+        ),
+      )
+      .toList();
   List<NavigationRailDestination> _navRailDests(List<ShellRouteAction> actions) =>
       actions.map((e) => NavigationRailDestination(icon: Icon(e.icon), label: Text(e.title))).toList();
 }

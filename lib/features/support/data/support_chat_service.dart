@@ -109,6 +109,10 @@ class SupportChatService {
 
   Map<String, dynamic> get _q => {'website_token': _websiteToken};
 
+  /// 原生后台查回复用的完整地址（SupportWatch，跟 [fetchMessages] 同一个接口）。
+  static Future<String> messagesUrl() async =>
+      '${await _resolveBase()}/api/v1/widget/messages?website_token=$_websiteToken';
+
   Options _auth(String token, {bool json = false}) => Options(
         headers: {
           'X-Auth-Token': token,

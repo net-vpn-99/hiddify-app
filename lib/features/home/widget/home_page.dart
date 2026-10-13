@@ -94,6 +94,16 @@ class HomePage extends HookConsumerWidget {
       if (loggedIn) loadGift();
       return null;
     }, [loggedIn]);
+    // 点了「客服回复了」系统通知进来：直接打开客服页。
+    final fromSupport = useValueListenable(supportFromLink);
+    useEffect(() {
+      if (!fromSupport) return null;
+      supportFromLink.value = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) context.pushNamed('supportChat');
+      });
+      return null;
+    }, [fromSupport]);
     // 从 TG 机器人点「打开光速雷达，一键领取」进来：问一次能不能领，能领就直接拉起 Telegram。
     final fromLink = useValueListenable(giftFromLink);
     useEffect(() {

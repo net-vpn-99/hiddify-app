@@ -14,6 +14,9 @@ String pendingInviteFromLink = '';
 /// 借 invite 这个 host 是因为老版本只认它：老版本收到会安安静静回首页，不会弹「添加配置」。
 final giftFromLink = ValueNotifier<bool>(false);
 
+/// 点了「客服回复了」系统通知（SupportWatch）→ `oneray://support`。首页看到 true 就打开客服页。
+final supportFromLink = ValueNotifier<bool>(false);
+
 class RefreshListenable extends ChangeNotifier {
   RefreshListenable(this.ref) {
     ref.listen(myAppLinksProvider, (_, next) {
