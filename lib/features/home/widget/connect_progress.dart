@@ -10,7 +10,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// 一键连接的 5 步进度（两端统一，Windows 见 ConnectionController::connectStep）：
 ///   1 开通账号  2 获取线路  3 选择线路  4 启动连接  5 检查网络
 ///
-/// 像游戏加载那样一步一步走，但**只在某一步真的做完时才往前走**，绝不按时间往前爬。
+/// 某一步真的做完了才算这一步完成（进度条在一格里匀速爬只是画面，见 [ConnectStepsBar]）。
 /// 前三步由首页连接按钮的点击流程推（connection_button.dart），第 4 步看连接状态
 /// （Connecting），第 5 步看 stabilityProvider.confirmed（第一次经隧道的请求成功）。
 /// 哪一步失败就停在那一步，[failedStep] + [title] / [message] 说原因和下一步。
@@ -84,8 +84,13 @@ void cancelConnectFlow(WidgetRef ref) {
   ref.read(connectProgressProvider.notifier).state = const ConnectProgress();
 }
 
-/// 5 段进度条：做完的绿、正在做的闪、失败的红、没到的灰。手机上放 5 个字标签太挤，
-/// 所以只画段，当前这步在做什么写在按钮下面那行字里。
+/// 连接进度条（10-13 改，两端统一；Windows 是 qml/components/ConnectSteps.qml，两边一起改）：
+///   一根细长的条，从左往右线性地走，像加载条。
+///   **只画这一次真要做的步骤**：已经登录的人没有「开通账号」，已经有线路的人没有「获取线路」——
+///   第一次看到的那一步（_first）往后才算，几步就平分几格，格与格之间留一道细缝当刻度。
+///   正在做的那一格匀速往前爬到八成五就停住等；这一步真做完了（step 往前走）才一下补满这一格、
+///   进下一格。爬只是画面，连接逻辑不看时间。失败：停在那一格，那一格变红。连上：整根补满变绿。
+///   正在做什么写在按钮下面那行字里，条上不写字。
 class ConnectStepsBar extends StatefulWidget {
   const ConnectStepsBar({super.key, required this.step, required this.failedStep, required this.done});
 
@@ -98,14 +103,86 @@ class ConnectStepsBar extends StatefulWidget {
 }
 
 class _ConnectStepsBarState extends State<ConnectStepsBar> with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 560),
-  )..repeat(reverse: true);
+  // 整根条填到哪（0~1）。
+  late final AnimationController _fill = AnimationController(vsync: this);
+  int _first = 0;
+  String _mode = 'idle';
+
+  int get _count => _first > 0 ? 6 - _first : 0;
+
+  String _modeOf(ConnectStepsBar w) => w.failedStep > 0
+      ? 'fail'
+      : w.step > 0
+      ? 'working'
+      : w.done
+      ? 'done'
+      : 'idle';
+
+  // 每一步大概要多久，只用来定「匀速爬」的速度（画面），不拿来判断任何事。
+  static int _typicalMs(int s) => switch (s) {
+    1 => 2500,
+    2 => 2000,
+    3 => 1200,
+    4 => 5000,
+    _ => 2500,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    // 要读 MediaQuery（系统「减少动画」），等第一帧挂好再开始。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _sync();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ConnectStepsBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.step != widget.step || oldWidget.failedStep != widget.failedStep || oldWidget.done != widget.done) {
+      _sync();
+    }
+  }
+
+  Future<void> _sync() async {
+    final m = _modeOf(widget);
+    if (m == 'working' && (_mode != 'working' || _first == 0 || widget.step < _first)) {
+      _first = widget.step;
+      _fill.value = 0;
+    }
+    if (m == 'fail' && _first == 0) _first = widget.failedStep;
+    if (m == 'done' && _first == 0) _first = 5;
+    _mode = m;
+    // 格数、哪一格变红都跟着 _first / _mode 变，重画一次。
+    if (mounted) setState(() {});
+    _fill.stop();
+    if (m == 'idle') {
+      _first = 0;
+      _fill.value = 0;
+      return;
+    }
+    if (m == 'fail') return; // 原地停住
+    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (m == 'done') {
+      await _fill.animateTo(1, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic).orCancel.catchError((_) {});
+      return;
+    }
+    final w = 1 / _count;
+    final from = (widget.step - _first) / _count;
+    final ticket = widget.step;
+    if (_fill.value < from) {
+      await _fill.animateTo(from, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic).orCancel.catchError((_) {});
+    }
+    if (!mounted || _mode != 'working' || widget.step != ticket) return;
+    await _fill
+        .animateTo(from + w * 0.85, duration: Duration(milliseconds: reduce ? 0 : _typicalMs(widget.step)))
+        .orCancel
+        .catchError((_) {});
+  }
 
   @override
   void dispose() {
-    _pulse.dispose();
+    _fill.dispose();
     super.dispose();
   }
 
@@ -113,51 +190,55 @@ class _ConnectStepsBarState extends State<ConnectStepsBar> with SingleTickerProv
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     const green = Color(0xFF2E9E5B);
-    const amber = Color(0xFFE0A530);
+    const gold = Color(0xFFE1B83F);
+    final n = _count;
+    if (n == 0) return const SizedBox(width: 180, height: 4);
     return Semantics(
-      label: widget.failedStep > 0
-          ? '第 ${widget.failedStep} 步没有完成'
-          : widget.done
+      label: _mode == 'fail'
+          ? '这一步没有完成'
+          : _mode == 'done'
           ? '连接完成'
-          : '第 ${widget.step} 步，共 5 步',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 1; i <= 5; i++) ...[
-            if (i > 1) const SizedBox(width: 4),
-            AnimatedBuilder(
-              animation: _pulse,
-              builder: (context, _) {
-                final Color color;
-                var opacity = 1.0;
-                if (widget.done) {
-                  color = green;
-                } else if (widget.failedStep > 0) {
-                  color = i < widget.failedStep
-                      ? green
-                      : i == widget.failedStep
-                      ? scheme.error
-                      : scheme.outlineVariant;
-                } else if (i < widget.step) {
-                  color = green;
-                } else if (i == widget.step) {
-                  color = amber;
-                  opacity = 0.35 + 0.65 * (1 - _pulse.value);
-                } else {
-                  color = scheme.outlineVariant;
-                }
-                return Opacity(
-                  opacity: opacity,
-                  child: Container(
-                    width: 30,
-                    height: 4,
-                    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+          : '第 ${widget.step - _first + 1} 步，共 $n 步',
+      child: SizedBox(
+        width: 180,
+        height: 4,
+        child: AnimatedBuilder(
+          animation: _fill,
+          builder: (context, _) => Row(
+            children: [
+              for (var i = 0; i < n; i++) ...[
+                if (i > 0) const SizedBox(width: 2),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, box) {
+                      final failed = _mode == 'fail' && _first + i == widget.failedStep;
+                      final local = ((_fill.value - i / n) * n).clamp(0.0, 1.0);
+                      final color = _mode == 'done'
+                          ? green
+                          : failed
+                          ? scheme.error
+                          : gold;
+                      return Stack(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              color: failed ? scheme.error.withValues(alpha: 0.3) : scheme.outlineVariant,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          Container(
+                            width: box.maxWidth * local,
+                            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+                          ),
+                        ],
+                      );
+                    },
                   ),
-                );
-              },
-            ),
-          ],
-        ],
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
