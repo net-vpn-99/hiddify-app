@@ -24,6 +24,7 @@ import 'package:hiddify/core/router/dialog/widgets/warp_license_dialog.dart';
 import 'package:hiddify/core/router/dialog/widgets/window_closing_dialog.dart';
 import 'package:hiddify/core/router/go_router/go_router_notifier.dart';
 import 'package:hiddify/features/app_update/model/remote_version_entity.dart';
+import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/common/qr_code_dialog.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
@@ -43,8 +44,15 @@ class DialogNotifier extends _$DialogNotifier {
     final context = rootNavKey.currentContext;
     if (context == null) return null;
     // ref.read(popupCountNotifierProvider.notifier).increase();
+    // 引导卡（GuideCard 和用它的弹窗）背后是浅底，别的弹窗还是默认的压暗。
+    final guide = child is GuideCard || child is QuotaEndedDialog || child is NeedAccountDialog;
     return await Navigator.of(context)
-        .push<T>(DialogRoute(context: context, barrierDismissible: barrierDismissible, builder: (context) => child))
+        .push<T>(DialogRoute(
+          context: context,
+          barrierDismissible: barrierDismissible,
+          barrierColor: guide ? guideCanvasColor(context) : Colors.black54,
+          builder: (context) => child,
+        ))
         .then((value) {
       // ref.read(popupCountNotifierProvider.notifier).decrease();
       return value;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/features/common/guide_card.dart';
+import 'package:hiddify/features/common/line_icon.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -37,6 +38,8 @@ class QuotaEndedDialog extends ConsumerWidget {
       title: title,
       body: body,
       tipTitle: showInvite ? '邀请好友，双方都有奖励' : '',
+      tipIcon: LineIconName.gift,
+      tipBelow: true,
       tipText: (bonus != null && bonus.isNotEmpty) ? '好友用起来后，你们各得 $bonus。' : '好友用起来后，你们都能再获得体验。',
       actionText: slug == 'no_plan' || isGuest ? '去买套餐' : '去续费',
       onAction: () => context.pop(QuotaEndedAction.purchase),

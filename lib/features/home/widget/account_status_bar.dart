@@ -142,6 +142,7 @@ class AccountStatusBar extends HookConsumerWidget {
                       onTap: () {
                         showDialog(
                           context: context,
+                          barrierColor: guideCanvasColor(context),
                           // 10-13 换成引导卡样式（两端统一）。
                           builder: (dctx) => GuideCard(
                             title: '为什么领不了免费试用',
