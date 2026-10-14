@@ -46,6 +46,10 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   bool _deadlineHeld = false;
   bool _wasUp = false;
   bool _userStop = false;
+  // connect() 还没返回（含失败分支里复核账号那一下网络请求）。这期间核心报的 Disconnected
+  // 不能把这次尝试作废：失败分支马上要按它报 fail（10-14 C2A4：端口被占启动失败，复核账号
+  // 那 0.4 秒里 Disconnected 先到、abandon 掉，服务器一条都没收到）。
+  bool _connectInFlight = false;
   int _heldSerial = 0;
 
   @override
@@ -167,7 +171,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           _deadlineHeld = false;
           _stopQuotaPoll();
           _stopDeviceKeepWarm();
-          if (!judging) reporter.abandon();
+          if (!judging && !_connectInFlight) reporter.abandon();
       }
       loggy.info("connection status: ${event.format()}");
     });
@@ -203,23 +207,25 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     final why = revoked ? '系统收回 VPN（别的 VPN / 系统设置）' : '核心没走正常停止就没了';
     if (confirmed) {
       // 用着用着断的：单报一条「掉线」，并发系统通知（App 在后台也看得到）。
-      unawaited(reporter.reportDrop(
-        'engine_gone',
-        '已连 $secs 秒｜$why${failure == null ? '' : '：${_truncate(failure.toString(), 120)}'}｜App 在$fg',
-      ));
-      unawaited(DropNotice.show(revoked
-          ? '连接被别的 VPN 或系统设置断开了。关掉别的 VPN 后，打开光速雷达点「连接」'
-          : '连接意外断开了。打开光速雷达点「连接」恢复'));
+      unawaited(
+        reporter.reportDrop(
+          'engine_gone',
+          '已连 $secs 秒｜$why${failure == null ? '' : '：${_truncate(failure.toString(), 120)}'}｜App 在$fg',
+        ),
+      );
+      unawaited(DropNotice.show(revoked ? '连接被别的 VPN 或系统设置断开了。关掉别的 VPN 后，打开光速雷达点「连接」' : '连接意外断开了。打开光速雷达点「连接」恢复'));
       reporter.abandon();
     } else if (reporter.attemptOpen) {
       // 第 5 步还没确认网通核心就停了：这是一次失败（以前直接丢掉，后台看不到）。
       reporter.captureCoreLogSync();
-      unawaited(reporter.reportFailure(
-        '确认网通前$why${failure == null ? '' : '：$failure'}',
-        forcedStage: 'engine_gone',
-        appForeground: ref.read(appForegroundProvider),
-        probeLog: probeLog,
-      ));
+      unawaited(
+        reporter.reportFailure(
+          '确认网通前$why${failure == null ? '' : '：$failure'}',
+          forcedStage: 'engine_gone',
+          appForeground: ref.read(appForegroundProvider),
+          probeLog: probeLog,
+        ),
+      );
     }
   }
 
@@ -506,63 +512,62 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     if (Platform.isAndroid) {
       final claim = await ref.read(panelAuthProvider.notifier).claimDevice(connected: true);
       if (!claim.allowed) {
-        await ref
-            .read(dialogNotifierProvider.notifier)
-            .showCustomAlert(message: claim.blockMessage ?? '设备校验失败，请稍后重试');
+        await ref.read(dialogNotifierProvider.notifier).showCustomAlert(message: claim.blockMessage ?? '设备校验失败，请稍后重试');
         await ref.read(Preferences.startedByUser.notifier).update(false);
         return;
       }
     }
 
-    await reporter.beginAttempt(
-      activeProfile.name,
-      preferredLine: ref.read(Preferences.preferredLineName),
-    );
-    await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).mapLeft((
-      ConnectionFailure err,
-    ) async {
-      loggy.warning("error connecting", err);
-      //Go err is not normal object to see the go errors are string and need to be dumped
-      // MissingWarpLicense = user declined a prompt, not a connectivity failure.
-      if (err is MissingWarpLicense) {
-        reporter.abandon();
-      } else {
-        // snapshot box.log NOW, synchronously, before any retry start() truncates it
-        reporter.captureCoreLogSync();
-        // 失败也可能只是这次连接期间流量用完了：复核账号，是账号原因就别记成节点失败，
-        // 直接弹「流量用完 · 去续费」而不是笼统的连接错误。
-        if (await _accountExhaustedAfterFailure(reporter)) {
-          await ref.read(Preferences.startedByUser.notifier).update(false);
-          await abortConnection();
-          return;
+    await reporter.beginAttempt(activeProfile.name, preferredLine: ref.read(Preferences.preferredLineName));
+    _connectInFlight = true;
+    try {
+      final result = await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).mapLeft((
+        ConnectionFailure err,
+      ) async {
+        loggy.warning("error connecting", err);
+        //Go err is not normal object to see the go errors are string and need to be dumped
+        // MissingWarpLicense = user declined a prompt, not a connectivity failure.
+        if (err is MissingWarpLicense) {
+          reporter.abandon();
+        } else {
+          // snapshot box.log NOW, synchronously, before any retry start() truncates it
+          reporter.captureCoreLogSync();
+          // 失败也可能只是这次连接期间流量用完了：复核账号，是账号原因就别记成节点失败，
+          // 直接弹「流量用完 · 去续费」而不是笼统的连接错误。
+          if (await _accountExhaustedAfterFailure(reporter)) {
+            await ref.read(Preferences.startedByUser.notifier).update(false);
+            await abortConnection();
+            return;
+          }
+          unawaited(ref.read(foregroundProfilesUpdateNotifierProvider.notifier).trigger());
+          // 用 typed ConnectionFailure 判断，别只在字符串里猜关键词——拒绝 VPN 授权这种
+          // 有专门的类型（MissingVpnPermission），直接给出准确的 vpn_permission/note，
+          // 不用等服务端/人工再去猜「vivo 所以是权限问题」。
+          final (vpnPerm, tunnelNote) = switch (err) {
+            MissingVpnPermission() => ('denied', '用户拒绝了 VPN 连接授权弹窗'),
+            MissingPrivilege() => ('unknown', '系统权限不足（不是 VPN 授权弹窗，是别的系统限制）'),
+            MissingNotificationPermission() => ('granted', '缺通知权限，前台服务起不来（VPN 授权本身没问题）'),
+            BackgroundCoreNotAvailable() => ('granted', '后台核心服务没能启动（可能被系统省电策略杀了）'),
+            _ => ('granted', 'start() 失败：${_truncate(err.toString(), 160)}'),
+          };
+          unawaited(reporter.reportFailure(err.toString(), tunnelVpnPermission: vpnPerm, tunnelNote: tunnelNote));
         }
-        unawaited(ref.read(foregroundProfilesUpdateNotifierProvider.notifier).trigger());
-        // 用 typed ConnectionFailure 判断，别只在字符串里猜关键词——拒绝 VPN 授权这种
-        // 有专门的类型（MissingVpnPermission），直接给出准确的 vpn_permission/note，
-        // 不用等服务端/人工再去猜「vivo 所以是权限问题」。
-        final (vpnPerm, tunnelNote) = switch (err) {
-          MissingVpnPermission() => ('denied', '用户拒绝了 VPN 连接授权弹窗'),
-          MissingPrivilege() => ('unknown', '系统权限不足（不是 VPN 授权弹窗，是别的系统限制）'),
-          MissingNotificationPermission() => ('granted', '缺通知权限，前台服务起不来（VPN 授权本身没问题）'),
-          BackgroundCoreNotAvailable() => ('granted', '后台核心服务没能启动（可能被系统省电策略杀了）'),
-          _ => ('granted', 'start() 失败：${_truncate(err.toString(), 160)}'),
-        };
-        unawaited(reporter.reportFailure(
-          err.toString(),
-          tunnelVpnPermission: vpnPerm,
-          tunnelNote: tunnelNote,
-        ));
-      }
-      // 原来弹 Hiddify 的报错框（原始报错，客户看不懂）。现在进度条停在第 4 步，
-      // 写「下一步怎么做」（connectFailCopy，两端统一）；原始报错只进上报和 app.log。
-      ref.read(connectProgressProvider.notifier).state = connectFailProgress(err);
-      loggy.warning(err);
-      if (err.toString().contains("panic")) {
-        await Sentry.captureException(Exception(err.toString()));
-      }
-      await ref.read(Preferences.startedByUser.notifier).update(false);
-      state = AsyncError(err, StackTrace.current);
-    }).run();
+        // 原来弹 Hiddify 的报错框（原始报错，客户看不懂）。现在进度条停在第 4 步，
+        // 写「下一步怎么做」（connectFailCopy，两端统一）；原始报错只进上报和 app.log。
+        ref.read(connectProgressProvider.notifier).state = connectFailProgress(err);
+        loggy.warning(err);
+        if (err.toString().contains("panic")) {
+          await Sentry.captureException(Exception(err.toString()));
+        }
+        await ref.read(Preferences.startedByUser.notifier).update(false);
+        state = AsyncError(err, StackTrace.current);
+      }).run();
+      // mapLeft 的回调是 async：run() 返回时它还没跑完（复核账号、上报都在里面），要等它。
+      final pending = result.match((f) => f, (_) => null);
+      if (pending != null) await pending;
+    } finally {
+      _connectInFlight = false;
+    }
   }
 
   Future<void> _disconnect() async {
@@ -570,9 +575,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     ref.read(connectReporterProvider).abandon();
     await _connectionRepo.disconnect().mapLeft((err) {
       loggy.warning("error disconnecting", err);
-      ref
-          .read(dialogNotifierProvider.notifier)
-          .showCustomAlert(title: '断开没成功', message: '请再点一下按钮。如果还不行，请把光速雷达关掉再打开');
+      ref.read(dialogNotifierProvider.notifier).showCustomAlert(title: '断开没成功', message: '请再点一下按钮。如果还不行，请把光速雷达关掉再打开');
       state = AsyncError(err, StackTrace.current);
     }).run();
   }

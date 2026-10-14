@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/model/directories.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
@@ -79,11 +81,72 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
 
   @override
   TaskEither<ConnectionFailure, Unit> connect(ProfileEntity activeProfile, bool disableMemoryLimit) => setup().flatMap(
-    (_) => applyConfigOption(activeProfile).flatMap(
-      (_) => singbox.start(profilePathResolver.file(activeProfile.id).path, activeProfile.name, disableMemoryLimit),
-      // .mapLeft(UnexpectedConnectionFailure.new),
-    ),
+    (_) =>
+        TaskEither<ConnectionFailure, Unit>.tryCatch(() async {
+              await _ensureLocalPortsFree();
+              return unit;
+            }, (err, st) => ConnectionFailure.unexpected(err, st))
+            .flatMap((_) => applyConfigOption(activeProfile))
+            .flatMap(
+              (_) => singbox.start(
+                profilePathResolver.file(activeProfile.id).path,
+                activeProfile.name,
+                disableMemoryLimit,
+              ),
+              // .mapLeft(UnexpectedConnectionFailure.new),
+            ),
   );
+
+  /// 核心要在本机监听的几个端口，连接前先看有没有被别的程序占着；占着就换一个空闲的并记下来。
+  /// 手机上所有 App 共用 127.0.0.1 的端口：Hiddify 原版和很多用它改的翻墙软件默认端口跟我们
+  /// 以前一样，它在后台开着我们的核心就起不来（10-14 C2A4：16756 被占，连 3 次全失败）。
+  /// 只在 connect 时查：那时我们自己的核心是停着的，占着的一定是别人。
+  Future<void> _ensureLocalPortsFree() async {
+    final ports = [
+      ConfigOptions.mixedPort,
+      ConfigOptions.tproxyPort,
+      ConfigOptions.redirectPort,
+      ConfigOptions.directPort,
+      ConfigOptions.clashApiPort,
+    ];
+    final used = <int>{};
+    for (final pref in ports) {
+      final port = ref.read(pref);
+      if (!used.contains(port) && await _portFree(port)) {
+        used.add(port);
+        continue;
+      }
+      var next = 0;
+      for (var i = 0; i < 20 && (next == 0 || used.contains(next)); i++) {
+        next = await _anyFreePort();
+      }
+      if (next == 0) continue; // 一个空端口都拿不到就照旧，让核心自己报错（会上报）
+      loggy.warning('本机端口 $port 被别的程序占着，改用 $next');
+      used.add(next);
+      await ref.read(pref.notifier).update(next);
+    }
+  }
+
+  static Future<bool> _portFree(int port) async {
+    try {
+      final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, port);
+      await s.close();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<int> _anyFreePort() async {
+    try {
+      final s = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final port = s.port;
+      await s.close();
+      return port;
+    } catch (_) {
+      return 0;
+    }
+  }
 
   @override
   TaskEither<ConnectionFailure, Unit> disconnect() => singbox.stop().mapLeft(UnexpectedConnectionFailure.new);

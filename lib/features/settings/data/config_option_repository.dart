@@ -108,25 +108,27 @@ abstract class ConfigOptions {
     mapTo: (value) => value.key,
   );
 
+  // OneRay：本机端口不用 Hiddify 原版默认的 12334~12337 / 16756——同类翻墙 App 都用那几个，
+  // 它在后台开着我们的核心就起不来。连接前还会再查一次（connection_repository._ensureLocalPortsFree）。
   static final mixedPort = PreferencesNotifier.create<int, int>(
     "mixed-port",
-    12334,
+    27334,
     validator: (value) => isPort(value.toString()),
   );
 
   static final tproxyPort = PreferencesNotifier.create<int, int>(
     "tproxy-port",
-    12335,
+    27335,
     validator: (value) => isPort(value.toString()),
   );
   static final redirectPort = PreferencesNotifier.create<int, int>(
     "redirect-port",
-    12336,
+    27336,
     validator: (value) => isPort(value.toString()),
   );
   static final directPort = PreferencesNotifier.create<int, int>(
     "direct-port",
-    12337,
+    27337,
     validator: (value) => isPort(value.toString()),
   );
 
@@ -169,7 +171,7 @@ abstract class ConfigOptions {
 
   static final clashApiPort = PreferencesNotifier.create<int, int>(
     "clash-api-port",
-    16756,
+    27756,
     validator: (value) => isPort(value.toString()),
   );
 
