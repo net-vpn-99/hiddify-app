@@ -382,7 +382,13 @@ class ConnectReporter {
     if (errMsg.isNotEmpty) payload['err_msg'] = errMsg;
     if (_sub.isNotEmpty) payload['sub'] = _sub;
     ConnectFlowClock.log?.call('connect step $step failed ($stage): $message');
-    await _send(payload, null);
+    // 前三步停下的也带诊断包（照常限流，两端统一，Windows 0.4.48 同改）：以前不带，
+    // 卡在开号 / 拿线路的人服务器上只有一行字，看不到日志。
+    String? bundle;
+    if (await _bundleRateLimitOk('$stage|step$step|${_host(_primaryApiBase())}')) {
+      bundle = await _buildBundle(stage);
+    }
+    await _send(payload, bundle);
   }
 
   /// 连接过程中他自己点了取消。[stepSlug]：account / nodes / route_pick / connect / verify。
