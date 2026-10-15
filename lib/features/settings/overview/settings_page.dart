@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
-import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
 import 'package:hiddify/features/connection/data/system_settings.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -32,18 +32,14 @@ enum ConfigOptionSection {
   };
 }
 
-/// 「我的」页（1.1.28 重做）。
+/// 「我的」页（10-15 精简，跟 Windows「更多」同一个思路：首页有的这里不再放一遍）。
 ///
-/// 三段，越往下越不常用：**账号卡**（我是谁 + 剩多久 + 买套餐 / 账号管理 + 游客绑邮箱
-/// 提醒）→ **四个方块**（邀请返利 / 在线客服 / 常见问题 / 连接诊断）→ **两行列表**
-/// （应用设置 / 关于）。
+/// 从上到下：**账号卡**（我是谁 + 剩多久，点进账号管理；续费 / 在另一台设备上用）→
+/// **四个方块**（邀请返利 / 在线客服 / 常见问题 / 连接诊断）→ **一组两行**（初始化本地网络 /
+/// 应用设置）→ **最下面一行小字**（版本号 · 官网 · 备用入口，点版本号进「关于」检查更新）。
 ///
-/// 删掉的老东西：
-///  - 右上角 ⋮「导入配置 / 重置配置」—— Hiddify 遗留，小白点一下能把自己搞挂；
-///  - 「高级设置」整块（路由 / DNS / 入站 / TLS / WARP / 日志）—— 我们的配置全是服务端
-///    下发的，用户改只有坏处。**没真删**：在「关于」页连点版本号 5 次会显出来
-///    （Preferences.devMode），客服排障时还用得上；
-///  - 三个分组小标题 —— 方块和列表本身已经分开了。
+/// 不在这里的：常用网站、TG 频道在首页。「高级设置」（路由 / DNS / 入站 / TLS / WARP / 日志）
+/// 在「关于」页连点版本号 5 次才显出来（Preferences.devMode），客服排障时用。
 class SettingsPage extends HookConsumerWidget {
   SettingsPage({super.key, String? section})
     : section = section != null ? ConfigOptionSection.values.byName(section) : null;
@@ -61,33 +57,19 @@ class SettingsPage extends HookConsumerWidget {
         children: [
           const AccountCard(),
           const _ActionGrid(),
-          const _SitesLinkRow(),
-          const _TelegramGroupRow(),
-          _row(
-            context,
-            icon: Icons.open_in_new_rounded,
-            title: '官网 ↗',
-            onTap: () => UriUtils.tryLaunch(Uri.parse(Constants.websiteUrl)),
+          MenuGroup(
+            children: [
+              const _LocalInitRow(),
+              MenuRow(
+                icon: Icons.tune_rounded,
+                title: '应用设置',
+                onTap: () => context.pushNamed('general'),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          const Divider(height: 1),
-          const _LocalInitRow(),
-          _row(
-            context,
-            icon: Icons.tune_rounded,
-            title: '应用设置',
-            onTap: () => context.pushNamed('general'),
-          ),
-          if (Breakpoint(context).isMobile())
-            _row(
-              context,
-              icon: Icons.info_outline_rounded,
-              title: t.pages.about.title,
-              onTap: () => context.pushNamed('about'),
-            ),
+          const _FootLinks(),
           // 连点版本号解锁出来的那堆，普通用户永远看不到。
           if (devMode) ...[
-            const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
               child: Text(
@@ -97,45 +79,25 @@ class SettingsPage extends HookConsumerWidget {
                 ),
               ),
             ),
-            SettingsSection(
-              title: t.pages.settings.routing.title,
-              icon: Icons.route_rounded,
-              namedLocation: context.namedLocation('routeOptions'),
-            ),
-            SettingsSection(
-              title: t.pages.settings.dns.title,
-              icon: Icons.dns_rounded,
-              namedLocation: context.namedLocation('dnsOptions'),
-            ),
-            SettingsSection(
-              title: t.pages.settings.inbound.title,
-              icon: Icons.input_rounded,
-              namedLocation: context.namedLocation('inboundOptions'),
-            ),
-            SettingsSection(
-              title: t.pages.settings.tlsTricks.title,
-              icon: Icons.content_cut_rounded,
-              namedLocation: context.namedLocation('tlsTricks'),
-            ),
-            SettingsSection(
-              title: t.pages.settings.warp.title,
-              icon: Icons.cloud_rounded,
-              namedLocation: context.namedLocation('warpOptions'),
-            ),
-            SettingsSection(
-              title: t.pages.logs.title,
-              icon: Icons.description_rounded,
-              namedLocation: context.namedLocation('logs'),
-            ),
-            // 订阅管理：1.1.28 起首页和线路页都不再有入口（订阅是自动导入的，用户没
-            // 必要碰）。留在这里，万一要手动导一份配置排障还能找到。
-            Material(
-              child: ListTile(
-                leading: const Icon(Icons.swap_horiz_rounded),
-                title: Text(t.pages.profiles.title),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () => ref.read(bottomSheetsNotifierProvider.notifier).showProfilesOverview(),
-              ),
+            MenuGroup(
+              children: [
+                for (final (title, icon, name) in [
+                  (t.pages.settings.routing.title, Icons.route_rounded, 'routeOptions'),
+                  (t.pages.settings.dns.title, Icons.dns_rounded, 'dnsOptions'),
+                  (t.pages.settings.inbound.title, Icons.input_rounded, 'inboundOptions'),
+                  (t.pages.settings.tlsTricks.title, Icons.content_cut_rounded, 'tlsTricks'),
+                  (t.pages.settings.warp.title, Icons.cloud_rounded, 'warpOptions'),
+                  (t.pages.logs.title, Icons.description_rounded, 'logs'),
+                ])
+                  MenuRow(icon: icon, title: title, onTap: () => context.go(context.namedLocation(name))),
+                // 订阅管理：1.1.28 起首页和线路页都不再有入口（订阅是自动导入的，用户没
+                // 必要碰）。留在这里，万一要手动导一份配置排障还能找到。
+                MenuRow(
+                  icon: Icons.swap_horiz_rounded,
+                  title: t.pages.profiles.title,
+                  onTap: () => ref.read(bottomSheetsNotifierProvider.notifier).showProfilesOverview(),
+                ),
+              ],
             ),
           ],
           const SizedBox(height: 24),
@@ -143,20 +105,97 @@ class SettingsPage extends HookConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _row(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      child: ListTile(
-        leading: Icon(icon),
-        title: Text(title),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: onTap,
+/// 浅底圆角卡（账号卡、方块、行组都是这一种底色），里面的行之间画细线。
+class MenuGroup extends StatelessWidget {
+  const MenuGroup({super.key, required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      child: Material(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0) Divider(height: 1, indent: 56, color: scheme.outlineVariant.withValues(alpha: 0.5)),
+              children[i],
+            ],
+          ],
+        ),
       ),
+    );
+  }
+}
+
+/// 一行：图标 + 名字 + 右边灰色小字（hint）+ ›。「我的」页所有行都用它。
+class MenuRow extends StatelessWidget {
+  const MenuRow({super.key, required this.icon, required this.title, this.hint, this.busy = false, this.onTap});
+
+  final IconData icon;
+  final String title;
+  final String? hint;
+  final bool busy;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return ListTile(
+      leading: Icon(icon, color: muted),
+      title: Text(title),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hint != null) Text(hint!, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+          const SizedBox(width: 4),
+          if (busy)
+            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+          else
+            Icon(Icons.chevron_right_rounded, color: theme.colorScheme.outline),
+        ],
+      ),
+      onTap: busy ? null : onTap,
+    );
+  }
+}
+
+/// 最下面一行小字（跟 Windows「更多」底部同一行）：光速雷达 版本号（点进「关于」检查更新）·
+/// 官网 · 备用入口（官网打不开时用）。
+class _FootLinks extends ConsumerWidget {
+  const _FootLinks();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final version = ref.watch(appInfoProvider).valueOrNull?.presentVersion ?? '';
+    Widget link(String text, VoidCallback onTap) => InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: Text(text, style: style),
+      ),
+    );
+    final dot = Text('·', style: style);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        link('光速雷达 $version', () => context.pushNamed('about')),
+        dot,
+        link('官网', () => UriUtils.tryLaunch(Uri.parse(Constants.websiteUrl))),
+        dot,
+        link('备用入口', () => UriUtils.tryLaunch(Uri.parse(Constants.statusPageUrl))),
+      ],
     );
   }
 }
@@ -196,92 +235,12 @@ class _LocalInitRowState extends ConsumerState<_LocalInitRow> {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      child: ListTile(
-        leading: const Icon(Icons.restart_alt_rounded),
-        title: const Text('初始化本地网络'),
-        trailing: _busy
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-            : const Icon(Icons.chevron_right_rounded),
-        onTap: _busy ? null : _run,
-      ),
-    );
-  }
-}
-
-/// 常用网站页。`sites_url` 为空就不占一行。
-class _SitesLinkRow extends StatefulWidget {
-  const _SitesLinkRow();
-
-  @override
-  State<_SitesLinkRow> createState() => _SitesLinkRowState();
-}
-
-class _SitesLinkRowState extends State<_SitesLinkRow> {
-  String? _url;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    await RemoteSiteConfig.ensureLoaded();
-    if (!mounted) return;
-    setState(() => _url = RemoteSiteConfig.sitesUrl);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final url = _url;
-    if (url == null) return const SizedBox.shrink();
-    return Material(
-      child: ListTile(
-        leading: const Icon(Icons.language_rounded),
-        title: const Text('常用网站 ↗'),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: () => UriUtils.tryLaunch(Uri.parse(url)),
-      ),
-    );
-  }
-}
-
-/// 交流群链接来自 `gsl_invite.support_telegram_group`。没配就不占一行。
-class _TelegramGroupRow extends StatefulWidget {
-  const _TelegramGroupRow();
-
-  @override
-  State<_TelegramGroupRow> createState() => _TelegramGroupRowState();
-}
-
-class _TelegramGroupRowState extends State<_TelegramGroupRow> {
-  String? _url;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    await RemoteSiteConfig.ensureLoaded();
-    if (!mounted) return;
-    final uri = RemoteSiteConfig.telegramGroupUri;
-    setState(() => _url = uri?.toString());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final url = _url;
-    if (url == null) return const SizedBox.shrink();
-    return Material(
-      child: ListTile(
-        leading: const Icon(Icons.forum_outlined),
-        title: const Text('TG 官方频道'),
-        trailing: const Icon(Icons.chevron_right_rounded),
-        onTap: () => UriUtils.tryLaunch(Uri.parse(url)),
-      ),
+    return MenuRow(
+      icon: Icons.restart_alt_rounded,
+      title: '初始化本地网络',
+      hint: '网页打不开时用',
+      busy: _busy,
+      onTap: _run,
     );
   }
 }
@@ -294,7 +253,7 @@ class _ActionGrid extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final unseen = ref.watch(supportChatNotifierProvider.select((s) => s.unseenAgentCount));
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       child: Row(
         children: [
           Expanded(
@@ -359,17 +318,13 @@ class _ActionGrid extends ConsumerWidget {
   }) {
     final theme = Theme.of(context);
     return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
+      color: theme.colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
         onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: theme.colorScheme.outlineVariant),
-          ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -379,27 +334,13 @@ class _ActionGrid extends ConsumerWidget {
                     ? const Center(
                         child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
                       )
-                    : Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Icon(icon, size: 24, color: theme.colorScheme.onSurfaceVariant),
-                          if (badge)
-                            Positioned(
-                              right: -2,
-                              top: -2,
-                              child: Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.error,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
-                        ],
+                    : Badge(
+                        isLabelVisible: badge,
+                        smallSize: 8,
+                        child: Icon(icon, size: 24, color: theme.colorScheme.onSurfaceVariant),
                       ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
                 label,
                 maxLines: 1,
@@ -410,24 +351,6 @@ class _ActionGrid extends ConsumerWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class SettingsSection extends HookConsumerWidget {
-  const SettingsSection({super.key, required this.title, required this.icon, required this.namedLocation});
-
-  final String title;
-  final IconData icon;
-  final String namedLocation;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: () => context.go(namedLocation),
     );
   }
 }

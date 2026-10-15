@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
-import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 「我的」页顶部的账号卡（1.1.28 重做，原来是一行 ListTile）。
 ///
-/// 一整块里放三样东西：我是谁 + 还剩多久 / 买套餐和我的订单两个按钮 / 游客没绑邮箱时
+/// 一整块里放三样东西：我是谁 + 还剩多久（点进账号管理）/ 续费 + 在另一台设备上用（游客是登录已有账号）/ 游客没绑邮箱时
 /// 的提醒条。原来这页最大的问题是**没有买套餐的入口** —— 想付钱找不到地方。
 class AccountCard extends ConsumerWidget {
   const AccountCard({super.key});
@@ -35,12 +34,12 @@ class AccountCard extends ConsumerWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.colorScheme.outlineVariant),
+          borderRadius: BorderRadius.circular(16),
+          color: theme.colorScheme.surfaceContainerLow,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -102,70 +101,55 @@ class AccountCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => context.pushNamed('purchase'),
-                    child: Text(auth.account?.stateSlug == 'ok' && !auth.isGuest ? '续费 / 升级' : '买套餐'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton(
-                    // 游客这颗按钮是「登录已有账号」而不是「账号管理」：在官网注册过的人
-                    // 装上 App 会被自动开成游客号，首页一个「登录」字样都没有，原来那两个字
-                    // 只藏在 我的 → 账号管理 → 最底下。账号页仍可从卡片左半边点进去。
-                    onPressed: () => context.pushNamed(
-                      loggedIn && !auth.isGuest ? 'account' : 'login',
+            // 账号管理就是上面那一行（点头像 / 邮箱进去），这里不再放一颗同样去处的按钮。
+            if (loggedIn && !auth.isGuest)
+              FilledButton(
+                onPressed: () => context.pushNamed('purchase'),
+                child: Text(auth.account?.stateSlug == 'ok' ? '续费 / 升级' : '买套餐'),
+              )
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => context.pushNamed('purchase'),
+                      child: const Text('买套餐'),
                     ),
-                    child: Text(loggedIn && !auth.isGuest ? '账号管理' : '登录已有账号'),
                   ),
-                ),
-              ],
-            ),
-            // 游客没绑邮箱：常驻提醒。这个号只认这台手机的设备号，换手机 / 恢复出厂
-            // 就找不回来了，电脑上也是另一个号 —— 绑定不再送时长，只能把利害说清楚。
-            if (loggedIn && auth.isGuest) ...[
-              const SizedBox(height: 12),
-              Material(
-                color: theme.colorScheme.tertiaryContainer,
+                  const SizedBox(width: 10),
+                  // 游客 / 没账号：登录已有账号 —— 在官网注册过的人装上 App 会被自动开成游客号，
+                  // 首页一个「登录」字样都没有。
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => context.pushNamed('login'),
+                      child: const Text('登录已有账号'),
+                    ),
+                  ),
+                ],
+              ),
+            // 在另一台设备上用（配对码）。游客多一句「换手机也能用」：这个号只认这台手机，
+            // 换手机 / 恢复出厂就找不回来了，电脑上也是另一个号。
+            if (loggedIn) ...[
+              const SizedBox(height: 4),
+              InkWell(
                 borderRadius: BorderRadius.circular(10),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () => context.pushNamed('addDevice'),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            '换手机也能用：在新手机上输配对码',
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
-                          ),
-                        ),
+                onTap: () => context.pushNamed('addDevice'),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 12, 0, 4),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text('在另一台设备上用', style: theme.textTheme.bodyMedium)),
+                      if (auth.isGuest)
                         Text(
-                          '在另一台设备上用',
-                          style: theme.textTheme.labelMedium
-                              ?.copyWith(color: theme.colorScheme.onTertiaryContainer),
+                          '换手机也能用',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                         ),
-                        Icon(Icons.chevron_right_rounded,
-                            size: 18, color: theme.colorScheme.onTertiaryContainer),
-                      ],
-                    ),
+                      Icon(Icons.chevron_right_rounded, color: theme.colorScheme.outline),
+                    ],
                   ),
                 ),
               ),
             ],
-            if (loggedIn && !auth.isGuest)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('在另一台设备上用'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.pushNamed('addDevice'),
-              ),
           ],
         ),
       ),
@@ -187,23 +171,13 @@ class AccountCard extends ConsumerWidget {
         // 会员报套餐名，且第二段一定要有 —— 长期有效的号算不出剩余时长，
         // 以前这里就只剩「会员」两个字，跟首页状态条同一个毛病（1.1.40 一起改）。
         if (auth.isGuest) {
-          final left = _remaining(acc);
+          final left = acc.remainingClock();
           return left == null ? '免费试用中' : '免费试用中 · 剩 $left';
         }
         final name = acc.planName?.trim().isNotEmpty == true ? acc.planName!.trim() : '会员';
         if (acc.lifetime) return '$name · 长期有效';
-        final left = _remaining(acc);
+        final left = acc.remainingClock();
         return left == null ? name : '$name · 剩 $left';
     }
-  }
-
-  /// 剩余时长：超过一天说天，不足一天说小时，不足一小时说分钟。长期有效 / 已过期返回 null。
-  String? _remaining(PanelAccount acc) {
-    if (acc.lifetime) return null;
-    final secs = acc.expiredAt! - DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    if (secs <= 0) return null;
-    if (secs >= 86400) return '${secs ~/ 86400} 天';
-    if (secs >= 3600) return '${secs ~/ 3600} 小时';
-    return '${(secs ~/ 60).clamp(1, 59)} 分钟';
   }
 }

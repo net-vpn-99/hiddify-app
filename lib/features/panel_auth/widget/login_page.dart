@@ -73,49 +73,45 @@ class LoginPage extends HookConsumerWidget {
       return null;
     }, const []);
 
+    /// 游客号上还有没到期的套餐：先问要不要加邮箱（不然登录别的号后这个号就找不回来了）。
+    /// 返回 true = 接着登录；false = 不登录了（去加邮箱 / 关掉了弹窗）。
+    Future<bool> okToLeaveGuest() async {
+      if (!ref.read(panelAuthProvider).isGuest) return true;
+      final paid = await ref.read(panelAuthProvider.notifier).guestHasPaidOrder();
+      if (!context.mounted) return false;
+      final exp = ref.read(panelAuthProvider).account?.expiredAt;
+      final dated = exp != null && exp != 0;
+      final stillValid = !dated || exp > DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      if (paid != true || !stillValid) return true;
+      String when() {
+        final d = DateTime.fromMillisecondsSinceEpoch(exp! * 1000);
+        return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+      }
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          content: Text(dated
+              ? '这个号上还有套餐（到 ${when()}），先加个邮箱再登录别的账号。'
+              : '这个号上还有套餐，先加个邮箱再登录别的账号。'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop('login'), child: const Text('直接登录')),
+            FilledButton(onPressed: () => Navigator.of(ctx).pop('bind'), child: const Text('加邮箱')),
+          ],
+        ),
+      );
+      if (!context.mounted) return false;
+      if (choice == 'login') return true;
+      busy.value = false;
+      if (choice == 'bind') context.pushNamed('bindEmail');
+      return false;
+    }
+
     Future<void> submitPair() async {
       final code = pairCtrl.text.trim();
       if (code.length != 6 || busy.value) return;
       errorText.value = null;
       busy.value = true;
-      if (ref.read(panelAuthProvider).isGuest) {
-        final paid = await ref.read(panelAuthProvider.notifier).guestHasPaidOrder();
-        if (!context.mounted) return;
-        final exp = ref.read(panelAuthProvider).account?.expiredAt;
-        final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-        final stillValid = exp == null || exp == 0 || exp > nowSec;
-        if (paid == true && stillValid) {
-          final when = (exp == null || exp == 0)
-              ? '长期有效'
-              : () {
-                  final d = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
-                  return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-                }();
-          final dated = exp != null && exp != 0;
-          final choice = await showDialog<String>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              content: Text(dated
-                  ? '这个号上还有套餐（到 $when），先加个邮箱再登录别的账号。'
-                  : '这个号上还有套餐，先加个邮箱再登录别的账号。'),
-              actions: [
-                TextButton(onPressed: () => Navigator.of(ctx).pop('login'), child: const Text('直接登录')),
-                FilledButton(onPressed: () => Navigator.of(ctx).pop('bind'), child: const Text('加邮箱')),
-              ],
-            ),
-          );
-          if (!context.mounted) return;
-          if (choice == 'bind') {
-            busy.value = false;
-            context.pushNamed('bindEmail');
-            return;
-          }
-          if (choice != 'login') {
-            busy.value = false;
-            return;
-          }
-        }
-      }
+      if (!await okToLeaveGuest()) return;
       final result = await ref.read(panelAuthProvider.notifier).loginWithPairCode(code);
       if (!context.mounted) return;
       if (result.error != null) {
@@ -141,52 +137,7 @@ class LoginPage extends HookConsumerWidget {
       errorText.value = null;
       if (!formKey.currentState!.validate()) return;
       busy.value = true;
-      if (ref.read(panelAuthProvider).isGuest) {
-        final paid = await ref.read(panelAuthProvider.notifier).guestHasPaidOrder();
-        if (!context.mounted) return;
-        final exp = ref.read(panelAuthProvider).account?.expiredAt;
-        final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-        final stillValid = exp == null || exp == 0 || exp > nowSec;
-        if (paid == true && stillValid) {
-          final when = (exp == null || exp == 0)
-              ? '长期有效'
-              : () {
-                  final d = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
-                  final m = d.month.toString().padLeft(2, '0');
-                  final day = d.day.toString().padLeft(2, '0');
-                  return '${d.year}-$m-$day';
-                }();
-          final dated = exp != null && exp != 0;
-          final choice = await showDialog<String>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              content: Text(dated
-                  ? '这个号上还有套餐（到 $when），先加个邮箱再登录别的账号。'
-                  : '这个号上还有套餐，先加个邮箱再登录别的账号。'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop('login'),
-                  child: const Text('直接登录'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop('bind'),
-                  child: const Text('加邮箱'),
-                ),
-              ],
-            ),
-          );
-          if (!context.mounted) return;
-          if (choice == 'bind') {
-            busy.value = false;
-            context.pushNamed('bindEmail', queryParameters: {'email': emailCtrl.text.trim()});
-            return;
-          }
-          if (choice != 'login') {
-            busy.value = false;
-            return;
-          }
-        }
-      }
+      if (!await okToLeaveGuest()) return;
       final result = await ref
           .read(panelAuthProvider.notifier)
           .login(emailCtrl.text.trim(), passCtrl.text);

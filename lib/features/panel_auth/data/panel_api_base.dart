@@ -113,10 +113,6 @@ class PanelApiBase {
   /// 回前台时补一次：系统冻结期间错过的回切在这里补。
   static Future<void> onForeground() => resolve(force: false);
 
-  static void _invalidate() {
-    noteFailure(_cached ?? current);
-  }
-
   /// [usedBase] 必须是这次实际发出请求的地址，不能用之后已经切走的 current。
   static void noteFailure(String usedBase, {int? status, DioExceptionType? type}) {
     if (status != null || type != null) {
