@@ -134,6 +134,8 @@ class LoginPage extends HookConsumerWidget {
     }
 
     Future<void> submit() async {
+      // 正在开游客号 / 正在登录时不重复提交（按钮这时是转圈；键盘「完成」键也会走到这里）。
+      if (busy.value || ref.read(panelAuthProvider).loading) return;
       errorText.value = null;
       if (!formKey.currentState!.validate()) return;
       busy.value = true;
@@ -272,6 +274,9 @@ class LoginPage extends HookConsumerWidget {
                     controller: passCtrl,
                     focusNode: passwordFocus,
                     obscureText: obscure.value,
+                    // 输完密码按键盘上的「完成」直接登录（10-16 运营：只认下面的按钮，按键盘键没有任何反应）。
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => submit(),
                     decoration: InputDecoration(
                       labelText: '密码',
                       enabledBorder: OutlineInputBorder(
