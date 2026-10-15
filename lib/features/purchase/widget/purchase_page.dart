@@ -174,27 +174,21 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Text(state.error!, style: TextStyle(color: t.empty, fontSize: 12)),
                 ),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(state.tiers.length >= 2 ? '先选版本，再选时长' : '选择使用时长',
-                        style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.bold)),
-                  ),
-                  Text('以下价格均为整期金额', style: TextStyle(color: t.secondary, fontSize: 11)),
-                ],
-              ),
+              // 有版本对比表时，「选择版本」写在表的左上角；没有表时这里直接是「选择使用时长」（跟 Windows 一样）。
+              if (!(state.tiers.length >= 2 && state.tiers.every((t) => t.compare.isNotEmpty)))
+                Text('选择使用时长', style: TextStyle(color: t.text, fontSize: 14, fontWeight: FontWeight.bold)),
               if (state.tiers.length >= 2) ...[
-                const SizedBox(height: 14),
+                const SizedBox(height: 6),
                 // GslShop 1.10.0 起每档带 compare：画对比表，精品版在左带「推荐」，点一列选那一档。
                 if (state.tiers.every((t) => t.compare.isNotEmpty))
                   Padding(
-                    padding: const EdgeInsets.only(top: 4, bottom: 10),
-                    child: _TierCompareTable(
+                    // 顶上留 12：卡片上沿的角标往上凸 8。
+                    padding: const EdgeInsets.only(top: 12, bottom: 10),
+                    child: TierCompareTable(
                       t: t,
                       tiers: _orderedTiers(state.tiers),
                       selectedPlanId: selected?.planId,
                       me: state.me,
-                      moreLine: _proPerDayMore(state),
                       badge: byPlan.values.expand((x) => x).map((o) => o.badge).firstWhere((b) => b != null && b.isNotEmpty, orElse: () => null),
                       onTap: (tier) => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
                     ),
@@ -226,8 +220,10 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                     ),
                   ),
               ],
-              // 有版本表时跟时长卡片拉开一点，别贴着表格底边。
-              SizedBox(height: state.tiers.length >= 2 ? 18 : 10),
+              // 有版本表时跟时长卡片拉开一点，别贴着表格底边；「选择使用时长」跟 Windows 同一种小标题。
+              SizedBox(height: state.tiers.length >= 2 ? 14 : 10),
+              if (state.tiers.length >= 2 && state.tiers.every((t) => t.compare.isNotEmpty))
+                Text('选择使用时长', style: TextStyle(color: t.text, fontSize: 14, fontWeight: FontWeight.bold)),
               for (final entry in byPlan.entries) ...[
                 if (state.tiers.length >= 2 && selected != null && entry.key != selected.planId)
                   const SizedBox.shrink()
@@ -251,7 +247,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                             for (final o in entry.value)
                               SizedBox(
                                 width: w,
-                                child: _OfferCard(
+                                child: OfferCard(
                                   t: t,
                                   offer: o,
                                   selected: selected != null && selected.planId == o.planId && selected.period == o.period,
@@ -272,7 +268,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
             ],
           ),
         ),
-        _CheckoutBar(
+        CheckoutBar(
           t: t,
           offer: selected,
           onPay: knownMask != null
@@ -280,6 +276,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               : (selected == null ? null : () => _confirm(t, selected)),
           payLabel: _payLabel(knownMask, selected, state.me),
           pickedName: selected == null ? '' : tierNameOf(state, selected),
+          pickedNote: _pickedNote(state, selected),
           expiryHint: _expiryHint(account, selected, state.me),
         ),
       ],
@@ -332,6 +329,18 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     return renewing ? '预计用到 $date（在现有到期时间上顺延）' : '预计用到 $date';
   }
 
+  String? _pickedNote(PurchaseState state, PlanOffer? offer) {
+    if (offer == null) return null;
+    final tier = state.tiers.where((x) => x.planId == offer.planId).firstOrNull;
+    if (tier == null) return null;
+    final me = state.me;
+    if (tier.tier == 'pro' && me?.tier != 'pro') return _proPerDayMore(state);
+    if (tier.tier == 'std' && me != null && (me.trial == 'locked' || me.trial == 'offer')) {
+      return me.trialMinutes == 60 ? '送 1 小时精品线路体验' : '送 ${me.trialMinutes} 分钟精品线路体验';
+    }
+    return null;
+  }
+
   Widget _benefits(PurchaseTokens t, PlanOffer? offer) {
     final devices = offer?.deviceLimit;
     final deviceText = (devices != null && devices > 0) ? '最多 $devices 台设备同时在线' : '设备数以套餐为准';
@@ -356,24 +365,18 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
         speedLine = '$speedLine（试用是每天 ${formatDailyAmount(own)}）';
       }
     }
-    return Wrap(
-      spacing: 16,
-      runSpacing: 4,
+    // 两行：第一行流量，第二行设备数（跟 Windows 一样）。
+    final traffic = speedLine != null
+        ? '所有时长都不限总流量：$speedLine'
+        : (offer != null && offer.trafficLabel.isNotEmpty
+            ? (offer.trafficLabel == '不限流量' ? '所有时长都不限流量' : offer.trafficLabel)
+            : null);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (offer != null && offer.trafficLabel.isNotEmpty)
-          Text(offer.trafficLabel == '不限流量' ? '所有时长都不限流量' : offer.trafficLabel, style: s),
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.devices_rounded, size: 13, color: t.secondary),
-          const SizedBox(width: 4),
-          Text(deviceText, style: s),
-        ]),
-        Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.layers_rounded, size: 13, color: t.secondary),
-          const SizedBox(width: 4),
-          Text('同一账号共享流量', style: s),
-        ]),
-        if (speedLine != null)
-          Text(speedLine, style: s),
+        if (traffic != null) Text(traffic, style: s),
+        const SizedBox(height: 2),
+        Text(deviceText, style: s),
       ],
     );
   }
@@ -976,13 +979,12 @@ class _TierCard extends StatelessWidget {
 }
 
 /// 版本对比表：左边项目，右边每档一张竖卡片，选中那张金边浅金底，点哪一格都选那一档。
-class _TierCompareTable extends StatelessWidget {
-  const _TierCompareTable({
+class TierCompareTable extends StatelessWidget {
+  const TierCompareTable({
     required this.t,
     required this.tiers,
     required this.selectedPlanId,
     required this.me,
-    required this.moreLine,
     required this.onTap,
     this.badge,
   });
@@ -993,27 +995,26 @@ class _TierCompareTable extends StatelessWidget {
   final String? badge;
   final int? selectedPlanId;
   final ShopMe? me;
-  final String? moreLine;
   final ValueChanged<ShopTier> onTap;
-
-  // 「比标准版每天多」：浅色下主色金太浅，用深金（同官网 --gold-deep）。
-  Color get _gold => t == PurchaseTokens.light ? const Color(0xFF8D6C32) : t.primary;
 
   bool _seatBlocked(ShopTier tier) => tier.full && me?.tier != 'pro';
   bool _stdBlocked(ShopTier tier) => tier.tier == 'std' && me?.canBuyStd == false;
   bool _picked(ShopTier tier) => !_stdBlocked(tier) && selectedPlanId == tier.planId;
 
-  List<(String, Color, bool)> _notes(ShopTier tier) {
-    final current = me?.tier == tier.tier;
-    final gift = me != null && tier.tier == 'std' && (me!.trial == 'locked' || me!.trial == 'offer');
-    return [
-      if (current) ('✓ 你现在用的', t.remaining, false),
-      if (_seatBlocked(tier) && !current) ('本月名额已满', t.secondary, false),
-      if (_stdBlocked(tier)) ('精品版已包含，不用另买', t.secondary, false),
-      if (tier.tier == 'pro' && !current && moreLine != null) (moreLine!, _gold, true),
-      if (gift) ((me!.trialMinutes == 60) ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验', t.remaining, false),
-      if (tier.seatsLeft != null && tier.seatsLeft! > 0) ('剩 ${tier.seatsLeft} 个名额', t.warning, false),
-    ];
+  /// 每档卡片上沿最多一个角标（10-16 运营：名字下面那行小字去掉，两张卡才齐；两端一样）。
+  /// 精品版：当前版本 → 本月名额已满 → 剩 N 个名额 → 推荐；标准版：当前版本 → 送精品线路体验。
+  /// 返回 (字, 底色, 字色)；null = 不挂。
+  (String, Color, Color)? _badge(ShopTier tier) {
+    if (me?.tier == tier.tier) return ('当前版本', t.remaining, Colors.white);
+    if (_seatBlocked(tier)) return ('本月名额已满', t.fill, t.secondary);
+    if (tier.tier == 'pro' && tier.seatsLeft != null && tier.seatsLeft! > 0) {
+      return ('剩 ${tier.seatsLeft} 个名额', t.primary, t.onPrimary);
+    }
+    if (tier.tier == 'std' && me != null && (me!.trial == 'locked' || me!.trial == 'offer')) {
+      return (me!.trialMinutes == 60 ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验', t.primary, t.onPrimary);
+    }
+    if (tier.recommended) return (badge ?? '推荐', t.primary, t.onPrimary);
+    return null;
   }
 
   @override
@@ -1035,11 +1036,10 @@ class _TierCompareTable extends StatelessWidget {
           child: child,
         );
         if (tier != null) {
-          final dim = _seatBlocked(tier) || _stdBlocked(tier);
           box = GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: _seatBlocked(tier) ? null : () => onTap(tier),
-            child: Opacity(opacity: dim ? 0.6 : 1, child: box),
+            child: box,
           );
         }
         return box;
@@ -1051,7 +1051,12 @@ class _TierCompareTable extends StatelessWidget {
           ];
 
       final head = TableRow(
-        children: withGaps(const SizedBox.shrink(), [
+        children: withGaps(
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 16, 4, 8),
+              child: Text('选择版本', style: TextStyle(color: t.text, fontSize: 14, fontWeight: FontWeight.bold)),
+            ),
+            [
           for (var i = 0; i < tiers.length; i++)
             cell(
               i + 1,
@@ -1066,15 +1071,9 @@ class _TierCompareTable extends StatelessWidget {
                       Text('✓', style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.bold)),
                     ],
                   ]),
-                  for (final n in _notes(tiers[i]))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Text(n.$1,
-                          style: TextStyle(color: n.$2, fontSize: 11, fontWeight: n.$3 ? FontWeight.w700 : FontWeight.normal)),
-                    ),
                 ],
               ),
-              pad: const EdgeInsets.fromLTRB(8, 14, 4, 9),
+              pad: const EdgeInsets.fromLTRB(8, 16, 4, 8),
             ),
         ]),
       );
@@ -1087,7 +1086,7 @@ class _TierCompareTable extends StatelessWidget {
                 0,
                 Text(
                   tiers.map((x) => r < x.compare.length ? x.compare[r].label : '').firstWhere((s) => s.isNotEmpty, orElse: () => ''),
-                  style: TextStyle(color: t.secondary, fontSize: 12),
+                  style: TextStyle(color: t.secondary.withValues(alpha: 0.85), fontSize: 11),
                 ),
                 last: r == rows - 1,
               ),
@@ -1135,16 +1134,20 @@ class _TierCompareTable extends StatelessWidget {
             defaultVerticalAlignment: TableCellVerticalAlignment.intrinsicHeight,
             children: [head, ...body],
           ),
-          // 推荐角标压在卡片上沿，字跟时长卡片的角标一样。
+          // 角标压在卡片上沿，样子跟时长卡片的「推荐选择」一样。
           for (var i = 0; i < tiers.length; i++)
-            if (tiers[i].recommended && me?.tier != tiers[i].tier && !_seatBlocked(tiers[i]))
+            if (_badge(tiers[i]) case final b?)
               Positioned(
                 left: colX(i) + 10,
                 top: -8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(8)),
-                  child: Text(badge ?? '推荐', style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: b.$2,
+                    borderRadius: BorderRadius.circular(8),
+                    border: b.$2 == t.fill ? Border.all(color: t.border) : null,
+                  ),
+                  child: Text(b.$1, style: TextStyle(color: b.$3, fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               ),
         ],
@@ -1153,8 +1156,8 @@ class _TierCompareTable extends StatelessWidget {
   }
 }
 
-class _OfferCard extends StatelessWidget {
-  const _OfferCard({required this.t, required this.offer, required this.selected, required this.onTap});
+class OfferCard extends StatelessWidget {
+  const OfferCard({required this.t, required this.offer, required this.selected, required this.onTap});
 
   final PurchaseTokens t;
   final PlanOffer offer;
@@ -1222,15 +1225,19 @@ class _OfferCard extends StatelessWidget {
   }
 }
 
-class _CheckoutBar extends StatelessWidget {
-  const _CheckoutBar({
+class CheckoutBar extends StatelessWidget {
+  const CheckoutBar({
     required this.t,
     required this.offer,
     required this.onPay,
     required this.payLabel,
     required this.pickedName,
     required this.expiryHint,
+    this.pickedNote,
   });
+
+  /// 跟在「已选」后面的一句：精品版比标准版每天多多少 / 标准版送的精品线路体验（原来在版本卡片头里，10-16 挪过来）。
+  final String? pickedNote;
 
   final PurchaseTokens t;
   final PlanOffer? offer;
@@ -1266,6 +1273,12 @@ class _CheckoutBar extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: t.text, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
+                    // 手机上一行放不下，单独一行（Windows 宽，跟在「已选」后面）。
+                    if (offer != null && pickedNote != null) ...[
+                      const SizedBox(height: 2),
+                      Text(pickedNote!, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: t.warning, fontSize: 11, fontWeight: FontWeight.w600)),
+                    ],
                     if (expiryHint != null) ...[
                       const SizedBox(height: 2),
                       Text(expiryHint!,

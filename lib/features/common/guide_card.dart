@@ -281,6 +281,74 @@ Future<void> showGuideCard(
   );
 }
 
+/// 引导卡的「底部面板」样子（10-16 运营定）：系统马上要弹自己的窗口之前，先在底下说一句点哪个。
+/// 按钮在拇指够得到的地方；内容跟 [GuideCard] 同一套（标题、一句话、图例、一行小字、金色按钮）。
+Future<void> showGuideSheet(
+  BuildContext context, {
+  required String title,
+  String body = '',
+  Widget? illustration,
+  String fineprint = '',
+  LineIconName fineprintIcon = LineIconName.shield,
+  String actionText = '知道了',
+}) {
+  final t = PurchaseTokens.of(context);
+  return showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: t.raised,
+    barrierColor: Colors.black.withValues(alpha: 0.35),
+    isScrollControlled: true,
+    showDragHandle: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+    builder: (ctx) => SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(title, style: TextStyle(color: t.text, fontSize: 20, fontWeight: FontWeight.w600, height: 1.3)),
+            if (body.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(body, style: TextStyle(color: t.secondary, fontSize: 14, height: 1.55)),
+            ],
+            if (illustration != null) ...[
+              const SizedBox(height: 20),
+              Center(child: illustration),
+            ],
+            const SizedBox(height: 24),
+            SizedBox(
+              height: 48,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: t.primary,
+                  foregroundColor: t.onPrimary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                ),
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(actionText),
+              ),
+            ),
+            if (fineprint.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  LineIcon(fineprintIcon, color: t.secondary, size: 14),
+                  const SizedBox(width: 5),
+                  Flexible(child: Text(fineprint, style: TextStyle(color: t.secondary, fontSize: 12))),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 /// 原因不明的兜底（10-13 运营定稿，两端同一段话）：不猜原因，请他联系客服，查清后送会员时长表示感谢。
 Future<void> showUnknownFaultGuide(BuildContext context) {
   return showDialog<void>(

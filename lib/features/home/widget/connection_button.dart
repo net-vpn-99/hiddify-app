@@ -13,7 +13,6 @@ import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/theme/theme_extensions.dart';
 import 'package:hiddify/core/widget/animated_text.dart';
 import 'package:hiddify/features/common/guide_card.dart';
-import 'package:hiddify/features/common/line_icon.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/system_settings.dart';
@@ -310,16 +309,15 @@ class ConnectionButton extends HookConsumerWidget {
       // （10-14 客户 ID 1725 看到系统那段「监控网络流量…请勿接受」不敢点，一直连不上）。
       if (!VpnPermission.otherVpnBeforeConnect && !await VpnPermission.granted()) {
         if (stopped() || !context.mounted) return;
-        await showGuideCard(
+        // 10-16 运营：改成底部面板（按钮在拇指够得到的地方）；示意图画成一看就是插图的样子，
+        // 不跟真窗口一模一样（以前有人去点图里的「确定」；各品牌手机的窗口也长得不一样）。
+        await showGuideSheet(
           context,
-          title: '允许光速雷达建立 VPN 连接',
-          body: '第一次连接时，手机会弹出「网络连接请求」。请点「确定」，光速雷达才能连接。',
-          illustration: const _VpnPromptSketch(),
-          tipTitle: '这是安卓系统的固定提示',
-          tipText: '所有 VPN 软件第一次连接都会弹出这个窗口。光速雷达不记录你的上网内容。',
-          tipIcon: LineIconName.shield,
-          actionText: '好的，继续',
-          showContact: false,
+          title: '接下来手机会问你一次',
+          body: '点「确定」，光速雷达才能连接。所有 VPN 软件第一次连接都会问一次。',
+          illustration: const VpnPromptSketch(),
+          fineprint: '光速雷达不记录你的上网内容',
+          actionText: '知道了，去连接',
         );
         if (stopped()) return;
       }
@@ -535,42 +533,69 @@ class _ConnectionButton extends StatelessWidget {
 }
 
 /// 说明卡里的示意图：照着系统「网络连接请求」画个缩小版，「确定」高亮。
-class _VpnPromptSketch extends StatelessWidget {
-  const _VpnPromptSketch();
+class VpnPromptSketch extends StatelessWidget {
+  const VpnPromptSketch();
 
+  // 示意图：缩小的系统窗口轮廓，正文画成灰条（一看就是插图，不是能点的窗口），只把「确定」圈出来。
   @override
   Widget build(BuildContext context) {
     final t = PurchaseTokens.of(context);
-    Widget button(String text, bool primary) => Expanded(
-      child: Container(
-        height: 34,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: primary ? const Color(0xFF2F7CF6) : t.fill,
-          borderRadius: BorderRadius.circular(17),
-          border: primary ? Border.all(color: const Color(0xFFF2C230), width: 2) : null,
-        ),
-        child: Text(text, style: TextStyle(fontSize: 13, color: primary ? Colors.white : t.text)),
-      ),
-    );
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: t.raised,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: t.border),
-      ),
+    Widget bar(double w) => Container(
+          width: w,
+          height: 6,
+          decoration: BoxDecoration(color: t.border, borderRadius: BorderRadius.circular(3)),
+        );
+    return SizedBox(
+      width: 236,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text('网络连接请求', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: t.text)),
-          const SizedBox(height: 6),
-          Text('“光速雷达”想要设置一个 VPN 连接…', style: TextStyle(fontSize: 11, color: t.secondary)),
-          const SizedBox(height: 12),
-          Row(children: [button('取消', false), const SizedBox(width: 10), button('确定', true)]),
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            decoration: BoxDecoration(
+              color: t.background,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: t.border),
+            ),
+            child: Column(
+              children: [
+                Text('网络连接请求', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: t.secondary)),
+                const SizedBox(height: 10),
+                bar(170),
+                const SizedBox(height: 6),
+                bar(120),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        height: 28,
+                        alignment: Alignment.center,
+                        child: Text('取消', style: TextStyle(fontSize: 12, color: t.secondary)),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Container(
+                        height: 28,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: t.selected,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: t.primary, width: 2),
+                        ),
+                        child: Text('确定', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: t.text)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 6),
           Align(
-            alignment: Alignment.centerRight,
-            child: Text('点这里  ↑', style: TextStyle(fontSize: 11, color: t.warning)),
+            alignment: const Alignment(0.55, 0),
+            child: Text('↑ 点这个', style: TextStyle(fontSize: 11, color: t.warning, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
