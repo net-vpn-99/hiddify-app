@@ -386,7 +386,7 @@ class PanelApi {
   ///
   /// onVerify：服务端要先算题（开着别的 VPN、IP 在国外，GslGuest 1.8.2+）、开始算之前调一次，
   /// 首页借它把「正在开通免费试用…」换成「正在进行人机验证」。
-  Future<({String? token, String? hasAccountMask, String? password, bool hasInviter})> guestLogin(
+  Future<({String? token, String? hasAccountMask, String? hasAccountNo, String? password, bool hasInviter})> guestLogin(
       String deviceId, {String? inviteCode, void Function()? onVerify}) async {
     final sw = Stopwatch()..start();
     // 绝大多数 IP 没被封，服务端不看答案。先不带答案发；只有 400 才算题，再发一次。
@@ -426,7 +426,15 @@ class PanelApi {
     final data = _dataOf(res.data);
     if (data?['status'] == 'has_account') {
       final mask = data?['email_mask'];
-      return (token: null, hasAccountMask: mask is String ? mask : '', password: null, hasInviter: false);
+      // GslGuest 1.8.6 起带这个账号的编号：登录页预填，「输入密码就能登录」才是真的。
+      final no = data?['account_no'];
+      return (
+        token: null,
+        hasAccountMask: mask is String ? mask : '',
+        hasAccountNo: no is String && no.isNotEmpty ? no : null,
+        password: null,
+        hasInviter: false,
+      );
     }
     final token = _extractToken(res.data);
     if (token != null && token.isNotEmpty) {
@@ -434,6 +442,7 @@ class PanelApi {
       return (
         token: token,
         hasAccountMask: null,
+        hasAccountNo: null,
         password: pw is String && pw.isNotEmpty ? pw : null,
         hasInviter: data?['has_inviter'] == true,
       );
@@ -550,7 +559,8 @@ class PanelApi {
     if (status == 'has_account') {
       return (
         kind: 'account',
-        accountNo: null,
+        // GslGuest 1.8.6 起：这个正式账号的账号编号（登录页预填）。老服务端没有 = null。
+        accountNo: s('account_no'),
         emailMask: s('email_mask') ?? '',
         altAccountNo: s('also_account_no'),
         altEmailMask: null,

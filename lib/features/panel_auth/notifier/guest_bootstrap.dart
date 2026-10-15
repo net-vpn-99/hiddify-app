@@ -37,6 +37,7 @@ class GuestBootstrapState {
     this.emailMask,
     this.deviceKind,
     this.deviceAccountNo,
+    this.knownAccountNo,
   });
 
   /// probe 问出来的「这台手机上是谁」（1.1.41）：'guest' / 'account' / 'none'；
@@ -59,6 +60,10 @@ class GuestBootstrapState {
   /// hasAccount 时的打码邮箱，可能是空串。
   final String? emailMask;
 
+  /// 这台手机上那个正式账号的账号编号（GslGuest 1.8.6+）。登录页拿它预填 ——
+  /// 打码邮箱填不进输入框，以前重装后邮箱栏是空的，提示却写「输入密码就能登录」（10-16 运营）。
+  final String? knownAccountNo;
+
   /// 这台手机上有邮箱账号（两条来路：开号被拒 / 退出过后 probe 问出来）。null = 没有。
   String? get knownAccountMask =>
       (reason == GuestBlockReason.hasAccount || deviceKind == 'account') ? (emailMask ?? '') : null;
@@ -72,6 +77,7 @@ class GuestBootstrapState {
     String? emailMask,
     String? deviceKind,
     String? deviceAccountNo,
+    String? knownAccountNo,
   }) {
     return GuestBootstrapState(
       working: working ?? this.working,
@@ -80,6 +86,7 @@ class GuestBootstrapState {
       emailMask: emailMask ?? this.emailMask,
       deviceKind: deviceKind ?? this.deviceKind,
       deviceAccountNo: deviceAccountNo ?? this.deviceAccountNo,
+      knownAccountNo: knownAccountNo ?? this.knownAccountNo,
     );
   }
 }
@@ -144,6 +151,7 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
             reason: GuestBlockReason.optedOut,
             deviceKind: 'account',
             emailMask: mask,
+            knownAccountNo: state.knownAccountNo,
             message: mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask',
           );
         } else {
@@ -189,6 +197,7 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
         state = GuestBootstrapState(
           reason: GuestBlockReason.hasAccount,
           emailMask: mask,
+          knownAccountNo: r.hasAccountNo,
           message: mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask',
         );
         return;
@@ -247,6 +256,7 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
         state = state.copyWith(
           deviceKind: 'account',
           emailMask: mask,
+          knownAccountNo: r.accountNo,
           message: mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask',
         );
       } else if (r.kind == 'guest') {

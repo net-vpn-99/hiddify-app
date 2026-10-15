@@ -62,13 +62,18 @@ class LoginPage extends HookConsumerWidget {
 
     useEffect(() {
       final saved = ref.read(Preferences.lastLoginEmail);
-      if (saved.isNotEmpty && emailCtrl.text.isEmpty) emailCtrl.text = saved;
-      final mask = ref.read(guestBootstrapProvider).knownAccountMask;
+      final boot = ref.read(guestBootstrapProvider);
+      final mask = boot.knownAccountMask;
+      final no = boot.knownAccountNo ?? '';
+      // 先填这台手机上次登录用的；重装后没有，就填服务端认出来的账号编号（打码邮箱填不进去）。
+      if (emailCtrl.text.isEmpty) emailCtrl.text = saved.isNotEmpty ? saved : (mask != null ? no : '');
       pairMode.value = mask == null && saved.isEmpty;
       if (mask != null) {
-        notice.value = mask.isEmpty
-            ? '这台手机上有账号，输入密码就能登录；忘了密码点「找回密码」'
-            : '这台手机上是 $mask，输入密码就能登录；忘了密码点「找回密码」';
+        final who = mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask';
+        // 只有输入框里真的已经填好了，才说「输入密码就能登录」。
+        notice.value = emailCtrl.text.isNotEmpty
+            ? (saved.isEmpty ? '$who，账号编号已经填好，输入密码就能登录；忘了密码点「找回密码」' : '$who，输入密码就能登录；忘了密码点「找回密码」')
+            : '$who，填上这个邮箱和密码登录；忘了密码点「找回密码」';
       }
       return null;
     }, const []);
@@ -315,7 +320,8 @@ class LoginPage extends HookConsumerWidget {
                     child: TextButton(
                       onPressed: () => context.pushNamed(
                         'resetPassword',
-                        queryParameters: {if (emailCtrl.text.trim().isNotEmpty) 'email': emailCtrl.text.trim()},
+                        // 输入框里可能是账号编号，找回密码只认邮箱，编号别带过去。
+                        queryParameters: {if (emailCtrl.text.contains('@')) 'email': emailCtrl.text.trim()},
                       ),
                       child: const Text('找回密码'),
                     ),
