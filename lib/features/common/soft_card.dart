@@ -39,7 +39,6 @@ class IconTile extends StatelessWidget {
   final double size;
 
   // 几个固定颜色，各入口按用途挑，别每处自己调色。
-  static const gold = Color(0xFFD9A21B);
   static const orange = Color(0xFFEE7B3B);
   static const blue = Color(0xFF3F88E0);
   static const purple = Color(0xFF9466D6);

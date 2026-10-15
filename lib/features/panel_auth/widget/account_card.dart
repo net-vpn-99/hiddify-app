@@ -44,7 +44,7 @@ class AccountCard extends ConsumerWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       child: SoftCard(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -73,7 +73,7 @@ class AccountCard extends ConsumerWidget {
               onTap: () => context.pushNamed(loggedIn ? 'account' : 'login'),
               child: Row(
                 children: [
-                  IconTile(loggedIn ? Icons.person_rounded : Icons.person_outline_rounded, IconTile.gold, size: 44),
+                  IconTile(loggedIn ? Icons.person_rounded : Icons.person_outline_rounded, IconTile.orange, size: 44),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(

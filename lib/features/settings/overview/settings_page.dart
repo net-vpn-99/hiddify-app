@@ -119,7 +119,7 @@ class MenuGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final tk = PurchaseTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: SoftCard(
         child: Column(
           children: [
@@ -265,7 +265,7 @@ class _ActionGrid extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final unseen = ref.watch(supportChatNotifierProvider.select((s) => s.unseenAgentCount));
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Row(
         children: [
           Expanded(
