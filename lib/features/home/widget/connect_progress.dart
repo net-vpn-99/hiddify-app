@@ -6,6 +6,7 @@ import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/system_settings.dart';
 import 'package:hiddify/features/connection/data/vpn_permission.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
+import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 一键连接的 5 步进度（两端统一，Windows 见 ConnectionController::connectStep）：
@@ -69,8 +70,8 @@ ConnectProgress _vpnDeniedProgress() {
   if (VpnPermission.otherVpnBeforeConnect || VpnPermission.deniedStreak >= 2) {
     return const ConnectProgress(
       failedStep: 4,
-      title: '先关掉手机上的另一个 VPN',
-      message: '另一个 VPN 软件占着手机的 VPN 连接，光速雷达连不上。点「打开 VPN 设置」，把那个 VPN 断开；如果它开着「始终开启的 VPN」，也要关掉。然后回来再点一下按钮。',
+      title: OtherVpn.title,
+      message: '${OtherVpn.message}${OtherVpn.howTo}',
       action: SettingsAction.vpn,
     );
   }

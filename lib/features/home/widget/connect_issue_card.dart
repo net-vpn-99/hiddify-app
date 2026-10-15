@@ -68,7 +68,8 @@ class ConnectIssueCard extends ConsumerWidget {
     final String body;
     if (revoked) {
       title = '连接断了';
-      body = '连接被别的 VPN 或系统设置断开了。关掉别的 VPN 后，点「重新连接」';
+      // 只说查到的事实（10-13 / 10-15）：系统收回了我们的 VPN，不猜是谁。
+      body = '手机系统断开了光速雷达的 VPN 连接。手机上开着别的 VPN 的话，先关掉它，再点「重新连接」';
     } else if (engine) {
       title = '连接断了';
       body = '连接意外断开了，点「重新连接」恢复。如果反复断开，点「怎么办」';

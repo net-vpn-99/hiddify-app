@@ -28,5 +28,9 @@ abstract final class OtherVpn {
     } catch (_) {}
   }
 
-  static const message = '手机上开着别的 VPN，会影响光速雷达使用，请先把它关掉。';
+  // 别家 VPN 的说法只在这里写一份（10-15 两端合并）：首页横幅、开号被拦、连接第 4 步都用它。
+  // 跟 Windows 的「「X」正在接管网络，关掉它光速雷达才能用」同一句话。
+  static const title = '手机上开着别的 VPN';
+  static const message = '手机上开着别的 VPN，关掉它光速雷达才能用。';
+  static const howTo = '点「打开 VPN 设置」把它断开；如果它开着「始终开启的 VPN」，也要关掉。然后回来再点一下按钮。';
 }
