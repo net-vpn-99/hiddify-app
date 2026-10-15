@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/common/soft_card.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
@@ -42,18 +43,12 @@ class LineBar extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Material(
-        color: theme.colorScheme.surface.withValues(alpha: .92),
-        borderRadius: BorderRadius.circular(12),
+      // 白卡淡阴影（SoftCard），跟「我的」页同一种卡。
+      child: SoftCard(
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
           onTap: preparing ? null : () => showLinePicker(context, ref),
-          child: Container(
+          child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: theme.colorScheme.outlineVariant),
-            ),
             child: Row(
               children: [
                 LineFlag(name),

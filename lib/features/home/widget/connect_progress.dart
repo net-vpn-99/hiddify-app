@@ -218,8 +218,8 @@ class _ConnectStepsBarState extends State<ConnectStepsBar> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    const green = Color(0xFF2E9E5B);
-    const gold = Color(0xFFE1B83F);
+    const green = Color(0xFF34A06C);
+    final gold = scheme.primary; // 主色（橙），跟连接按钮同一个
     final n = _count;
     if (n == 0) return const SizedBox(width: 180, height: 4);
     return Semantics(

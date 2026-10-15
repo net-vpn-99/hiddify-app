@@ -188,17 +188,16 @@ class _PrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  static const _orange = Color(0xFFEE7B3B);
-
   @override
   Widget build(BuildContext context) {
+    final tk = PurchaseTokens.of(context);
     final text = Theme.of(context).textTheme.labelLarge?.copyWith(
       fontSize: 15,
       fontWeight: FontWeight.w600,
-      color: Colors.white,
+      color: tk.onPrimary,
     );
     return Material(
-      color: _orange,
+      color: tk.primary,
       borderRadius: BorderRadius.circular(22),
       clipBehavior: Clip.antiAlias,
       child: InkWell(

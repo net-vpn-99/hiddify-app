@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 
-/// 购买 / 续费页专用配色 —— 取自 VPN 仓库
-/// docs/充值续费/purchase-design-handoff-v1/design-tokens.json，浅深两套。
-/// 局部使用（不动全局主题），跟 Windows 客户端 Theme.qml / 官网 site.css 一致。
+/// 安卓整个 App 的配色（浅深两套）。全局主题（core/theme/app_theme.dart）也从这里取，
+/// 页面里要颜色就读 PurchaseTokens.of(context)，别再自己写色值。
+/// 底色 / 字色取自 VPN 仓库 docs/充值续费/purchase-design-handoff-v1/design-tokens.json；
+/// 主色 10-15 起改成 GoMami 同款橙（运营：品牌金做按钮像芥末黄，太土）。名字还叫 Purchase 是历史原因。
 // ignore: use_enums  —— 不是枚举：每套是一组具体色值，用 .light / .dark 取。
 class PurchaseTokens {
   const PurchaseTokens._({
@@ -50,10 +51,10 @@ class PurchaseTokens {
     secondary: Color(0xFF5E636B),
     border: Color(0xFFD9D7CF),
     fill: Color(0xFFEBE9E2),
-    primary: Color(0xFFE1B83F),
-    primaryHover: Color(0xFFD3A833),
-    onPrimary: Color(0xFF17191D),
-    selected: Color(0xFFFBF4DD),
+    primary: Color(0xFFEE7B3B),
+    primaryHover: Color(0xFFE06A2A),
+    onPrimary: Color(0xFFFFFFFF),
+    selected: Color(0xFFFDEFE6),
     remaining: Color(0xFF2A9477),
     warning: Color(0xFFA66116),
     empty: Color(0xFFB34435),
@@ -69,10 +70,10 @@ class PurchaseTokens {
     secondary: Color(0xFFA3A7A1),
     border: Color(0xFF34383B),
     fill: Color(0xFF24282B),
-    primary: Color(0xFFF0C94F),
-    primaryHover: Color(0xFFF7D76F),
-    onPrimary: Color(0xFF17191D),
-    selected: Color(0xFF30291A),
+    primary: Color(0xFFF08A4B),
+    primaryHover: Color(0xFFF59C63),
+    onPrimary: Color(0xFFFFFFFF),
+    selected: Color(0xFF3A2619),
     remaining: Color(0xFF70D8B8),
     warning: Color(0xFFE4AE69),
     empty: Color(0xFFEC9A8B),

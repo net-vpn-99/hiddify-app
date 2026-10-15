@@ -5,12 +5,14 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/common/guide_card.dart';
+import 'package:hiddify/features/common/soft_card.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_tier.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
+import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 首页最下面那条状态条：一眼知道自己是什么身份、还剩多久、下一步点哪。
@@ -61,19 +63,15 @@ class AccountStatusBar extends HookConsumerWidget {
         ? ('精品线路体验已结束，可以选一条标准线路继续用，或者升级精品版', '升级精品版', _Tone.warn, 'purchase')
         : _describe(auth, boot, loggedIn, now);
 
-    final Color bg;
-    final Color fg;
-    switch (tone) {
-      case _Tone.good:
-        bg = theme.colorScheme.primaryContainer;
-        fg = theme.colorScheme.onPrimaryContainer;
-      case _Tone.warn:
-        bg = theme.colorScheme.tertiaryContainer;
-        fg = theme.colorScheme.onTertiaryContainer;
-      case _Tone.plain:
-        bg = theme.colorScheme.surfaceContainerHighest;
-        fg = theme.colorScheme.onSurfaceVariant;
-    }
+    // 白卡（SoftCard）+ 左边一个小圆点说状态（GoMami「● 运行中」那种）：正常绿、要注意橙、其他灰。
+    // 右边的操作字用主色橙。
+    final tk = PurchaseTokens.of(context);
+    final fg = tk.text;
+    final dot = switch (tone) {
+      _Tone.good => IconTile.green,
+      _Tone.warn => tk.primary,
+      _Tone.plain => tk.secondary,
+    };
 
     final isUnavailable = !loggedIn && boot.reason == GuestBlockReason.unavailable;
     final isOffline = !loggedIn && boot.reason == GuestBlockReason.offline;
@@ -102,6 +100,8 @@ class AccountStatusBar extends HookConsumerWidget {
     final textWidget = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        Container(width: 7, height: 7, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+        const SizedBox(width: 8),
         Flexible(
           child: Text(
             text,
@@ -123,16 +123,14 @@ class AccountStatusBar extends HookConsumerWidget {
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(action, style: theme.textTheme.labelMedium?.copyWith(color: fg)),
-              Icon(Icons.chevron_right_rounded, size: 18, color: fg),
+              Text(action, style: theme.textTheme.labelMedium?.copyWith(color: tk.primary, fontWeight: FontWeight.w600)),
+              Icon(Icons.chevron_right_rounded, size: 18, color: tk.primary),
             ],
           );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: Material(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
+      child: SoftCard(
         child: canShowDialog
             ? Row(
                 children: [
@@ -267,9 +265,9 @@ class AccountStatusBar extends HookConsumerWidget {
         if (acc.dailyThrottled) {
           return ('$name · 今日标准高速已用完 · 0 点重置后恢复高速', acc.lifetime ? '我的套餐' : '续费', _Tone.warn, 'purchase');
         }
-        if (acc.lifetime) return ('$name · 长期有效', '我的套餐', _Tone.plain, 'purchase');
+        if (acc.lifetime) return ('$name · 长期有效', '我的套餐', _Tone.good, 'purchase');
         final left = acc.remainingClock(now);
-        return (left == null ? name : '$name · 剩 $left', '续费', _Tone.plain, 'purchase');
+        return (left == null ? name : '$name · 剩 $left', '续费', _Tone.good, 'purchase');
     }
   }
 }

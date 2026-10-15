@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/common/soft_card.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/home/widget/connect_progress.dart';
@@ -46,6 +47,7 @@ Future<void> showLinePicker(BuildContext context, WidgetRef ref) async {
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
+    backgroundColor: PurchaseTokens.of(context).background,
     builder: (context) => const _LinePickerSheet(),
   );
 }
@@ -558,12 +560,8 @@ class _TieredLinesState extends State<_TieredLines> {
       final promo = _promo(isPro, open, proLocked, tokens, okDeep);
       children.add(Padding(
         padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: tokens.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: isPro ? tokens.okBorder : tokens.border),
-          ),
+        // 白卡淡阴影（跟首页 / 我的同一种 SoftCard），抽屉底色是浅灰，卡片自己就浮起来，不描边。
+        child: SoftCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
