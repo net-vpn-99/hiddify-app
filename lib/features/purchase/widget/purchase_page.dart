@@ -978,7 +978,51 @@ class _TierCard extends StatelessWidget {
   }
 }
 
-/// 版本对比表：左边项目，右边每档一张竖卡片，选中那张金边浅金底，点哪一格都选那一档。
+/// 选中标记：版本卡、时长卡都用这一个（主色实心圆 + 勾）。两端一样。
+class _PickedMark extends StatelessWidget {
+  const _PickedMark({required this.t});
+
+  final PurchaseTokens t;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(color: t.primary, shape: BoxShape.circle),
+        child: Icon(Icons.check_rounded, size: 13, color: t.onPrimary),
+      );
+}
+
+/// 角标（压在卡片上沿）。10-16 配色：整页实心主色只留给「支付」按钮，角标一律浅底。
+/// tone：current 灰底深字 / warm 浅主色底深色字 / muted 灰底浅字。
+class _EdgeBadge extends StatelessWidget {
+  const _EdgeBadge({required this.t, required this.text, required this.tone});
+
+  final PurchaseTokens t;
+  final String text;
+  final String tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final warm = tone == 'warm';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+      decoration: BoxDecoration(
+        color: warm ? t.selected : t.fill,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: warm ? t.primary : t.border),
+      ),
+      child: Text(text,
+          style: TextStyle(
+            color: warm ? t.warning : tone == 'current' ? t.text : t.secondary,
+            fontSize: 10.5,
+            fontWeight: FontWeight.w500,
+          )),
+    );
+  }
+}
+
+/// 版本对比表：左边项目，右边每档一张竖卡片，选中那张主色边 + 右上角勾，点哪一格都选那一档。
 class TierCompareTable extends StatelessWidget {
   const TierCompareTable({
     required this.t,
@@ -1002,39 +1046,58 @@ class TierCompareTable extends StatelessWidget {
   bool _picked(ShopTier tier) => !_stdBlocked(tier) && selectedPlanId == tier.planId;
 
   /// 每档卡片上沿最多一个角标（10-16 运营：名字下面那行小字去掉，两张卡才齐；两端一样）。
-  /// 精品版：当前版本 → 本月名额已满 → 剩 N 个名额 → 推荐；标准版：当前版本 → 送精品线路体验。
-  /// 返回 (字, 底色, 字色)；null = 不挂。
-  (String, Color, Color)? _badge(ShopTier tier) {
-    if (me?.tier == tier.tier) return ('当前版本', t.remaining, Colors.white);
-    if (_seatBlocked(tier)) return ('本月名额已满', t.fill, t.secondary);
+  /// 精品版：当前版本 → 本月名额已满 → 剩 N 个名额 → 推荐；标准版：当前版本 → 精品版已包含 → 送精品线路体验。
+  /// 返回 (字, tone)；null = 不挂。
+  (String, String)? _badge(ShopTier tier) {
+    if (me?.tier == tier.tier) return ('当前版本', 'current');
+    if (_stdBlocked(tier)) return ('精品版已包含', 'muted');
+    if (_seatBlocked(tier)) return ('本月名额已满', 'muted');
     if (tier.tier == 'pro' && tier.seatsLeft != null && tier.seatsLeft! > 0) {
-      return ('剩 ${tier.seatsLeft} 个名额', t.primary, t.onPrimary);
+      return ('剩 ${tier.seatsLeft} 个名额', 'warm');
     }
     if (tier.tier == 'std' && me != null && (me!.trial == 'locked' || me!.trial == 'offer')) {
-      return (me!.trialMinutes == 60 ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验', t.primary, t.onPrimary);
+      return (me!.trialMinutes == 60 ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验', 'warm');
     }
-    if (tier.recommended) return (badge ?? '推荐', t.primary, t.onPrimary);
+    if (tier.recommended) return (badge ?? '推荐', 'warm');
     return null;
   }
 
+  bool _dim(ShopTier tier) => _stdBlocked(tier) || _seatBlocked(tier);
+
+  /// 「适合」写在版本名下面（一眼知道这档给谁用），不再占表里一行。两端一样。
+  static bool _isTagline(CompareCell c) => c.label == '适合';
+  String _tagline(ShopTier tier) =>
+      tier.compare.firstWhere(_isTagline, orElse: () => const CompareCell(label: '', value: '', good: false)).value;
+
   @override
   Widget build(BuildContext context) {
-    final rows = tiers.map((x) => x.compare.length).fold(0, (a, b) => a > b ? a : b);
+    final allRows = tiers.map((x) => x.compare.length).fold(0, (a, b) => a > b ? a : b);
+    final rowIdx = [
+      for (var r = 0; r < allRows; r++)
+        if (!(r < tiers.first.compare.length && _isTagline(tiers.first.compare[r]))) r,
+    ];
     const gap = 8.0;
 
     return LayoutBuilder(builder: (context, box) {
       // 左边项目列，右边每档一张竖卡片（跟官网、下面的时长卡片一个样子），卡片之间留空。
-      final labelW = (box.maxWidth * 0.25).clamp(72.0, 112.0);
+      final labelW = (box.maxWidth * 0.21).clamp(70.0, 112.0);
       final colW = (box.maxWidth - labelW - gap * tiers.length) / tiers.length;
       double colX(int i) => labelW + gap + i * (colW + gap);
-      // 一格。不画分隔线（卡片已经把每档框出来了），格子不打 ✓、两档字一样颜色——不为了突出精品版去贬低标准版。
-      Widget cell(int col, Widget child, {bool last = false, EdgeInsets? pad}) {
+      // 一格。卡片里每行上面一条细线：项目名和卡片隔得远，没有线眼睛横着对不上行。
+      // 格子不打 ✓、两档字一样颜色——不为了突出精品版去贬低标准版。
+      Widget cell(int col, Widget child, {bool last = false, EdgeInsets? pad, bool rule = false}) {
         final tier = col > 0 ? tiers[col - 1] : null;
         Widget box = Container(
           margin: tier != null ? const EdgeInsets.symmetric(horizontal: 1) : EdgeInsets.zero,
-          padding: pad ?? EdgeInsets.fromLTRB(tier != null ? 8 : 2, 7, 4, last ? 11 : 7),
+          padding: pad ?? EdgeInsets.fromLTRB(tier != null ? 11 : 0, 8, 4, last ? 12 : 8),
           child: child,
         );
+        if (rule) {
+          box = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Container(height: 1, margin: const EdgeInsets.symmetric(horizontal: 11), color: t.border.withValues(alpha: 0.6)),
+            box,
+          ]);
+        }
         if (tier != null) {
           box = GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -1053,7 +1116,7 @@ class TierCompareTable extends StatelessWidget {
       final head = TableRow(
         children: withGaps(
             Padding(
-              padding: const EdgeInsets.fromLTRB(0, 16, 4, 8),
+              padding: const EdgeInsets.fromLTRB(0, 15, 4, 8),
               child: Text('选择版本', style: TextStyle(color: t.text, fontSize: 14, fontWeight: FontWeight.bold)),
             ),
             [
@@ -1063,23 +1126,22 @@ class TierCompareTable extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: [
-                    Flexible(child: Text(tiers[i].name, style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700))),
-                    // 选中打勾，跟下面时长卡片一样。
-                    if (_picked(tiers[i])) ...[
-                      const SizedBox(width: 4),
-                      Text('✓', style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.bold)),
-                    ],
-                  ]),
+                  Text(tiers[i].name,
+                      style: TextStyle(color: _dim(tiers[i]) ? t.secondary : t.text, fontSize: 17, fontWeight: FontWeight.w700)),
+                  if (_tagline(tiers[i]).isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(_tagline(tiers[i]), style: TextStyle(color: t.secondary, fontSize: 12, height: 1.3)),
+                  ],
                 ],
               ),
-              pad: const EdgeInsets.fromLTRB(8, 16, 4, 8),
+              // 右边留出勾的位置。
+              pad: const EdgeInsets.fromLTRB(11, 13, 26, 10),
             ),
         ]),
       );
 
       final body = <TableRow>[
-        for (var r = 0; r < rows; r++)
+        for (final r in rowIdx)
           TableRow(
             children: withGaps(
               cell(
@@ -1088,7 +1150,8 @@ class TierCompareTable extends StatelessWidget {
                   tiers.map((x) => r < x.compare.length ? x.compare[r].label : '').firstWhere((s) => s.isNotEmpty, orElse: () => ''),
                   style: TextStyle(color: t.secondary.withValues(alpha: 0.85), fontSize: 11),
                 ),
-                last: r == rows - 1,
+                last: r == rowIdx.last,
+                pad: EdgeInsets.fromLTRB(0, 9, 4, r == rowIdx.last ? 12 : 8),
               ),
               [
                 for (var i = 0; i < tiers.length; i++)
@@ -1096,8 +1159,9 @@ class TierCompareTable extends StatelessWidget {
                     final c = r < tiers[i].compare.length ? tiers[i].compare[r] : const CompareCell(label: '', value: '', good: false);
                     return cell(
                       i + 1,
-                      Text(c.value, style: TextStyle(color: t.text, fontSize: 12)),
-                      last: r == rows - 1,
+                      Text(c.value, style: TextStyle(color: _dim(tiers[i]) ? t.secondary : t.text, fontSize: 13)),
+                      last: r == rowIdx.last,
+                      rule: true,
                     );
                   }(),
               ],
@@ -1116,8 +1180,9 @@ class TierCompareTable extends StatelessWidget {
               width: colW,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  // 买不了的那档（精品会员看标准版 / 满员）整张压成灰底，看着就不能选。
-                  color: _picked(tiers[i]) ? t.selected : (_stdBlocked(tiers[i]) || _seatBlocked(tiers[i])) ? t.fill : t.surface,
+                  // 选中只靠主色边 + 右上角勾（以前整张浅色底，比「支付」按钮还抢眼）。
+                  // 买不了的那档不再整张灰底：角标说原因、字变淡。
+                  color: t.surface,
                   borderRadius: BorderRadius.circular(13),
                   border: Border.all(color: _picked(tiers[i]) ? t.primary : t.border, width: _picked(tiers[i]) ? 2 : 1),
                 ),
@@ -1134,22 +1199,12 @@ class TierCompareTable extends StatelessWidget {
             defaultVerticalAlignment: TableCellVerticalAlignment.intrinsicHeight,
             children: [head, ...body],
           ),
+          for (var i = 0; i < tiers.length; i++)
+            if (_picked(tiers[i])) Positioned(left: colX(i) + colW - 18 - 9, top: 10, child: _PickedMark(t: t)),
           // 角标压在卡片上沿，样子跟时长卡片的「推荐选择」一样。
           for (var i = 0; i < tiers.length; i++)
             if (_badge(tiers[i]) case final b?)
-              Positioned(
-                left: colX(i) + 10,
-                top: -8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: b.$2,
-                    borderRadius: BorderRadius.circular(8),
-                    border: b.$2 == t.fill ? Border.all(color: t.border) : null,
-                  ),
-                  child: Text(b.$1, style: TextStyle(color: b.$3, fontSize: 10, fontWeight: FontWeight.bold)),
-                ),
-              ),
+              Positioned(left: colX(i) + 10, top: -9, child: _EdgeBadge(t: t, text: b.$1, tone: b.$2)),
         ],
       );
     });
@@ -1174,10 +1229,10 @@ class OfferCard extends StatelessWidget {
         clipBehavior: Clip.none,
         children: [
           Container(
-        height: 64,
+        height: 66,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: selected ? t.selected : t.surface,
+          color: t.surface,
           borderRadius: BorderRadius.circular(13),
           border: Border.all(color: selected ? t.primary : t.border, width: selected ? 2 : 1),
         ),
@@ -1185,15 +1240,7 @@ class OfferCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Text(offer.durationLabel, style: TextStyle(color: t.secondary, fontSize: 12)),
-                if (selected) ...[
-                  const SizedBox(width: 4),
-                  Text('✓', style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.bold)),
-                ],
-              ],
-            ),
+            Text(offer.durationLabel, style: TextStyle(color: t.secondary, fontSize: 12)),
             const SizedBox(height: 1),
             Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -1208,17 +1255,9 @@ class OfferCard extends StatelessWidget {
           ],
         ),
       ),
-          if (offer.badge != null)
-            Positioned(
-              top: -8,
-              right: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(8)),
-                child: Text(offer.badge!,
-                    style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
-              ),
-            ),
+          if (selected) Positioned(top: 9, right: 9, child: _PickedMark(t: t)),
+          // 角标挪左上，跟版本卡一致。
+          if (offer.badge != null) Positioned(top: -9, left: 10, child: _EdgeBadge(t: t, text: offer.badge!, tone: 'warm')),
         ],
       ),
     );
@@ -1277,7 +1316,7 @@ class CheckoutBar extends StatelessWidget {
                     if (offer != null && pickedNote != null) ...[
                       const SizedBox(height: 2),
                       Text(pickedNote!, maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: t.warning, fontSize: 11, fontWeight: FontWeight.w600)),
+                          style: TextStyle(color: t.text, fontSize: 11, fontWeight: FontWeight.w500)),
                     ],
                     if (expiryHint != null) ...[
                       const SizedBox(height: 2),
