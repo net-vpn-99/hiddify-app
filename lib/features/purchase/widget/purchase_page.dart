@@ -932,11 +932,6 @@ class _TierCard extends StatelessWidget {
                     style: TextStyle(color: t.remaining, fontSize: 11),
                   ),
                 ),
-              if (tier.seatsLeft != null && tier.seatsLeft! > 0)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text('剩 ${tier.seatsLeft} 个名额', style: TextStyle(color: t.warning, fontSize: 11)),
-                ),
             ],
           ),
         ),
@@ -1056,18 +1051,17 @@ class TierCompareTable extends StatelessWidget {
   bool _dim(ShopTier tier) => _stdBlocked(tier) || _seatBlocked(tier);
 
   /// 每档最多一个状态小标签（两端一样）。
-  /// 精品版：当前 → 本月名额已满 → 剩 N 个名额 → 推荐；标准版：当前 → 精品版已包含 → 送精品线路体验。
+  /// 精品版：当前 → 本月名额已满 → 推荐；标准版：当前 → 精品版已包含 → 送精品线路体验。
+  /// 不写「剩 N 个名额」（运营 10-16：不打算限制购买人数）。
   (String, String)? _badge(ShopTier tier) {
     if (me?.tier == tier.tier) return ('当前', 'current');
     if (_stdBlocked(tier)) return ('精品版已包含', 'muted');
     if (_seatBlocked(tier)) return ('本月名额已满', 'muted');
-    if (tier.tier == 'pro' && tier.seatsLeft != null && tier.seatsLeft! > 0) {
-      return ('剩 ${tier.seatsLeft} 个名额', 'warm');
-    }
     if (tier.tier == 'std' && me != null && (me!.trial == 'locked' || me!.trial == 'offer')) {
       return (me!.trialMinutes == 60 ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验', 'warm');
     }
-    if (tier.recommended) return (badge ?? '推荐', 'warm');
+    // 只写「推荐」，跟时长卡的「推荐选择」区分开。
+    if (tier.recommended) return ('推荐', 'warm');
     return null;
   }
 
@@ -1136,7 +1130,7 @@ class TierCompareTable extends StatelessWidget {
         ]);
 
         Widget rule(Widget child) => DecoratedBox(
-              decoration: BoxDecoration(border: Border(top: BorderSide(color: t.border.withValues(alpha: 0.45)))),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: t.border.withValues(alpha: 0.22)))),
               child: child,
             );
 
