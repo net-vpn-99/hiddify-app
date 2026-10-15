@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/features/common/guide_card.dart';
+import 'package:hiddify/features/common/line_icon.dart';
 import 'package:hiddify/features/notice/notice_html.dart';
 import 'package:hiddify/features/notice/notice_store.dart';
 import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
@@ -122,30 +123,40 @@ class NoticeStrip extends ConsumerWidget {
   }
 }
 
-// 公告（10-13 改轻，跟邮件一个感觉；两端统一，Windows 是 NoticePanel.qml，两边一起改）：
-//   浅色底上浮一张白卡，卡片上方有光速雷达的标志，卡片高度跟着内容走（内容少就小，不留大片空白）。
-//   列表：不套框，条目之间一根细线；没看过的金点 + 粗标题，下面一行小字「日期 · 摘要」；「重要」是浅金小标签。
-//   详情：点一条，卡片换成这一条，像读一封邮件；标题居中，短公告正文也居中；
-//   正文里单独一段的那个链接另起一个金色整行按钮。卡片下面「‹ 返回公告列表」。
-final _soloLink = RegExp(r'<p>\s*<a href="([^"]*)">([\s\S]*?)</a>\s*</p>');
-final _anyLink = RegExp(r'<a href="([^"]*)">([\s\S]*?)</a>');
-
-({String href, String text})? _firstLink(String html) {
-  final m = _soloLink.firstMatch(html) ?? _anyLink.firstMatch(html);
-  if (m == null) return null;
-  final text = m.group(2)!.replaceAll(RegExp('<[^>]*>'), '').trim();
-  return text.isEmpty ? null : (href: m.group(1)!, text: text);
-}
-
-// 短公告（两三句、没有列表）正文居中；长的、带列表的还是靠左，不然难读。
-bool _isShort(String html) {
-  if (RegExp(r'<(ul|ol|li|table|h[1-6])\b', caseSensitive: false).hasMatch(html)) return false;
-  return html.replaceAll(RegExp('<[^>]*>'), '').replaceAll(RegExp('&[a-z]+;'), ' ').trim().length <= 140;
-}
+// 公告（10-15 改版，参照 GoMami；两端统一，Windows 是 NoticePanel.qml，两边一起改）：
+//   一张白卡，所有东西都在卡里：顶栏（列表：铃铛 +「公告」；详情：「‹ 全部公告」）+ ✕，下面一根细线。
+//   列表：粗标题 + 灰色一行「日期 · 摘要」，右边「新」/「重要」小标签和「›」。
+//   详情：灰色小字日期（+「重要」）→ 大标题 → 正文，一律靠左。正文按块排（NoticeHtml.blocks）：
+//   段落、条目（圆点折行对齐文字）、小标题、重点横幅（<blockquote>）、单独一行的链接 → 卡片底部金色按钮。
+//   长公告只留滚动条 + 底部淡出，不写「下滑查看更多」。
 
 void _openLink(String url) {
   final uri = Uri.tryParse(url);
   if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) UriUtils.tryLaunch(uri);
+}
+
+// 「重要」用的浅红（Windows Theme.fault 同色）。
+Color _alert(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark ? const Color(0xFFD59A57) : const Color(0xFF9A581F);
+
+class _Pill extends StatelessWidget {
+  const _Pill(this.label, {this.alert = false});
+  final String label;
+  final bool alert;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = PurchaseTokens.of(context);
+    final fg = alert ? _alert(context) : t.warning;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: alert ? fg.withValues(alpha: 0.12) : t.selected,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: fg)),
+    );
+  }
 }
 
 class _NoticeSheet extends ConsumerStatefulWidget {
@@ -167,20 +178,20 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(noticeProvider);
-    final tokens = PurchaseTokens.of(context);
-    final maxCard = MediaQuery.sizeOf(context).height * 0.7;
-    final link = tokens.warning;
-    final ink3 = tokens.secondary.withValues(alpha: 0.7);
+    final t = PurchaseTokens.of(context);
+    final maxCard = MediaQuery.sizeOf(context).height * 0.75;
+    final ink3 = t.secondary.withValues(alpha: 0.7);
+    final line = t.border.withValues(alpha: 0.6);
     NoticeItem? current;
     for (final it in state.items) {
       if (it.id == _open) current = it;
     }
 
-    final Widget content;
+    final Widget body;
     if (current != null) {
-      content = _NoticeDetail(item: current, tokens: tokens, link: link);
+      body = _NoticeDetail(key: ValueKey(current.id), item: current);
     } else if (state.items.isEmpty) {
-      content = SizedBox(
+      body = SizedBox(
         height: 120,
         child: Center(
           child: state.loading
@@ -189,21 +200,59 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
         ),
       );
     } else {
-      content = ListView(
+      body = ListView(
         shrinkWrap: true,
-        padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+        padding: const EdgeInsets.symmetric(vertical: 6),
         children: [
           for (var i = 0; i < state.items.length; i++)
             _NoticeRow(
               item: state.items[i],
               unread: state.openUnread.contains(state.items[i].id),
               last: i == state.items.length - 1,
-              tokens: tokens,
               onTap: () => setState(() => _open = state.items[i].id),
             ),
         ],
       );
     }
+
+    // 顶栏：列表是铃铛 +「公告」，详情是「‹ 全部公告」（点它回列表）；右边 ✕。
+    final head = SizedBox(
+      height: 60,
+      child: Row(
+        children: [
+          if (current == null) ...[
+            const SizedBox(width: 24),
+            Container(
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: t.selected, borderRadius: BorderRadius.circular(8)),
+              child: LineIcon(LineIconName.bell, color: t.warning, size: 17),
+            ),
+            const SizedBox(width: 10),
+            Text('公告', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: t.text)),
+          ] else ...[
+            const SizedBox(width: 12),
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: t.warning,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                minimumSize: const Size(48, 40),
+              ),
+              onPressed: () => setState(() => _open = 0),
+              child: const Text('‹  全部公告', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            ),
+          ],
+          const Spacer(),
+          IconButton(
+            tooltip: '关闭公告',
+            icon: Icon(Icons.close_rounded, size: 20, color: ink3),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          const SizedBox(width: 10),
+        ],
+      ),
+    );
 
     return PopScope(
       canPop: current == null,
@@ -217,75 +266,32 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
         elevation: 0,
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const GuideBrandRow(),
-              Container(
-                constraints: BoxConstraints(maxHeight: maxCard),
-                decoration: guideCardDecoration(context),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(
-                      height: 58,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          if (current == null)
-                            Text('公告', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: tokens.text)),
-                          Positioned(
-                            right: 6,
-                            top: 8,
-                            child: IconButton(
-                              tooltip: '关闭公告',
-                              icon: Icon(Icons.close_rounded, size: 20, color: ink3),
-                              onPressed: () => Navigator.of(context).pop(),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Flexible(child: content),
-                    const SizedBox(height: 14),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              // 卡片下面一行小字：列表时是「更早的公告」，看某一条时是「返回列表」。
-              if (current != null)
-                Center(
-                  child: TextButton(
-                    style: TextButton.styleFrom(foregroundColor: tokens.secondary, minimumSize: const Size(48, 40)),
-                    onPressed: () => setState(() => _open = 0),
-                    child: const Text('‹  返回公告列表', style: TextStyle(fontSize: 13)),
-                  ),
-                )
-              else if (state.items.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Center(
-                    child: Text.rich(
-                      TextSpan(
-                        style: TextStyle(fontSize: 12, color: ink3),
-                        children: [
-                          const TextSpan(text: '更早的公告在 '),
-                          WidgetSpan(
-                            alignment: PlaceholderAlignment.middle,
-                            child: GestureDetector(
-                              onTap: () => UriUtils.tryLaunch(Uri.parse(Constants.panelProfileUrl)),
-                              child: Text('官网会员中心', style: TextStyle(fontSize: 12, color: link)),
-                            ),
-                          ),
-                        ],
+          constraints: BoxConstraints(maxWidth: 460, maxHeight: maxCard),
+          child: DecoratedBox(
+            decoration: guideCardDecoration(context).copyWith(borderRadius: BorderRadius.circular(16)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                head,
+                Divider(height: 1, thickness: 1, color: line),
+                Flexible(child: body),
+                if (current == null && state.items.isNotEmpty) ...[
+                  Divider(height: 1, thickness: 1, color: line),
+                  SizedBox(
+                    height: 52,
+                    child: Center(
+                      child: TextButton(
+                        style: TextButton.styleFrom(foregroundColor: t.warning),
+                        onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.panelProfileUrl)),
+                        child: const Text('更早的公告在官网会员中心  →',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
                       ),
                     ),
                   ),
-                ),
-            ],
+                ],
+              ],
+            ),
           ),
         ),
       ),
@@ -294,87 +300,60 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
 }
 
 class _NoticeRow extends StatelessWidget {
-  const _NoticeRow({
-    required this.item,
-    required this.unread,
-    required this.last,
-    required this.tokens,
-    required this.onTap,
-  });
+  const _NoticeRow({required this.item, required this.unread, required this.last, required this.onTap});
 
   final NoticeItem item;
   final bool unread;
   final bool last;
-  final PurchaseTokens tokens;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final ink3 = tokens.secondary.withValues(alpha: 0.7);
-    final preview = unread ? item.preview : '';
-    final meta = item.date.isNotEmpty && preview.isNotEmpty ? '${item.date}  ·  $preview' : '${item.date}$preview';
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 13, 10, 13),
-        decoration: BoxDecoration(
-          border: last ? null : Border(bottom: BorderSide(color: tokens.border.withValues(alpha: 0.6))),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 7),
-              child: Container(
-                width: 7,
-                height: 7,
-                decoration: BoxDecoration(color: unread ? tokens.primary : Colors.transparent, shape: BoxShape.circle),
-              ),
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: unread ? FontWeight.w600 : FontWeight.w400,
-                            color: unread ? tokens.text : tokens.secondary,
-                          ),
-                        ),
-                      ),
-                      if (item.important) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-                          decoration: BoxDecoration(color: tokens.selected, borderRadius: BorderRadius.circular(9)),
-                          child: Text('重要', style: TextStyle(fontSize: 11, color: tokens.warning)),
-                        ),
-                      ],
-                    ],
-                  ),
-                  if (meta.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        meta,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: ink3),
+    final t = PurchaseTokens.of(context);
+    final ink3 = t.secondary.withValues(alpha: 0.7);
+    final meta = item.date.isNotEmpty && item.preview.isNotEmpty ? '${item.date}  ·  ${item.preview}' : '${item.date}${item.preview}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          height: 70,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            border: last ? null : Border(bottom: BorderSide(color: t.border.withValues(alpha: 0.6))),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: unread ? FontWeight.w700 : FontWeight.w400,
+                        color: t.text,
                       ),
                     ),
-                ],
+                    if (meta.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 5),
+                        child: Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: ink3)),
+                      ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              if (unread) ...[const SizedBox(width: 10), const _Pill('新')],
+              if (item.important) ...[const SizedBox(width: 10), const _Pill('重要', alert: true)],
+              const SizedBox(width: 10),
+              Text('›', style: TextStyle(fontSize: 20, color: ink3)),
+            ],
+          ),
         ),
       ),
     );
@@ -382,11 +361,9 @@ class _NoticeRow extends StatelessWidget {
 }
 
 class _NoticeDetail extends StatefulWidget {
-  const _NoticeDetail({required this.item, required this.tokens, required this.link});
+  const _NoticeDetail({super.key, required this.item});
 
   final NoticeItem item;
-  final PurchaseTokens tokens;
-  final Color link;
 
   @override
   State<_NoticeDetail> createState() => _NoticeDetailState();
@@ -394,12 +371,7 @@ class _NoticeDetail extends StatefulWidget {
 
 class _NoticeDetailState extends State<_NoticeDetail> {
   final _recognizers = <TapGestureRecognizer>[];
-  List<InlineSpan> _spans = const [];
-  String? _html;
-  Color? _link;
-  ({String href, String text})? _button;
-  bool _centered = false;
-  // 正文比卡片长时，底部渐隐 + 「下滑查看更多」（10-14 运营真机：长公告看不出下面还有内容）。
+  late final List<NoticeBlock> _blocks = NoticeHtml.blocks(widget.item.content);
   final _scroll = ScrollController();
   bool _more = false;
 
@@ -412,41 +384,8 @@ class _NoticeDetailState extends State<_NoticeDetail> {
   void _checkMore() {
     if (!_scroll.hasClients) return;
     final p = _scroll.position;
-    final more = p.maxScrollExtent - p.pixels > 8;
+    final more = p.maxScrollExtent - p.pixels > 4;
     if (more != _more) setState(() => _more = more);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _syncSpans();
-  }
-
-  @override
-  void didUpdateWidget(covariant _NoticeDetail oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncSpans();
-  }
-
-  void _syncSpans() {
-    if (_html == widget.item.content && _link == widget.link) return;
-    _link = widget.link;
-    for (final r in _recognizers) {
-      r.dispose();
-    }
-    _recognizers.clear();
-    _html = widget.item.content;
-    _button = _firstLink(widget.item.content);
-    // 单独一段的那个链接已经变成底部金色按钮，正文里不再重复显示。
-    final body = _button != null ? widget.item.content.replaceFirst(_soloLink, '') : widget.item.content;
-    _centered = _isShort(body);
-    _spans = NoticeHtml.spans(
-      body,
-      TextStyle(fontSize: 14, height: 1.6, color: widget.tokens.text),
-      widget.link,
-      keep: _recognizers.add,
-      onLink: _openLink,
-    );
   }
 
   @override
@@ -458,85 +397,131 @@ class _NoticeDetailState extends State<_NoticeDetail> {
     super.dispose();
   }
 
+  Widget _block(NoticeBlock b, PurchaseTokens t) {
+    final h = b.kind == 'h';
+    final style = TextStyle(
+      fontSize: h ? 15 : 14,
+      height: h ? 1.3 : 1.55,
+      fontWeight: h ? FontWeight.w700 : FontWeight.w400,
+      color: h ? t.text : t.text.withValues(alpha: 0.82),
+    );
+    final text = Text.rich(TextSpan(
+      children: NoticeHtml.spans(b.html, style, t.warning, keep: _recognizers.add, onLink: _openLink),
+    ));
+    switch (b.kind) {
+      case 'li':
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 18, child: Text('•', style: style.copyWith(color: t.primary))),
+              Expanded(child: text),
+            ],
+          ),
+        );
+      case 'quote':
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          decoration: BoxDecoration(
+            color: t.selected,
+            borderRadius: BorderRadius.circular(8),
+            border: Border(left: BorderSide(color: t.primary, width: 3)),
+          ),
+          child: text,
+        );
+      case 'h':
+        return Padding(padding: const EdgeInsets.only(top: 6, bottom: 10), child: text);
+      default:
+        return Padding(padding: const EdgeInsets.only(bottom: 10), child: text);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final t = widget.tokens;
-    final button = _button;
-    // 换了一条公告 / 第一次排版完：内容高度变了，重新看一下下面还有没有。
+    final t = PurchaseTokens.of(context);
+    final button = _blocks.where((b) => b.kind == 'button').firstOrNull;
+    // 第一次排版完：内容高度定了，看一下下面还有没有。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _checkMore();
     });
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers.clear();
     final list = ListView(
       controller: _scroll,
       shrinkWrap: true,
-      padding: const EdgeInsets.fromLTRB(26, 0, 26, 10),
+      padding: const EdgeInsets.fromLTRB(28, 20, 28, 12),
       children: [
-        Text(
-          widget.item.title,
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500, color: t.text, height: 1.3),
+        Row(
+          children: [
+            Text(widget.item.date, style: TextStyle(fontSize: 12, color: t.secondary.withValues(alpha: 0.7))),
+            if (widget.item.important) ...[const SizedBox(width: 8), const _Pill('重要', alert: true)],
+          ],
         ),
-        if (widget.item.date.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              widget.item.date,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: t.secondary.withValues(alpha: 0.7)),
-            ),
-          ),
-        const SizedBox(height: 18),
-        Center(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: _centered ? 320 : double.infinity),
-            child: Text.rich(
-              TextSpan(children: _spans),
-              textAlign: _centered ? TextAlign.center : TextAlign.start,
-            ),
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 14),
+          child: Text(
+            widget.item.title,
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: t.text, height: 1.3),
           ),
         ),
-        if (button != null) ...[
-          const SizedBox(height: 24),
-          SizedBox(
-            height: 48,
-            child: FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: t.primary,
-                foregroundColor: t.onPrimary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-              ),
-              onPressed: () => _openLink(button.href),
-              child: Text(button.text, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-          ),
-        ],
+        for (final b in _blocks)
+          if (b.kind != 'button') _block(b, t),
       ],
     );
-    return Stack(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Scrollbar(controller: _scroll, child: list),
-        if (_more)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: IgnorePointer(
-              child: Container(
-                height: 64,
-                alignment: Alignment.bottomCenter,
-                padding: const EdgeInsets.only(bottom: 4),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [t.raised.withValues(alpha: 0), t.raised],
+        Flexible(
+          child: Stack(
+            children: [
+              Scrollbar(controller: _scroll, child: list),
+              // 长公告底部淡出（不写字，滚动条已经说明下面还有）
+              if (_more)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: IgnorePointer(
+                    child: Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [t.raised.withValues(alpha: 0), t.raised],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-                child: Text('下滑查看更多  ⌄', style: TextStyle(fontSize: 12, color: t.secondary)),
+            ],
+          ),
+        ),
+        // 单独一行的链接 → 金色按钮，固定在卡片底部，长公告也看得到
+        if (button != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+            child: SizedBox(
+              height: 46,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: t.primary,
+                  foregroundColor: t.onPrimary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
+                onPressed: () => _openLink(button.href),
+                child: Text('${button.html}  →', maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
             ),
-          ),
+          )
+        else
+          const SizedBox(height: 10),
       ],
     );
   }
