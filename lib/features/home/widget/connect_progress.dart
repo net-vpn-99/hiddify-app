@@ -23,6 +23,7 @@ class ConnectProgress {
     this.title = '',
     this.message = '',
     this.action = SettingsAction.none,
+    this.repair = false,
   });
 
   /// 点击流程正在做第几步（1~4），0 = 没在跑。
@@ -35,6 +36,10 @@ class ConnectProgress {
 
   /// 失败时按钮下面多给的一个「去设置」按钮（没有就是 none）。
   final SettingsAction action;
+
+  /// 失败时给「修复并重新连接」（local_repair.dart）。只在连接没启动起来、原因不明时给，
+  /// 同一种失败修过一次就不再给（docs/计划/一键修复-初始化本地网络.md 第三、八节）。
+  final bool repair;
 }
 
 final connectProgressProvider = StateProvider<ConnectProgress>((ref) => const ConnectProgress());
@@ -47,7 +52,8 @@ const connectStepLabels = ['开通账号', '获取线路', '选择线路', '启�
 
 /// 第 4 步（启动连接）失败时给客户看的：标题直说要允许什么、「下一步怎么做」、能直接去的设置页。
 /// 两端统一，Windows 见 ConnectionController::engineFaultCopy。原始报错只进上报和 app.log。
-ConnectProgress connectFailProgress(Object? err) => switch (err) {
+/// [repaired] = 这种失败已经修过一次了（见 repairedKindProvider）。
+ConnectProgress connectFailProgress(Object? err, {bool repaired = false}) => switch (err) {
   MissingVpnPermission() => _vpnDeniedProgress(),
   MissingNotificationPermission() => const ConnectProgress(
     failedStep: 4,
@@ -61,20 +67,23 @@ ConnectProgress connectFailProgress(Object? err) => switch (err) {
     message: '点「允许后台运行」，在弹出的窗口里选「允许」，再点一下按钮。还不行的话，请到官网下载最新版重新安装',
     action: SettingsAction.battery,
   ),
-  _ => const ConnectProgress(failedStep: 4, title: '连接没成功', message: '请再点一下按钮。如果还不行，请换一条线路'),
+  // 连接没启动起来、原因不明：不猜原因（以前劝「换一条线路」，线路根本还没用上）。
+  _ when repaired => const ConnectProgress(failedStep: 4, title: '连接没成功', message: '修复后还是没连上，请联系客服，我们帮你查'),
+  _ => const ConnectProgress(failedStep: 4, title: '连接没成功', message: '光速雷达没能启动连接', repair: true),
 };
+
+/// 别的 App 占着 VPN，我们的起不来（被系统拒 / 初始化本地网络时查到）。说法只用 OtherVpn 那一份。
+const otherVpnProgress = ConnectProgress(
+  failedStep: 4,
+  title: OtherVpn.title,
+  message: '${OtherVpn.message}${OtherVpn.howTo}',
+  action: SettingsAction.vpn,
+);
 
 /// 系统没让光速雷达建 VPN：按证据分两种说，不把两种情况塞进一句话（10-14 运营：看着脑壳疼）。
 ConnectProgress _vpnDeniedProgress() {
   VpnPermission.noteDenied(_flowTicket);
-  if (VpnPermission.otherVpnBeforeConnect || VpnPermission.deniedStreak >= 2) {
-    return const ConnectProgress(
-      failedStep: 4,
-      title: OtherVpn.title,
-      message: '${OtherVpn.message}${OtherVpn.howTo}',
-      action: SettingsAction.vpn,
-    );
-  }
+  if (VpnPermission.otherVpnBeforeConnect || VpnPermission.deniedStreak >= 2) return otherVpnProgress;
   return const ConnectProgress(
     failedStep: 4,
     title: '需要你允许一次',

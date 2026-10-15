@@ -7,7 +7,12 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/helper/active_breakpoint_notifier.dart';
+import 'package:hiddify/features/connection/data/system_settings.dart';
+import 'package:hiddify/features/connection/model/connection_status.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/connection/notifier/local_repair.dart';
 import 'package:hiddify/features/diagnostic/diag_tile.dart';
+import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
 import 'package:hiddify/features/panel_auth/widget/account_card.dart';
 import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
 import 'package:hiddify/features/support/notifier/support_chat_notifier.dart';
@@ -66,6 +71,7 @@ class SettingsPage extends HookConsumerWidget {
           ),
           const SizedBox(height: 4),
           const Divider(height: 1),
+          const _LocalInitRow(),
           _row(
             context,
             icon: Icons.tune_rounded,
@@ -150,6 +156,54 @@ class SettingsPage extends HookConsumerWidget {
         title: Text(title),
         trailing: const Icon(Icons.chevron_right_rounded),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// 「初始化本地网络」（两端同名，Windows 在「更多」里）：一直在，他自己找过来点的不会误会。
+/// 做什么见 local_repair.dart；不弹确认框，做完一句话说做了哪几步。
+class _LocalInitRow extends ConsumerStatefulWidget {
+  const _LocalInitRow();
+
+  @override
+  ConsumerState<_LocalInitRow> createState() => _LocalInitRowState();
+}
+
+class _LocalInitRowState extends ConsumerState<_LocalInitRow> {
+  bool _busy = false;
+
+  Future<void> _run() async {
+    final s = ref.read(connectionNotifierProvider).valueOrNull;
+    final wasUp = s is Connected || s is Connecting;
+    setState(() => _busy = true);
+    final r = await ref.read(localRepairProvider).initialize();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (r.done.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      r.otherVpn
+          ? SnackBar(
+              content: const Text('${OtherVpn.message}${OtherVpn.howTo}'),
+              duration: const Duration(seconds: 8),
+              action: SnackBarAction(label: SettingsAction.vpn.label, onPressed: SettingsAction.vpn.open),
+            )
+          : SnackBar(content: Text('已${r.done}${wasUp ? '，正在重新连接' : ''}')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      child: ListTile(
+        leading: const Icon(Icons.restart_alt_rounded),
+        title: const Text('初始化本地网络'),
+        trailing: _busy
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.chevron_right_rounded),
+        onTap: _busy ? null : _run,
       ),
     );
   }

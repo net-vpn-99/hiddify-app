@@ -72,6 +72,10 @@ class ConnectReporter {
   Map<String, dynamic>? _tcp;
   Map<String, dynamic>? _tunnel;
 
+  // 一键修复 / 初始化本地网络做了什么（「repair:core+nodes+vpn」），跟下一次连接的结果一起报，
+  // 报完清掉（两端统一，Windows 见 ConnectReporter::attachConflictFix；服务器 GslStats 1.25.0 存 fix 列）。
+  String conflictFix = '';
+
   // "", "sent", "queued", "failed" -- read by the diagnostics screen.
   String state = '';
   String code = '';
@@ -447,6 +451,10 @@ class ConnectReporter {
       'os': '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
       'apibase': _host(_primaryApiBase()),
     };
+    if ((outcome == 'ok' || outcome == 'fail') && conflictFix.isNotEmpty) {
+      m['conflict_fix'] = conflictFix;
+      conflictFix = '';
+    }
     if (_nodeTag.isNotEmpty) m['node_tag'] = _nodeTag;
     if (_subName.isNotEmpty) m['sub_name'] = _subName;
     final steps = ConnectFlowClock.text();

@@ -20,6 +20,7 @@ import 'package:hiddify/features/connection/data/system_settings.dart';
 import 'package:hiddify/features/connection/data/vpn_permission.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/connection/notifier/local_repair.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/home/widget/connect_progress.dart';
 import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
@@ -147,6 +148,7 @@ class ConnectionButton extends HookConsumerWidget {
       if ((prev?.valueOrNull is Connecting || p.step == 4) && failedNow) {
         ref.read(connectProgressProvider.notifier).state = connectFailProgress(
           next is AsyncError ? next.error : (s is Disconnected ? s.connectionFailure : null),
+          repaired: ref.read(repairedKindProvider) == 'start',
         );
       }
     });
@@ -155,6 +157,7 @@ class ConnectionButton extends HookConsumerWidget {
     ref.listen<bool>(stabilityProvider.select((s) => s.confirmed), (prev, next) {
       if (next && prev != true) {
         VpnPermission.noteConnected();
+        ref.read(repairedKindProvider.notifier).state = '';
         justDone.value = true;
         Future.delayed(const Duration(milliseconds: 1500), () {
           if (context.mounted) justDone.value = false;
@@ -366,6 +369,9 @@ class ConnectionButton extends HookConsumerWidget {
       steps: stepsBar,
       // 失败时能直接去的设置页（授权 / 通知 / 后台运行），没有就不显示。
       hintAction: shownFailed == 4 ? progress.action : SettingsAction.none,
+      onRepair: shownFailed == 4 && progress.repair
+          ? () => ref.read(localRepairProvider).repairAndReconnect('start')
+          : null,
       buttonColor: switch (connectionStatus) {
         AsyncData(value: Connected()) when requiresReconnect == true => Colors.teal,
         AsyncData(value: Connected()) when !confirmed => const Color.fromARGB(255, 185, 176, 103),
@@ -406,9 +412,13 @@ class _ConnectionButton extends StatelessWidget {
     this.hint,
     this.steps,
     this.hintAction = SettingsAction.none,
+    this.onRepair,
   });
 
   final SettingsAction hintAction;
+
+  /// 失败时的「修复并重新连接」，不给就是 null。
+  final VoidCallback? onRepair;
 
   final VoidCallback onTap;
   final bool enabled;
@@ -481,6 +491,10 @@ class _ConnectionButton extends StatelessWidget {
               if (hintAction != SettingsAction.none) ...[
                 const Gap(4),
                 TextButton(onPressed: hintAction.open, child: Text(hintAction.label)),
+              ],
+              if (onRepair != null) ...[
+                const Gap(4),
+                TextButton(onPressed: onRepair, child: const Text('修复并重新连接')),
               ],
               if (secureLabel.isNotEmpty) ...[
                 Row(

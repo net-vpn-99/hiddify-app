@@ -213,7 +213,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           '已连 $secs 秒｜$why${failure == null ? '' : '：${_truncate(failure.toString(), 120)}'}｜App 在$fg',
         ),
       );
-      unawaited(DropNotice.show(revoked ? '连接被别的 VPN 或系统设置断开了。关掉别的 VPN 后，打开光速雷达点「连接」' : '连接意外断开了。打开光速雷达点「连接」恢复'));
+      unawaited(DropNotice.show(revoked ? '手机系统断开了光速雷达的 VPN 连接。手机上开着别的 VPN 的话，先关掉它，再打开光速雷达点「连接」' : '连接意外断开了。打开光速雷达点「连接」恢复'));
       reporter.abandon();
     } else if (reporter.attemptOpen) {
       // 第 5 步还没确认网通核心就停了：这是一次失败（以前直接丢掉，后台看不到）。
