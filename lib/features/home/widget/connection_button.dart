@@ -194,8 +194,8 @@ class ConnectionButton extends HookConsumerWidget {
         progressCtl.state = ConnectProgress(step: n);
       }
 
-      void failAt(int n, String title, String message, {String? reportStage}) {
-        progressCtl.state = ConnectProgress(failedStep: n, title: title, message: message);
+      void failAt(int n, String title, String message, {String? reportStage, SettingsAction action = SettingsAction.none}) {
+        progressCtl.state = ConnectProgress(failedStep: n, title: title, message: message, action: action);
         // 前三步停下的：上报写清停在哪步、什么原因（以前这几步失败服务器一条都没有）。
         // 第 4 步的失败由 connection_notifier 按连接尝试报，这里不重复。
         if (n <= 3) {
@@ -234,7 +234,15 @@ class ConnectionButton extends HookConsumerWidget {
         }
         if (stopped()) return;
         if (!ref.read(Preferences.panelLoggedIn)) {
-          final why = ref.read(guestBootstrapProvider).message ?? '';
+          final boot = ref.read(guestBootstrapProvider);
+          final why = boot.message ?? '';
+          if (boot.reason == GuestBlockReason.otherVpn) {
+            // 不是账号的事：跟第 4 步被别的 VPN 挡住同一套说法和「打开 VPN 设置」按钮，不弹注册框；
+            // 上报跟 Windows「其他软件占用网络」同记 tunnel（10-15 查：6 个人看到「账号没开通」，
+            // 后台也被算成开号失败）。
+            failAt(1, otherVpnProgress.title, otherVpnProgress.message, reportStage: 'tunnel', action: otherVpnProgress.action);
+            return;
+          }
           failAt(1, '账号没开通', why.isEmpty ? '检查网络后再点一次' : why);
           await ref.read(dialogNotifierProvider.notifier).showNeedAccount(message: why);
           return;

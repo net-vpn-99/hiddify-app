@@ -12,6 +12,7 @@ import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/connection_data_providers.dart';
 import 'package:hiddify/features/connection/data/connection_repository.dart';
 import 'package:hiddify/features/connection/data/drop_notice.dart';
+import 'package:hiddify/features/connection/data/vpn_permission.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
@@ -524,12 +525,25 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
     }
 
+    final grantedBefore = await VpnPermission.granted();
     await reporter.beginAttempt(activeProfile.name, preferredLine: ref.read(Preferences.preferredLineName));
     _connectInFlight = true;
     try {
-      final result = await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).mapLeft((
-        ConnectionFailure err,
-      ) async {
+      var outcome = await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).run();
+      // 这次连接中途刚在系统弹窗里允许了 VPN，后台核心却是允许之前就起来的那个：OPPO / vivo /
+      // 真我 / 华为会拒绝它建网卡（tun permission denied），核心随即停下，再连一次就好。
+      // 10-15 查：1.1.63 新用户第一次连接 38 个里 12 个是这个，再点一次 10 秒内全连上。
+      // 只在「连之前没允许过、现在允许了、核心已经停下」时重来一次，别的失败照常报。
+      final firstErr = outcome.getLeft().toNullable();
+      if (firstErr != null &&
+          !grantedBefore &&
+          firstErr.toString().contains('configure tun interface: permission denied') &&
+          state.valueOrNull is Disconnected &&
+          await VpnPermission.granted()) {
+        loggy.info('tun denied right after VPN grant, starting core once more');
+        outcome = await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).run();
+      }
+      final result = outcome.mapLeft((ConnectionFailure err) async {
         loggy.warning("error connecting", err);
         //Go err is not normal object to see the go errors are string and need to be dumped
         // MissingWarpLicense = user declined a prompt, not a connectivity failure.
@@ -567,8 +581,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         }
         await ref.read(Preferences.startedByUser.notifier).update(false);
         state = AsyncError(err, StackTrace.current);
-      }).run();
-      // mapLeft 的回调是 async：run() 返回时它还没跑完（复核账号、上报都在里面），要等它。
+      });
+      // mapLeft 的回调是 async：返回时它还没跑完（复核账号、上报都在里面），要等它。
       final pending = result.match((f) => f, (_) => null);
       if (pending != null) await pending;
     } finally {

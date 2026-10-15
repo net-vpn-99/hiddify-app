@@ -111,8 +111,16 @@ class StabilityNotifier extends Notifier<StabilityState> {
       }
     }, fireImmediately: true);
     ref.listen<bool>(appForegroundProvider, (prev, next) {
-      if (next != true || !_running || _confirmed) return;
-      _schedule(immediate: true);
+      if (next != true || !_running) return;
+      if (!_confirmed) {
+        _schedule(immediate: true);
+        return;
+      }
+      // 在后台时没回音的那几次不算数（见 _probe）：回到前台重新数，马上探一次。
+      if (_misses > 0) {
+        _misses = 0;
+        unawaited(_probe(_gen));
+      }
     });
     return StabilityState(_rememberedScore);
   }
@@ -236,6 +244,14 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _misses++;
     state = StabilityState(4, confirmed: true, egressAudit: audit);
     if (_misses >= 2) {
+      // App 在后台时手机会限制它联网，探测没回音不等于线路断了：先不断开，照常每分钟探，
+      // 回到前台再重新判断。跟「还没确认网通、人在后台」同一条规矩（connection_notifier
+      // _armUnconfirmedDeadline）。10-15 查：7 天 25 次「用着用着断了」24 次在后台，
+      // 连了几小时被我们自己断开还弹通知。
+      if (!ref.read(appForegroundProvider)) {
+        _armSteady(gen);
+        return;
+      }
       _fault('line');
       return;
     }
