@@ -15,6 +15,7 @@ import 'package:hiddify/features/diagnostic/diag_tile.dart';
 import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
 import 'package:hiddify/features/panel_auth/widget/account_card.dart';
 import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
+import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hiddify/features/support/notifier/support_chat_notifier.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -35,11 +36,15 @@ enum ConfigOptionSection {
 /// 「我的」页（10-15 精简，跟 Windows「更多」同一个思路：首页有的这里不再放一遍）。
 ///
 /// 从上到下：**账号卡**（我是谁 + 剩多久，点进账号管理；续费 / 在另一台设备上用）→
-/// **四个方块**（邀请返利 / 在线客服 / 常见问题 / 连接诊断）→ **一组两行**（初始化本地网络 /
-/// 应用设置）→ **最下面一行小字**（版本号 · 官网 · 备用入口，点版本号进「关于」检查更新）。
+/// **四个方块**（邀请返利 / 在线客服 / 常见问题 / 连接诊断）→ **初始化本地网络** →
+/// **最下面一行小字**（版本号 · 官网 · 备用入口，点版本号进「关于」检查更新）。
 ///
-/// 不在这里的：常用网站、TG 频道在首页。「高级设置」（路由 / DNS / 入站 / TLS / WARP / 日志）
-/// 在「关于」页连点版本号 5 次才显出来（Preferences.devMode），客服排障时用。
+/// 不在这里的：常用网站、TG 频道在首页。「应用设置」（内存上限 / 日志级别 / 调试模式…）和
+/// 「高级设置」（路由 / DNS / 入站 / TLS / WARP / 日志）普通用户用不上，在「关于」页连点版本号
+/// 5 次才显出来（Preferences.devMode），客服排障时用。
+///
+/// 配色用 PurchaseTokens（跟 Windows / 官网同一套）：浅灰底、白卡、细边，主按钮黑色；
+/// 不用 Material 从金色种子算出来的米色卡和橄榄棕按钮（运营 10-15：太土）。
 class SettingsPage extends HookConsumerWidget {
   SettingsPage({super.key, String? section})
     : section = section != null ? ConfigOptionSection.values.byName(section) : null;
@@ -51,22 +56,15 @@ class SettingsPage extends HookConsumerWidget {
     final t = ref.watch(translationsProvider).requireValue;
     final devMode = ref.watch(Preferences.devMode);
 
+    final tk = PurchaseTokens.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('我的')),
+      backgroundColor: tk.background,
+      appBar: AppBar(title: const Text('我的'), backgroundColor: tk.background, surfaceTintColor: Colors.transparent),
       body: ListView(
         children: [
           const AccountCard(),
           const _ActionGrid(),
-          MenuGroup(
-            children: [
-              const _LocalInitRow(),
-              MenuRow(
-                icon: Icons.tune_rounded,
-                title: '应用设置',
-                onTap: () => context.pushNamed('general'),
-              ),
-            ],
-          ),
+          const MenuGroup(children: [_LocalInitRow()]),
           const _FootLinks(),
           // 连点版本号解锁出来的那堆，普通用户永远看不到。
           if (devMode) ...[
@@ -81,6 +79,7 @@ class SettingsPage extends HookConsumerWidget {
             ),
             MenuGroup(
               children: [
+                MenuRow(icon: Icons.tune_rounded, title: '应用设置', onTap: () => context.pushNamed('general')),
                 for (final (title, icon, name) in [
                   (t.pages.settings.routing.title, Icons.route_rounded, 'routeOptions'),
                   (t.pages.settings.dns.title, Icons.dns_rounded, 'dnsOptions'),
@@ -107,7 +106,7 @@ class SettingsPage extends HookConsumerWidget {
   }
 }
 
-/// 浅底圆角卡（账号卡、方块、行组都是这一种底色），里面的行之间画细线。
+/// 白卡细边（账号卡、方块、行组都是这一种），里面的行之间画细线。
 class MenuGroup extends StatelessWidget {
   const MenuGroup({super.key, required this.children});
 
@@ -115,17 +114,17 @@ class MenuGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final tk = PurchaseTokens.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       child: Material(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
+        color: tk.raised,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: tk.border.withValues(alpha: 0.6))),
         clipBehavior: Clip.antiAlias,
         child: Column(
           children: [
             for (var i = 0; i < children.length; i++) ...[
-              if (i > 0) Divider(height: 1, indent: 56, color: scheme.outlineVariant.withValues(alpha: 0.5)),
+              if (i > 0) Divider(height: 1, indent: 56, color: tk.border.withValues(alpha: 0.6)),
               children[i],
             ],
           ],
@@ -148,10 +147,11 @@ class MenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final muted = theme.colorScheme.onSurfaceVariant;
+    final tk = PurchaseTokens.of(context);
+    final muted = tk.secondary;
     return ListTile(
       leading: Icon(icon, color: muted),
-      title: Text(title),
+      title: Text(title, style: theme.textTheme.bodyLarge?.copyWith(color: tk.text)),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -160,7 +160,7 @@ class MenuRow extends StatelessWidget {
           if (busy)
             const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
           else
-            Icon(Icons.chevron_right_rounded, color: theme.colorScheme.outline),
+            Icon(Icons.chevron_right_rounded, color: muted),
         ],
       ),
       onTap: busy ? null : onTap,
@@ -176,7 +176,7 @@ class _FootLinks extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final style = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final style = theme.textTheme.bodySmall?.copyWith(color: PurchaseTokens.of(context).secondary);
     final version = ref.watch(appInfoProvider).valueOrNull?.presentVersion ?? '';
     Widget link(String text, VoidCallback onTap) => InkWell(
       borderRadius: BorderRadius.circular(8),
@@ -317,9 +317,10 @@ class _ActionGrid extends ConsumerWidget {
     bool busy = false,
   }) {
     final theme = Theme.of(context);
+    final tk = PurchaseTokens.of(context);
     return Material(
-      color: theme.colorScheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(16),
+      color: tk.raised,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: tk.border.withValues(alpha: 0.6))),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -337,7 +338,7 @@ class _ActionGrid extends ConsumerWidget {
                     : Badge(
                         isLabelVisible: badge,
                         smallSize: 8,
-                        child: Icon(icon, size: 24, color: theme.colorScheme.onSurfaceVariant),
+                        child: Icon(icon, size: 24, color: tk.secondary),
                       ),
               ),
               const SizedBox(height: 8),
@@ -345,7 +346,7 @@ class _ActionGrid extends ConsumerWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall,
+                style: theme.textTheme.bodySmall?.copyWith(color: tk.text),
               ),
             ],
           ),

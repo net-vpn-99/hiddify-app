@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 「我的」页顶部的账号卡（1.1.28 重做，原来是一行 ListTile）。
@@ -14,6 +15,20 @@ class AccountCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final tk = PurchaseTokens.of(context);
+    final buttonText = theme.textTheme.labelLarge?.copyWith(fontSize: 15, fontWeight: FontWeight.w600);
+    final primary = FilledButton.styleFrom(
+      backgroundColor: tk.text,
+      foregroundColor: tk.raised,
+      minimumSize: const Size.fromHeight(44),
+      textStyle: buttonText,
+    );
+    final secondary = OutlinedButton.styleFrom(
+      foregroundColor: tk.text,
+      side: BorderSide(color: tk.border),
+      minimumSize: const Size.fromHeight(44),
+      textStyle: buttonText,
+    );
     final loggedIn = ref.watch(Preferences.panelLoggedIn);
     final auth = ref.watch(panelAuthProvider);
     if (auth.isGuest && auth.account != null && auth.guestPaidReminder == null) {
@@ -39,7 +54,8 @@ class AccountCard extends ConsumerWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          color: theme.colorScheme.surfaceContainerLow,
+          color: tk.raised,
+          border: Border.all(color: tk.border.withValues(alpha: 0.6)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -68,10 +84,10 @@ class AccountCard extends ConsumerWidget {
               child: Row(
                 children: [
                   CircleAvatar(
-                    backgroundColor: theme.colorScheme.primaryContainer,
+                    backgroundColor: tk.fill,
                     child: Icon(
                       loggedIn ? Icons.person_rounded : Icons.person_outline_rounded,
-                      color: theme.colorScheme.onPrimaryContainer,
+                      color: tk.text,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -84,19 +100,19 @@ class AccountCard extends ConsumerWidget {
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleSmall,
+                          style: theme.textTheme.titleSmall?.copyWith(color: tk.text),
                         ),
                         Text(
                           subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall
-                              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                              ?.copyWith(color: tk.secondary),
                         ),
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, color: theme.colorScheme.outline),
+                  Icon(Icons.chevron_right_rounded, color: tk.secondary),
                 ],
               ),
             ),
@@ -104,6 +120,7 @@ class AccountCard extends ConsumerWidget {
             // 账号管理就是上面那一行（点头像 / 邮箱进去），这里不再放一颗同样去处的按钮。
             if (loggedIn && !auth.isGuest)
               FilledButton(
+                style: primary,
                 onPressed: () => context.pushNamed('purchase'),
                 child: Text(auth.account?.stateSlug == 'ok' ? '续费 / 升级' : '买套餐'),
               )
@@ -112,6 +129,7 @@ class AccountCard extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: FilledButton(
+                      style: primary,
                       onPressed: () => context.pushNamed('purchase'),
                       child: const Text('买套餐'),
                     ),
@@ -121,6 +139,7 @@ class AccountCard extends ConsumerWidget {
                   // 首页一个「登录」字样都没有。
                   Expanded(
                     child: OutlinedButton(
+                      style: secondary,
                       onPressed: () => context.pushNamed('login'),
                       child: const Text('登录已有账号'),
                     ),
@@ -138,13 +157,13 @@ class AccountCard extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(4, 12, 0, 4),
                   child: Row(
                     children: [
-                      Expanded(child: Text('在另一台设备上用', style: theme.textTheme.bodyMedium)),
+                      Expanded(child: Text('在另一台设备上用', style: theme.textTheme.bodyMedium?.copyWith(color: tk.text))),
                       if (auth.isGuest)
                         Text(
                           '换手机也能用',
-                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          style: theme.textTheme.bodySmall?.copyWith(color: tk.secondary),
                         ),
-                      Icon(Icons.chevron_right_rounded, color: theme.colorScheme.outline),
+                      Icon(Icons.chevron_right_rounded, color: tk.secondary),
                     ],
                   ),
                 ),
