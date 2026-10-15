@@ -18,12 +18,6 @@ class AccountCard extends ConsumerWidget {
     final theme = Theme.of(context);
     final tk = PurchaseTokens.of(context);
     final buttonText = theme.textTheme.labelLarge?.copyWith(fontSize: 15, fontWeight: FontWeight.w600);
-    final primary = FilledButton.styleFrom(
-      backgroundColor: tk.primary,
-      foregroundColor: tk.onPrimary,
-      minimumSize: const Size.fromHeight(44),
-      textStyle: buttonText,
-    );
     final secondary = OutlinedButton.styleFrom(
       foregroundColor: tk.text,
       side: BorderSide(color: tk.border.withValues(alpha: 0.8)),
@@ -109,20 +103,15 @@ class AccountCard extends ConsumerWidget {
             const SizedBox(height: 12),
             // 账号管理就是上面那一行（点头像 / 邮箱进去），这里不再放一颗同样去处的按钮。
             if (loggedIn && !auth.isGuest)
-              FilledButton(
-                style: primary,
-                onPressed: () => context.pushNamed('purchase'),
-                child: Text(auth.account?.stateSlug == 'ok' ? '续费 / 升级' : '买套餐'),
+              _PrimaryButton(
+                label: auth.account?.stateSlug == 'ok' ? '续费 / 升级' : '买套餐',
+                onTap: () => context.pushNamed('purchase'),
               )
             else
               Row(
                 children: [
                   Expanded(
-                    child: FilledButton(
-                      style: primary,
-                      onPressed: () => context.pushNamed('purchase'),
-                      child: const Text('买套餐'),
-                    ),
+                    child: _PrimaryButton(label: '买套餐', onTap: () => context.pushNamed('purchase')),
                   ),
                   const SizedBox(width: 10),
                   // 游客 / 没账号：登录已有账号 —— 在官网注册过的人装上 App 会被自动开成游客号，
@@ -188,5 +177,34 @@ class AccountCard extends ConsumerWidget {
         final left = acc.remainingClock();
         return left == null ? name : '$name · 剩 $left';
     }
+  }
+}
+
+/// 账号卡上的主按钮（续费 / 买套餐）：GoMami 同款橙底白字（运营 10-15 选的 A 版；
+/// 品牌金做大块按钮在浅色下发闷，像芥末黄）。
+class _PrimaryButton extends StatelessWidget {
+  const _PrimaryButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  static const _orange = Color(0xFFEE7B3B);
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme.labelLarge?.copyWith(
+      fontSize: 15,
+      fontWeight: FontWeight.w600,
+      color: Colors.white,
+    );
+    return Material(
+      color: _orange,
+      borderRadius: BorderRadius.circular(22),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(height: 44, child: Center(child: Text(label, style: text))),
+      ),
+    );
   }
 }
