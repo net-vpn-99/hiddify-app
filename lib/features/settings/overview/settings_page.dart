@@ -7,6 +7,7 @@ import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/common/soft_card.dart';
 import 'package:hiddify/features/connection/data/system_settings.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -43,8 +44,10 @@ enum ConfigOptionSection {
 /// 「高级设置」（路由 / DNS / 入站 / TLS / WARP / 日志）普通用户用不上，在「关于」页连点版本号
 /// 5 次才显出来（Preferences.devMode），客服排障时用。
 ///
-/// 配色用 PurchaseTokens（跟 Windows / 官网同一套）：浅灰底、白卡、细边，主按钮黑色；
-/// 不用 Material 从金色种子算出来的米色卡和橄榄棕按钮（运营 10-15：太土）。
+/// 样子参照 GoMami 会员中心（运营 10-15 定）：暖浅灰底、白卡不描边只带淡阴影（SoftCard）、
+/// 每个图标垫一块同色系浅色小方块（IconTile，绿 / 蓝 / 紫 / 橙）、主按钮用品牌金。
+/// 底色和字色用 PurchaseTokens（跟 Windows / 官网同一套）。
+/// 试过两版不要的：Material 从金色种子算出来的米色卡 + 橄榄棕按钮（土）；黑白（压抑）。
 class SettingsPage extends HookConsumerWidget {
   SettingsPage({super.key, String? section})
     : section = section != null ? ConfigOptionSection.values.byName(section) : null;
@@ -106,7 +109,7 @@ class SettingsPage extends HookConsumerWidget {
   }
 }
 
-/// 白卡细边（账号卡、方块、行组都是这一种），里面的行之间画细线。
+/// 一组行放在一张白卡里，行之间画细线。
 class MenuGroup extends StatelessWidget {
   const MenuGroup({super.key, required this.children});
 
@@ -117,14 +120,11 @@ class MenuGroup extends StatelessWidget {
     final tk = PurchaseTokens.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-      child: Material(
-        color: tk.raised,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: tk.border.withValues(alpha: 0.6))),
-        clipBehavior: Clip.antiAlias,
+      child: SoftCard(
         child: Column(
           children: [
             for (var i = 0; i < children.length; i++) ...[
-              if (i > 0) Divider(height: 1, indent: 56, color: tk.border.withValues(alpha: 0.6)),
+              if (i > 0) Divider(height: 1, indent: 72, color: tk.border.withValues(alpha: 0.5)),
               children[i],
             ],
           ],
@@ -134,11 +134,20 @@ class MenuGroup extends StatelessWidget {
   }
 }
 
-/// 一行：图标 + 名字 + 右边灰色小字（hint）+ ›。「我的」页所有行都用它。
+/// 一行：带色小方块的图标 + 名字 + 右边灰色小字（hint）+ ›。「我的」页所有行都用它。
 class MenuRow extends StatelessWidget {
-  const MenuRow({super.key, required this.icon, required this.title, this.hint, this.busy = false, this.onTap});
+  const MenuRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.color = IconTile.slate,
+    this.hint,
+    this.busy = false,
+    this.onTap,
+  });
 
   final IconData icon;
+  final Color color;
   final String title;
   final String? hint;
   final bool busy;
@@ -150,7 +159,8 @@ class MenuRow extends StatelessWidget {
     final tk = PurchaseTokens.of(context);
     final muted = tk.secondary;
     return ListTile(
-      leading: Icon(icon, color: muted),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: IconTile(icon, color, size: 38),
       title: Text(title, style: theme.textTheme.bodyLarge?.copyWith(color: tk.text)),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -176,7 +186,8 @@ class _FootLinks extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final style = theme.textTheme.bodySmall?.copyWith(color: PurchaseTokens.of(context).secondary);
+    final tk = PurchaseTokens.of(context);
+    final style = theme.textTheme.bodySmall?.copyWith(color: tk.secondary);
     final version = ref.watch(appInfoProvider).valueOrNull?.presentVersion ?? '';
     Widget link(String text, VoidCallback onTap) => InkWell(
       borderRadius: BorderRadius.circular(8),
@@ -237,6 +248,7 @@ class _LocalInitRowState extends ConsumerState<_LocalInitRow> {
   Widget build(BuildContext context) {
     return MenuRow(
       icon: Icons.restart_alt_rounded,
+      color: IconTile.green,
       title: '初始化本地网络',
       hint: '网页打不开时用',
       busy: _busy,
@@ -260,6 +272,7 @@ class _ActionGrid extends ConsumerWidget {
             child: _cell(
               context,
               icon: Icons.card_giftcard_outlined,
+              color: IconTile.orange,
               label: '邀请返利',
               // 没账号也照样摆在这儿（首页不拦人那套），点了才说要先有账号。
               onTap: () => ref.read(Preferences.panelLoggedIn)
@@ -274,6 +287,7 @@ class _ActionGrid extends ConsumerWidget {
             child: _cell(
               context,
               icon: Icons.support_agent_outlined,
+              color: IconTile.blue,
               label: '在线客服',
               badge: unseen > 0,
               onTap: () => context.pushNamed('supportChat'),
@@ -284,6 +298,7 @@ class _ActionGrid extends ConsumerWidget {
             child: _cell(
               context,
               icon: Icons.help_outline_rounded,
+              color: IconTile.purple,
               label: '常见问题',
               onTap: () async {
                 await RemoteSiteConfig.ensureLoaded();
@@ -297,6 +312,7 @@ class _ActionGrid extends ConsumerWidget {
               builder: (context, busy, run) => _cell(
                 context,
                 icon: Icons.build_outlined,
+                color: IconTile.green,
                 label: '连接诊断',
                 busy: busy,
                 onTap: run,
@@ -311,6 +327,7 @@ class _ActionGrid extends ConsumerWidget {
   Widget _cell(
     BuildContext context, {
     required IconData icon,
+    required Color color,
     required String label,
     required VoidCallback? onTap,
     bool badge = false,
@@ -318,10 +335,7 @@ class _ActionGrid extends ConsumerWidget {
   }) {
     final theme = Theme.of(context);
     final tk = PurchaseTokens.of(context);
-    return Material(
-      color: tk.raised,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: tk.border.withValues(alpha: 0.6))),
-      clipBehavior: Clip.antiAlias,
+    return SoftCard(
       child: InkWell(
         onTap: onTap,
         child: Padding(
@@ -330,15 +344,15 @@ class _ActionGrid extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                height: 24,
+                height: 40,
                 child: busy
                     ? const Center(
                         child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
                       )
                     : Badge(
                         isLabelVisible: badge,
-                        smallSize: 8,
-                        child: Icon(icon, size: 24, color: tk.secondary),
+                        smallSize: 9,
+                        child: IconTile(icon, color),
                       ),
               ),
               const SizedBox(height: 8),

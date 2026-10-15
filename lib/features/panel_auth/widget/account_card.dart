@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/common/soft_card.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -18,14 +19,14 @@ class AccountCard extends ConsumerWidget {
     final tk = PurchaseTokens.of(context);
     final buttonText = theme.textTheme.labelLarge?.copyWith(fontSize: 15, fontWeight: FontWeight.w600);
     final primary = FilledButton.styleFrom(
-      backgroundColor: tk.text,
-      foregroundColor: tk.raised,
+      backgroundColor: tk.primary,
+      foregroundColor: tk.onPrimary,
       minimumSize: const Size.fromHeight(44),
       textStyle: buttonText,
     );
     final secondary = OutlinedButton.styleFrom(
       foregroundColor: tk.text,
-      side: BorderSide(color: tk.border),
+      side: BorderSide(color: tk.border.withValues(alpha: 0.8)),
       minimumSize: const Size.fromHeight(44),
       textStyle: buttonText,
     );
@@ -50,13 +51,8 @@ class AccountCard extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
-      child: Container(
+      child: SoftCard(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: tk.raised,
-          border: Border.all(color: tk.border.withValues(alpha: 0.6)),
-        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -83,13 +79,7 @@ class AccountCard extends ConsumerWidget {
               onTap: () => context.pushNamed(loggedIn ? 'account' : 'login'),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    backgroundColor: tk.fill,
-                    child: Icon(
-                      loggedIn ? Icons.person_rounded : Icons.person_outline_rounded,
-                      color: tk.text,
-                    ),
-                  ),
+                  IconTile(loggedIn ? Icons.person_rounded : Icons.person_outline_rounded, IconTile.gold, size: 44),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
