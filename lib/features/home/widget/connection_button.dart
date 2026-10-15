@@ -194,12 +194,12 @@ class ConnectionButton extends HookConsumerWidget {
         progressCtl.state = ConnectProgress(step: n);
       }
 
-      void failAt(int n, String title, String message) {
+      void failAt(int n, String title, String message, {String? reportStage}) {
         progressCtl.state = ConnectProgress(failedStep: n, title: title, message: message);
         // 前三步停下的：上报写清停在哪步、什么原因（以前这几步失败服务器一条都没有）。
         // 第 4 步的失败由 connection_notifier 按连接尝试报，这里不重复。
         if (n <= 3) {
-          final stage = switch (n) {
+          final stage = reportStage ?? switch (n) {
             1 => 'account',
             2 => 'sub_download',
             _ => 'route_pick',
@@ -281,6 +281,12 @@ class ConnectionButton extends HookConsumerWidget {
         return;
       }
       if (stopped()) return;
+      // 选的线路在维修：不去连，说清楚，让他自己换（不自动换线；Windows 同一句，route_down）。
+      final line = ref.read(Preferences.preferredLineName);
+      if (ref.read(panelAuthProvider).account?.isLineDown(line) ?? false) {
+        failAt(3, '$line 正在维修', '暂时连不上，请换一条线路', reportStage: 'route_down');
+        return;
+      }
       if (!await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
         clear();
         return;

@@ -277,6 +277,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   Future<void> _probeDeadLineDirect(ConnectReporter reporter) async {
     final host = reporter.lastNodeHost;
     if (host == null) return;
+    // 先重拉一次账号（里面带维修中名单）：这条在维修，首页就说「正在维修」（connect_issue_card），
+    // 也不算进「试了几条都没回应」——那会说成换线路也没用。
+    try {
+      await ref.read(panelAuthProvider.notifier).syncAccountQuietly();
+    } catch (_) {}
+    if (ref.read(panelAuthProvider).account?.isLineDown(ref.read(Preferences.lastNodeName)) ?? false) return;
     final r = await reporter.probeLastNodeDirect();
     final set = {...ref.read(unreachableNodesProvider)};
     if (r.nodeOk) {

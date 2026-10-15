@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/local_repair.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -55,7 +57,10 @@ class ConnectIssueCard extends ConsumerWidget {
     });
 
     final bool dead = (deadLine || fault == 'line') && status is Disconnected;
-    final bool netBlocked = dead && unreachable.length >= 2;
+    // 这条在维修（断开后 connection_notifier 重拉过一次账号）：说「正在维修」，只给换线路。
+    final lineName = ref.watch(Preferences.lastNodeName);
+    final bool lineDown = dead && ref.watch(panelAuthProvider.select((s) => s.account?.isLineDown(lineName) ?? false));
+    final bool netBlocked = dead && !lineDown && unreachable.length >= 2;
     final bool thisLineBlocked = dead && !netBlocked && lastHost != null && unreachable.contains(lastHost);
     final bool revoked = fault == 'revoked' && status is Disconnected;
     final bool engine = (fault == 'engine' || revoked) && status is Disconnected;
@@ -81,6 +86,9 @@ class ConnectIssueCard extends ConsumerWidget {
     } else if (egress) {
       title = '网页没有经过线路';
       body = '原因还没查到，点「怎么办」';
+    } else if (lineDown) {
+      title = '$lineName 正在维修';
+      body = '暂时连不上，请换一条线路';
     } else if (netBlocked) {
       title = '你的网络连不上我们的线路';
       body = '试了 ${unreachable.length} 条线路都没有回应，换线路也没用';
@@ -166,7 +174,7 @@ class ConnectIssueCard extends ConsumerWidget {
                     },
                     child: const Text('换一条线路'),
                   ),
-                if (!gone)
+                if (!gone && !lineDown)
                   TextButton(
                     style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
                     onPressed: reconnect,

@@ -6,6 +6,7 @@ import 'package:hiddify/features/panel_auth/data/altcha.dart';
 import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
+import 'package:hiddify/features/proxy/model/node_display.dart';
 
 /// 游客试用的服务端开关与文案（GslGuest 插件下发，改了不用发版）。
 typedef GuestOptions = ({bool enabled, String suffix, String? bindBonusText, bool canBuy, bool selfPassword});
@@ -209,6 +210,10 @@ class PanelApi {
       proQuota: dailyMap == null ? 0 : n(dailyMap['pro_quota']).toInt(),
       proThrottled: dailyMap != null && dailyMap['pro_throttled'] == true,
       proThrottleMbps: dailyMap == null ? 0 : n(dailyMap['pro_throttle_mbps']).toInt(),
+      downLines: {
+        for (final d in (data['gsl_down'] is List ? data['gsl_down'] as List : const []))
+          if (d is Map && '${d['name'] ?? ''}'.trim().isNotEmpty) splitNodeName('${d['name']}').name,
+      },
     );
   }
 
@@ -913,6 +918,7 @@ class PanelAccount {
     this.proQuota = 0,
     this.proThrottled = false,
     this.proThrottleMbps = 0,
+    this.downLines = const {},
   });
 
   final String? email;
@@ -942,6 +948,12 @@ class PanelAccount {
   final int proQuota;
   final bool proThrottled;
   final int proThrottleMbps;
+
+  /// getSubscribe 的 gsl_down：服务端判为「维修中」的线路名（splitNodeName 的 name，跟线路页、
+  /// preferredLineName 同一种名字）。列表标「维修中」、点了不让连（docs/计划/节点离线-维修中.md，两端统一）。
+  final Set<String> downLines;
+
+  bool isLineDown(String name) => name.isNotEmpty && downLines.contains(name);
 
   bool get lifetime => expiredAt == null || expiredAt == 0;
 

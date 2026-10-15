@@ -138,6 +138,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     final options = value?.lines ?? const <LineOption>[];
     final locked = value?.locked ?? false;
     final tiers = ref.watch(lineTierProvider);
+    final downLines = ref.watch(panelAuthProvider.select((s) => s.account?.downLines ?? const <String>{}));
 
     final tiered = options.isNotEmpty && tiers.proLines.isNotEmpty;
     Widget body;
@@ -168,6 +169,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
           regionSubtitle: regionEntrySubtitle(region),
           locateCountry: _locate,
           locateKey: _locateKey,
+          downLines: downLines,
           onWantRegion: () async {
             final name = await showRegionSheet(context, ref);
             if (!context.mounted || name == null || name.isEmpty) return;
@@ -204,6 +206,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                 // 没自己选过线路才标「推荐」；正在用的那条只标「使用中」，不叠两个牌子。
                 recommended: i == 0 && !locked && pickedName.isEmpty && i != currentIndex,
                 connected: connected,
+                down: !locked && downLines.contains(o.name),
                 onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
               ),
             _FooterLinks(
@@ -277,6 +280,13 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
   /// 没连接时选了线路 = 要用这条：直接走一键连接（跟点连接按钮同一套，有进度条）。
   /// 以前只记下来什么都不发生，选完没反馈（10-14 运营真机）。
   Future<void> _pick(BuildContext context, WidgetRef ref, LineOption o) async {
+    // 维修中：不切换，告诉他换一条（列表就在眼前；Windows 同一句）。
+    if (ref.read(panelAuthProvider).account?.isLineDown(o.name) ?? false) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('「${o.name}」正在维修，暂时连不上。请换一条线路。')),
+      );
+      return;
+    }
     await ref.read(Preferences.preferredLineName.notifier).update(o.name);
     await ref.read(Preferences.lastNodeName.notifier).update(o.name);
     await ref.read(Preferences.lastNodeDesc.notifier).update(o.desc);
@@ -332,6 +342,7 @@ class _LineTile extends StatelessWidget {
     required this.recommended,
     required this.connected,
     required this.onTap,
+    this.down = false,
   });
 
   final LineOption option;
@@ -341,16 +352,21 @@ class _LineTile extends StatelessWidget {
   final bool connected;
   final VoidCallback onTap;
 
+  /// 维修中：变灰、牌子写「维修中」，点了由 _pick 说清楚。
+  final bool down;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     // 没连着的时候说「上次用的」才是实话 —— 写「使用中」会让人以为已经连上了。
     // 第二项 = 要不要高亮：自己那条用主题色牌子，「推荐」只是灰牌子，别抢眼。
-    final (String, bool)? tag = current
-        ? (connected ? '使用中' : '上次用的', true)
-        : (recommended ? const ('推荐', false) : null);
+    final (String, bool)? tag = down
+        ? const ('维修中', false)
+        : current
+            ? (connected ? '使用中' : '上次用的', true)
+            : (recommended ? const ('推荐', false) : null);
 
-    return ListTile(
+    final tile = ListTile(
       leading: LineFlag(option.name, size: 26),
       title: Row(
         children: [
@@ -378,6 +394,7 @@ class _LineTile extends StatelessWidget {
       selected: current,
       onTap: onTap,
     );
+    return down ? Opacity(opacity: 0.55, child: tile) : tile;
   }
 }
 
@@ -401,6 +418,7 @@ class _TieredLines extends StatefulWidget {
     required this.locateCountry,
     required this.locateKey,
     required this.onWantRegion,
+    this.downLines = const {},
   });
 
   final List<LineOption> options;
@@ -421,6 +439,9 @@ class _TieredLines extends StatefulWidget {
   final String locateCountry;
   final GlobalKey locateKey;
   final Future<void> Function() onWantRegion;
+
+  /// 维修中的线路名（PanelAccount.downLines）。
+  final Set<String> downLines;
 
   @override
   State<_TieredLines> createState() => _TieredLinesState();
@@ -799,10 +820,11 @@ class _TieredLinesState extends State<_TieredLines> {
 
   Widget _lineRow(LineOption o, String country, PurchaseTokens tokens, bool recommended) {
     final current = o.name == widget.currentName;
+    final down = widget.downLines.contains(o.name);
     final short = _shortName(country, o.name);
-    final grade = widget.speed.grades[o.name];
-    final best = widget.speed.bestName == o.name && grade != null && grade.level <= 2;
-    return Material(
+    final grade = down ? null : widget.speed.grades[o.name];
+    final best = !down && widget.speed.bestName == o.name && grade != null && grade.level <= 2;
+    final row = Material(
       key: current ? _currentLineKey : null,
       color: current ? tokens.selected : Colors.transparent,
       borderRadius: BorderRadius.circular(10),
@@ -834,7 +856,9 @@ class _TieredLinesState extends State<_TieredLines> {
                   Text(grade.word, style: TextStyle(fontSize: 10, color: tokens.secondary)),
                   if (best || current || recommended) const SizedBox(width: 8),
                 ],
-                if (best && current)
+                if (down)
+                  Text('维修中', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.secondary))
+                else if (best && current)
                   Text('使用中 · 最快', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.remaining))
                 else if (best)
                   Text('你这里最快', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.primary))
@@ -855,6 +879,7 @@ class _TieredLinesState extends State<_TieredLines> {
         ),
       ),
     );
+    return down ? Opacity(opacity: 0.55, child: row) : row;
   }
 }
 
