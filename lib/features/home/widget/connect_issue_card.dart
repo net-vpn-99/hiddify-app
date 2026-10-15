@@ -10,6 +10,7 @@ import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
+import 'package:hiddify/features/settings/notifier/battery_optimization/battery_optimizations_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 首页：连上了却不通时，告诉用户为什么、下一步怎么做。两端同一套文案和按钮
@@ -65,6 +66,9 @@ class ConnectIssueCard extends ConsumerWidget {
     final bool revoked = fault == 'revoked' && status is Disconnected;
     final bool engine = (fault == 'engine' || revoked) && status is Disconnected;
     final bool gone = engine && !revoked;
+    // 意外断开时查一下有没有「后台运行」权限：没有的话省电模式会停掉后台的 VPN（10-16 查：
+    // 近 7 天安卓 8 个人「核心没走正常停止就没了」）。只在查实没有权限时才说、才给按钮。
+    final bool noBackground = gone && ref.watch(batteryOptimizationNotifierProvider).valueOrNull == false;
     final bool egress = fault == 'egress' && status is Disconnected;
     final bool broken = !dead && !engine && !egress && outage && status is Connected;
     if (!dead && !engine && !egress && !broken) return const SizedBox.shrink();
@@ -80,6 +84,9 @@ class ConnectIssueCard extends ConsumerWidget {
       title = '连接断了';
       // 只说查到的事实（10-13 / 10-15）：系统收回了我们的 VPN，不猜是谁。
       body = '手机系统断开了光速雷达的 VPN 连接。手机上开着别的 VPN 的话，先关掉它，再点「重新连接」';
+    } else if (noBackground) {
+      title = '连接断了';
+      body = '光速雷达现在没有「后台运行」权限，手机省电时会停掉它的连接。点「允许后台运行」，在弹出的窗口里选「允许」，再点「重新连接」';
     } else if (engine) {
       title = '连接断了';
       body = canRepair ? '连接意外断开了，点「修复并重新连接」恢复' : '修复后还是断开了，请联系客服，我们帮你查';
@@ -146,7 +153,19 @@ class ConnectIssueCard extends ConsumerWidget {
             Wrap(
               spacing: 4,
               children: [
-                if (gone && canRepair)
+                if (noBackground)
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
+                    onPressed: () => ref.read(batteryOptimizationNotifierProvider.notifier).requestToIgnore(),
+                    child: const Text('允许后台运行'),
+                  ),
+                if (noBackground)
+                  TextButton(
+                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
+                    onPressed: reconnect,
+                    child: const Text('重新连接'),
+                  ),
+                if (gone && canRepair && !noBackground)
                   TextButton(
                     style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
                     onPressed: () => ref.read(localRepairProvider).repairAndReconnect('engine'),
@@ -180,7 +199,7 @@ class ConnectIssueCard extends ConsumerWidget {
                     onPressed: reconnect,
                     child: const Text('重新连接'),
                   ),
-                if (broken || (gone && !canRepair))
+                if (broken || (gone && !canRepair && !noBackground))
                   TextButton(
                     style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
                     onPressed: () => context.pushNamed('supportChat'),
