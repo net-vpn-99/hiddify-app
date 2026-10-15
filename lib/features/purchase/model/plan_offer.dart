@@ -164,6 +164,7 @@ class ShopTier {
     required this.full,
     this.seatsLeft,
     this.dailyGb = 0,
+    this.dailyMbps = 0,
     this.points = const [],
     this.recommended = false,
     this.compare = const [],
@@ -181,6 +182,9 @@ class ShopTier {
   final bool full;
   final int? seatsLeft;
   final int dailyGb;
+
+  /// 精品线路每天高速用完后的限速（GslShop 下发 daily_mbps，只有精品档有）。
+  final int dailyMbps;
 
   /// 好处列表，每条一句（GslShop 1.9.0 起下发）。老插件没有时退回 [sub] 一句。
   final List<String> points;
@@ -219,6 +223,7 @@ class ShopTier {
         full: row['full'] == true,
         seatsLeft: seats is num ? seats.toInt() : null,
         dailyGb: row['daily_gb'] is num ? (row['daily_gb'] as num).toInt() : int.tryParse('${row['daily_gb']}') ?? 0,
+        dailyMbps: row['daily_mbps'] is num ? (row['daily_mbps'] as num).toInt() : int.tryParse('${row['daily_mbps']}') ?? 0,
       ));
     }
     return out;
