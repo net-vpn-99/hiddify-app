@@ -6,6 +6,8 @@ import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/common/line_icon.dart';
 import 'package:hiddify/features/notice/notice_html.dart';
 import 'package:hiddify/features/notice/notice_store.dart';
+import 'package:hiddify/features/panel_auth/data/tg_gift_link.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -168,11 +170,16 @@ class _NoticeSheet extends ConsumerStatefulWidget {
 
 class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
   int _open = 0;
+  // 还能领「关注 TG 频道送 1 天」时不为空：公告里「关注 TG 频道」按钮换成领取（10-15 运营：TG 公告同步到客户端，顺带拉频道订阅）。
+  Map<String, dynamic>? _gift;
 
   @override
   void initState() {
     super.initState();
     _open = ref.read(noticeProvider).expandId;
+    ref.read(panelAuthProvider.notifier).tgGift().then((g) {
+      if (mounted && g?['state'] == 'open') setState(() => _gift = g);
+    });
   }
 
   @override
@@ -189,7 +196,7 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
 
     final Widget body;
     if (current != null) {
-      body = _NoticeDetail(key: ValueKey(current.id), item: current);
+      body = _NoticeDetail(key: ValueKey(current.id), item: current, gift: _gift);
     } else if (state.items.isEmpty) {
       body = SizedBox(
         height: 120,
@@ -361,9 +368,10 @@ class _NoticeRow extends StatelessWidget {
 }
 
 class _NoticeDetail extends StatefulWidget {
-  const _NoticeDetail({super.key, required this.item});
+  const _NoticeDetail({super.key, required this.item, this.gift});
 
   final NoticeItem item;
+  final Map<String, dynamic>? gift;
 
   @override
   State<_NoticeDetail> createState() => _NoticeDetailState();
@@ -397,6 +405,16 @@ class _NoticeDetailState extends State<_NoticeDetail> {
     super.dispose();
   }
 
+  /// 指向我们 TG 频道的链接，还能领时走领取（带着账号去机器人），别的照常用浏览器开。
+  void _open(String url) {
+    final gift = widget.gift;
+    if (gift != null && isOurTgChannel(url)) {
+      openTgGift(gift);
+    } else {
+      _openLink(url);
+    }
+  }
+
   Widget _block(NoticeBlock b, PurchaseTokens t) {
     final h = b.kind == 'h';
     final style = TextStyle(
@@ -406,7 +424,7 @@ class _NoticeDetailState extends State<_NoticeDetail> {
       color: h ? t.text : t.text.withValues(alpha: 0.82),
     );
     final text = Text.rich(TextSpan(
-      children: NoticeHtml.spans(b.html, style, t.warning, keep: _recognizers.add, onLink: _openLink),
+      children: NoticeHtml.spans(b.html, style, t.warning, keep: _recognizers.add, onLink: _open),
     ));
     switch (b.kind) {
       case 'li':
@@ -442,6 +460,9 @@ class _NoticeDetailState extends State<_NoticeDetail> {
   Widget build(BuildContext context) {
     final t = PurchaseTokens.of(context);
     final button = _blocks.where((b) => b.kind == 'button').firstOrNull;
+    final buttonText = button != null && widget.gift != null && isOurTgChannel(button.href)
+        ? (widget.gift!['label'] as String? ?? '关注TG频道再领一天')
+        : button?.html ?? '';
     // 第一次排版完：内容高度定了，看一下下面还有没有。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _checkMore();
@@ -515,8 +536,8 @@ class _NoticeDetailState extends State<_NoticeDetail> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 15, fontWeight: FontWeight.w700),
                 ),
-                onPressed: () => _openLink(button.href),
-                child: Text('${button.html}  →', maxLines: 1, overflow: TextOverflow.ellipsis),
+                onPressed: () => _open(button.href),
+                child: Text('$buttonText  →', maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
             ),
           )

@@ -30,6 +30,7 @@ import 'package:hiddify/features/home/widget/other_vpn_banner.dart';
 import 'package:hiddify/features/notice/notice_sheet.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
+import 'package:hiddify/features/panel_auth/data/tg_gift_link.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/active/auto_line_fixer.dart';
@@ -44,7 +45,6 @@ import 'package:hiddify/utils/number_formatters.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// 常用网站快捷一排是否正在显示。测试谷歌和这一排共用，避免各算一遍。
 final homeQuickSitesVisibleProvider = StateProvider<bool>((ref) => false);
@@ -661,19 +661,4 @@ class _RouteRulesEntry extends HookConsumerWidget {
       ),
     );
   }
-}
-
-/// 关注 TG 频道再领一天：装了 Telegram 直接拉起机器人（链接带着账号）；拉不起来就开官网中转页，那里有下载入口。
-Future<void> openTgGift(Map<String, dynamic> gift) async {
-  final tg = gift['tg'] as String? ?? '';
-  final page = gift['page'] as String? ?? '';
-  var ok = false;
-  if (tg.isNotEmpty) {
-    try {
-      ok = await launchUrl(Uri.parse(tg), mode: LaunchMode.externalApplication);
-    } catch (_) {
-      ok = false;
-    }
-  }
-  if (!ok && page.isNotEmpty) await UriUtils.tryLaunch(Uri.parse(page));
 }
