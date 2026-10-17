@@ -57,7 +57,7 @@ class PurchasePage extends ConsumerStatefulWidget {
 }
 
 class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBindingObserver {
-  bool _rulesOpen = false;
+  bool _compareOpen = false;
 
   @override
   void initState() {
@@ -182,43 +182,26 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                   child: Text(state.error!, style: TextStyle(color: t.fault, fontSize: 12)),
                 ),
               if (state.tiers.length >= 2) ...[
-                Text('选择版本', style: TextStyle(color: t.text, fontSize: 14, fontWeight: FontWeight.w600)),
-                // GslShop 1.10.0 起每档带 compare：画对比表，精品版在左，点一列选那一档。
-                if (state.tiers.every((t) => t.compare.isNotEmpty))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10, bottom: 4),
-                    child: TierCompareTable(
-                      t: t,
-                      tiers: _orderedTiers(state.tiers),
-                      selectedPlanId: selected?.planId,
-                      me: state.me,
-                      badge: byPlan.values.expand((x) => x).map((o) => o.badge).firstWhere((b) => b != null && b.isNotEmpty, orElse: () => null),
-                      monthPrice: {
-                        for (final o in state.plans)
-                          if (o.periodDays == 30) o.planId: o.priceLabel.replaceAll(RegExp(r'\.00$'), ''),
-                      },
-                      onTap: (tier) => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
-                    ),
-                  )
-                else
-                // 老插件没有 compare：两张卡片上下排，精品版（推荐档）在上。
+                Text('选版本', style: TextStyle(color: t.sub, fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
                 for (final tier in _orderedTiers(state.tiers))
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
-                    child: _TierCard(
+                    child: _VersionCard(
                       t: t,
                       tier: tier,
-                      picked: selected?.planId == tier.planId,
-                      current: state.me?.tier == tier.tier,
-                      blocked: tier.full && state.me?.tier != 'pro',
                       me: state.me,
-                      moreLine: tier.tier == 'pro' ? _proPerDayMore(state) : null,
+                      picked: selected?.planId == tier.planId && !(tier.tier == 'std' && state.me?.canBuyStd == false),
+                      monthPrice: {
+                        for (final o in state.plans)
+                          if (o.periodDays == 30) o.planId: o.priceLabel.replaceAll(RegExp(r'\.00$'), ''),
+                      }[tier.planId],
                       onTap: () => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
                     ),
                   ),
                 if (state.stdHint)
                   Container(
-                    margin: const EdgeInsets.only(top: 8),
+                    margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(color: t.accSoft, borderRadius: BorderRadius.circular(10)),
                     child: Text(
@@ -226,61 +209,54 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                       style: TextStyle(color: t.text, fontSize: 12),
                     ),
                   ),
-              ],
-              SizedBox(height: state.tiers.length >= 2 ? 22 : 4),
-              // 「选择时长」右边放「流量与购买说明」开关（跟 Windows 一样，不单独占一行）。
-              Row(children: [
-                Text('选择时长', style: TextStyle(color: t.text, fontSize: 14, fontWeight: FontWeight.w600)),
-                const Spacer(),
-                InkWell(
-                  onTap: () => setState(() => _rulesOpen = !_rulesOpen),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Text(_rulesOpen ? '流量与购买说明  ˄' : '流量与购买说明  ›',
-                        style: TextStyle(color: t.accHover, fontSize: 12)),
-                  ),
-                ),
-              ]),
-              for (final entry in byPlan.entries) ...[
-                if (state.tiers.length >= 2 && selected != null && entry.key != selected.planId)
-                  const SizedBox.shrink()
-                else ...[
-                  if (multiPlan && state.tiers.length < 2)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 10, bottom: 6),
-                      child: Text(entry.value.first.name,
-                          style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.w700)),
+                // 对比表收进「详细对比 ›」（GslShop 1.10.0 起每档带 compare）。
+                if (state.tiers.every((x) => x.compare.isNotEmpty)) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                      onPressed: () => setState(() => _compareOpen = !_compareOpen),
+                      child: Text(_compareOpen ? '收起详细对比 ˄' : '两个版本详细对比 ›', style: const TextStyle(fontSize: 13)),
                     ),
-                  // 两列，卡片矮一点，标准版 4 档也一屏放下（Win 是一行 4 张）。
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8, bottom: 4),
-                    child: LayoutBuilder(
-                      builder: (context, box) {
-                        final w = (box.maxWidth - 10) / 2;
-                        return Wrap(
-                          spacing: 10,
-                          runSpacing: 12,
-                          children: [
-                            for (final o in entry.value)
-                              SizedBox(
-                                width: w,
-                                child: OfferCard(
-                                  t: t,
-                                  offer: o,
-                                  selected: selected != null && selected.planId == o.planId && selected.period == o.period,
-                                  onTap: () => ref.read(purchaseNotifierProvider.notifier).select(o),
-                                ),
-                              ),
-                          ],
-                        );
+                  ),
+                  if (_compareOpen)
+                    TierCompareTable(
+                      t: t,
+                      tiers: _orderedTiers(state.tiers),
+                      selectedPlanId: selected?.planId,
+                      me: state.me,
+                      monthPrice: {
+                        for (final o in state.plans)
+                          if (o.periodDays == 30) o.planId: o.priceLabel.replaceAll(RegExp(r'\.00$'), ''),
                       },
+                      onTap: (tier) => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
                     ),
-                  ),
                 ],
               ],
+              SizedBox(height: state.tiers.length >= 2 ? 14 : 4),
+              Text('选时长', style: TextStyle(color: t.sub, fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
+              for (final entry in byPlan.entries)
+                if (!(state.tiers.length >= 2 && selected != null && entry.key != selected.planId)) ...[
+                  if (multiPlan && state.tiers.length < 2)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 6),
+                      child: Text(entry.value.first.name,
+                          style: TextStyle(color: t.text, fontSize: 16, fontWeight: FontWeight.w700)),
+                    ),
+                  for (final o in entry.value)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _DurationRow(
+                        t: t,
+                        offer: o,
+                        selected: selected != null && selected.planId == o.planId && selected.period == o.period,
+                        onTap: () => ref.read(purchaseNotifierProvider.notifier).select(o),
+                      ),
+                    ),
+                ],
+              const SizedBox(height: 2),
               _benefits(t, selected),
-              _rules(t, selected),
             ],
           ),
         ),
@@ -358,7 +334,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
   Widget _benefits(OneRayTokens t, PlanOffer? offer) {
     final devices = offer?.deviceLimit;
     final deviceText = (devices != null && devices > 0) ? '最多 $devices 台设备同时在线' : '设备数以套餐为准';
-    final s = TextStyle(color: t.sub, fontSize: 11);
+    final s = TextStyle(color: t.sub, fontSize: 12);
     final acc = ref.watch(panelAuthProvider).account;
     final paid = acc?.paidQuota ?? 0;
     final paidMbps = acc?.paidThrottleMbps ?? 0;
@@ -386,25 +362,6 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
             ? (offer.trafficLabel == '不限流量' ? '所有时长都不限流量' : offer.trafficLabel)
             : null);
     return Text(traffic != null ? '$traffic　·　$deviceText' : deviceText, style: s.copyWith(height: 1.45));
-  }
-
-  Widget _rules(OneRayTokens t, PlanOffer? offer) {
-    final planRule = offer == null
-        ? '购买后套餐权益以订单和后台规则为准。'
-        : '本档 ${offer.durationLabel}：${offer.trafficLabel}。到期时间、流量是否重置以订单确认结果为准。';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (_rulesOpen)
-          Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 6),
-            child: Text(
-              '$planRule\n日均价按参考天数折算，仅用于比较；省额与同套餐连续月付比较。最终付款金额以订单核算为准。',
-              style: TextStyle(color: t.sub, fontSize: 11, height: 1.4),
-            ),
-          ),
-      ],
-    );
   }
 
   /// 「允许游客直接购买」开关（GslGuest）。**不能**写成 `ref.read(...).valueOrNull ?? false`：
@@ -488,9 +445,9 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.open_in_new_rounded, size: 48, color: t.sub),
+            _StateBadge(t: t, icon: Icons.more_horiz_rounded),
             const SizedBox(height: 16),
-            Text('已打开收银台', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: t.text)),
+            Text('已打开收银台', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: t.text)),
             const SizedBox(height: 8),
             Text('在收银台完成付款，然后回到这里点下面的按钮。',
                 textAlign: TextAlign.center, style: TextStyle(color: t.sub)),
@@ -506,12 +463,17 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               Text(state.error!, textAlign: TextAlign.center, style: TextStyle(color: t.fault)),
             ],
             const SizedBox(height: 24),
-            FilledButton(
-              onPressed: notifier.checkPayment,
-              child: const Text('我已完成支付'),
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: FilledButton(onPressed: notifier.checkPayment, child: const Text('我已完成付款')),
             ),
-            const SizedBox(height: 8),
-            OutlinedButton(onPressed: notifier.reopenPayment, child: const Text('重新打开支付')),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(onPressed: notifier.reopenPayment, child: const Text('收银台没打开？重新打开')),
+            ),
             const SizedBox(height: 8),
             TextButton(
               onPressed: () async {
@@ -519,7 +481,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                   context: context,
                   builder: (ctx) => AlertDialog(
                     backgroundColor: t.card,
-                    content: const Text('放弃这笔订单？如果你已经付款，请不要放弃，改点「我已完成支付」。'),
+                    content: const Text('放弃这笔订单？如果你已经付款，请不要放弃，改点「我已完成付款」。'),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('再等等')),
                       TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('放弃订单')),
@@ -544,11 +506,10 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(fulfilled ? Icons.check_circle_rounded : Icons.hourglass_top_rounded,
-                size: 56, color: fulfilled ? t.acc : t.fault),
+            _StateBadge(t: t, icon: fulfilled ? Icons.check_rounded : Icons.hourglass_top_rounded),
             const SizedBox(height: 16),
-            Text(fulfilled ? '购买成功，套餐已开通' : '已收到付款，套餐开通中',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: t.text)),
+            Text(fulfilled ? '付好了，套餐已开通' : '已收到付款，套餐开通中',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: t.text)),
             const SizedBox(height: 12),
             if (!fulfilled) ...[
               Text('后台正在开通权益，通常一两分钟内完成。',
@@ -581,11 +542,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               const SizedBox(height: 20),
               Container(
                 padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: t.card,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: t.fault.withValues(alpha: .5)),
-                ),
+                decoration: BoxDecoration(color: t.card, borderRadius: BorderRadius.circular(16)),
                 child: Column(
                   children: [
                     Text('加个邮箱，防丢',
@@ -824,145 +781,6 @@ class _MeterBar extends StatelessWidget {
   }
 }
 
-class _TierCard extends StatelessWidget {
-  const _TierCard({
-    required this.t,
-    required this.tier,
-    required this.picked,
-    required this.current,
-    required this.blocked,
-    required this.me,
-    required this.onTap,
-    this.moreLine,
-  });
-
-  final OneRayTokens t;
-  final ShopTier tier;
-  final bool picked;
-  final bool current;
-  final bool blocked;
-  final ShopMe? me;
-  final VoidCallback onTap;
-
-  /// 精品版卡片上的「比标准版每天多 ¥X」。
-  final String? moreLine;
-
-  @override
-  Widget build(BuildContext context) {
-    final tone = tier.keyTone == 'good' || tier.keyTone == 'connected' ? t.acc : t.fault;
-    final stdBlocked = tier.tier == 'std' && me?.canBuyStd == false;
-    final gift = me != null && tier.tier == 'std' && (me!.trial == 'locked' || me!.trial == 'offer');
-    return Opacity(
-      opacity: blocked || stdBlocked ? 0.55 : 1,
-      child: InkWell(
-        onTap: blocked ? null : onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
-          decoration: BoxDecoration(
-            color: blocked ? t.panel : t.card,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: picked ? t.acc : (current ? t.acc : t.ring),
-              width: picked || current ? 2 : 1,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (blocked)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('本月名额已满', style: TextStyle(color: t.sub, fontSize: 11)),
-                ),
-              Wrap(
-                spacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.end,
-                children: [
-                  Text(tier.name, style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700)),
-                  Text(tier.keyLine, style: TextStyle(color: tone, fontSize: 12, fontWeight: FontWeight.w600)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              // 好处列表：服务端 GslShop 1.9.0 下发 points，老插件退回 sub 一句。
-              for (final p in stdBlocked
-                  ? const ['精品版已包含，不用另买']
-                  : (tier.points.isNotEmpty ? tier.points : [if (tier.sub.isNotEmpty) tier.sub]))
-                Padding(
-                  padding: const EdgeInsets.only(top: 3),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('✓', style: TextStyle(color: t.acc, fontSize: 12, height: 1.35)),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(p, style: TextStyle(color: t.sub, fontSize: 12, height: 1.35)),
-                      ),
-                    ],
-                  ),
-                ),
-              if ((moreLine != null && !current) || (tier.tier == 'pro' && tier.dailyGb > 0))
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Wrap(
-                    spacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      if (moreLine != null && !current)
-                        Text(moreLine!,
-                            style: TextStyle(color: t.acc, fontSize: 12, fontWeight: FontWeight.w700)),
-                      if (tier.tier == 'pro' && tier.dailyGb > 0)
-                        Text('精品线路每天 ${tier.dailyGb}GB 高速', style: TextStyle(color: t.sub, fontSize: 11)),
-                    ],
-                  ),
-                ),
-              if (gift)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    (me!.trialMinutes == 60) ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验',
-                    style: TextStyle(color: t.acc, fontSize: 11),
-                  ),
-                ),
-            ],
-          ),
-        ),
-            if (current)
-              Positioned(
-                top: -8,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-                    decoration: BoxDecoration(color: t.acc, borderRadius: BorderRadius.circular(8)),
-                    child: Text('✓ 你现在用的', style: TextStyle(color: t.accInk, fontSize: 11)),
-                  ),
-                ),
-              ),
-            // 「推荐」角标，样式同时长卡片的角标。
-            if (tier.recommended && !current && !blocked)
-              Positioned(
-                top: -8,
-                right: 10,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(color: t.acc, borderRadius: BorderRadius.circular(8)),
-                  child: Text('推荐', style: TextStyle(color: t.accInk, fontSize: 10, fontWeight: FontWeight.bold)),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 10-16 运营定方案 B（参照 GoMami，两端一样）：浅灰底上一张白卡，不描边，只带很淡的阴影。
 BoxDecoration _softCard(BuildContext context, OneRayTokens t) {
   final dark = Theme.of(context).brightness == Brightness.dark;
   return BoxDecoration(
@@ -982,8 +800,10 @@ class _Pill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = switch (tone) { 'warm' => t.accSoft, 'ok' => t.accSoft, _ => t.panel };
+    // solid：强调色实心（推荐 / 当前，B 夜航小标签）；muted：浅底灰字（名额满 / 已包含）。
+    final bg = switch (tone) { 'solid' => t.acc, 'warm' => t.accSoft, 'ok' => t.accSoft, _ => t.panel };
     final fg = switch (tone) {
+      'solid' => t.accInk,
       'warm' => t.accHover,
       'ok' => t.acc,
       'current' => t.sub,
@@ -1020,6 +840,21 @@ class _PickRadio extends StatelessWidget {
 
 /// 版本对比表：一张白卡，左边项目名，右边每档一列；选中那一列整列铺浅橙 + 右上角圆勾，
 /// 没选的放空心圆圈。不描边、不画格子框，只有很淡的行线。点哪一格都选那一档。
+/// 每档最多一个状态小标签（两端一样，Windows ShopOverlay.tierBadge）。
+/// 精品版：当前 → 本月名额已满 → 推荐；标准版：当前 → 精品版已包含 → 送精品线路体验。
+/// 不写「剩 N 个名额」（运营 10-16：不打算限制购买人数）。返回 (字, 口气)：current / muted / warm。
+(String, String)? tierBadge(ShopTier tier, ShopMe? me) {
+  if (me?.tier == tier.tier) return ('当前', 'current');
+  if (tier.tier == 'std' && me?.canBuyStd == false) return ('精品版已包含', 'muted');
+  if (tier.full && me?.tier != 'pro') return ('本月名额已满', 'muted');
+  if (tier.tier == 'std' && me != null && (me.trial == 'locked' || me.trial == 'offer')) {
+    return (me.trialMinutes == 60 ? '送 1 小时精品线路体验' : '送 ${me.trialMinutes} 分钟精品线路体验', 'warm');
+  }
+  // 只写「推荐」，跟时长的「推荐」区分开。
+  if (tier.recommended) return ('推荐', 'warm');
+  return null;
+}
+
 class TierCompareTable extends StatelessWidget {
   const TierCompareTable({
     required this.t,
@@ -1046,20 +881,7 @@ class TierCompareTable extends StatelessWidget {
   bool _picked(ShopTier tier) => !_stdBlocked(tier) && selectedPlanId == tier.planId;
   bool _dim(ShopTier tier) => _stdBlocked(tier) || _seatBlocked(tier);
 
-  /// 每档最多一个状态小标签（两端一样）。
-  /// 精品版：当前 → 本月名额已满 → 推荐；标准版：当前 → 精品版已包含 → 送精品线路体验。
-  /// 不写「剩 N 个名额」（运营 10-16：不打算限制购买人数）。
-  (String, String)? _badge(ShopTier tier) {
-    if (me?.tier == tier.tier) return ('当前', 'current');
-    if (_stdBlocked(tier)) return ('精品版已包含', 'muted');
-    if (_seatBlocked(tier)) return ('本月名额已满', 'muted');
-    if (tier.tier == 'std' && me != null && (me!.trial == 'locked' || me!.trial == 'offer')) {
-      return (me!.trialMinutes == 60 ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验', 'warm');
-    }
-    // 只写「推荐」，跟时长卡的「推荐选择」区分开。
-    if (tier.recommended) return ('推荐', 'warm');
-    return null;
-  }
+  (String, String)? _badge(ShopTier tier) => tierBadge(tier, me);
 
   /// 「适合」写在版本名下面（一眼知道这档给谁用），不再占表里一行。两端一样。
   static bool _isTagline(CompareCell c) => c.label == '适合';
@@ -1181,8 +1003,107 @@ class TierCompareTable extends StatelessWidget {
   }
 }
 
-class OfferCard extends StatelessWidget {
-  const OfferCard({required this.t, required this.offer, required this.selected, required this.onTap});
+/// 版本卡（B 夜航：名字 + 小标签 + 月价 / 适合谁 / 三个短标签）。选中 = 强调色浅底 + 2px 强调色边。
+class _VersionCard extends StatelessWidget {
+  const _VersionCard({
+    required this.t,
+    required this.tier,
+    required this.me,
+    required this.picked,
+    required this.onTap,
+    this.monthPrice,
+  });
+
+  final OneRayTokens t;
+  final ShopTier tier;
+  final ShopMe? me;
+  final bool picked;
+  final String? monthPrice;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final seatBlocked = tier.full && me?.tier != 'pro';
+    final stdBlocked = tier.tier == 'std' && me?.canBuyStd == false;
+    final badge = tierBadge(tier, me);
+    final fit = tier.compare.where((c) => c.label == '适合').map((c) => c.value).firstOrNull ?? tier.sub;
+    final chips = (tier.tags.isNotEmpty ? tier.tags : tier.points).take(3).toList();
+    return Opacity(
+      opacity: seatBlocked || stdBlocked ? 0.55 : 1,
+      child: Material(
+        color: picked ? t.accSoft : t.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: picked ? BorderSide(color: t.acc, width: 2) : BorderSide.none,
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: seatBlocked ? null : onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(tier.name, style: TextStyle(color: t.text, fontSize: 17, fontWeight: FontWeight.w700)),
+                    if (badge != null) ...[
+                      const SizedBox(width: 8),
+                      _Pill(t: t, text: badge.$1, tone: badge.$2 == 'muted' ? 'muted' : 'solid'),
+                    ],
+                    const Spacer(),
+                    if (monthPrice != null) ...[
+                      Text(
+                        monthPrice!,
+                        style: TextStyle(
+                          fontFamily: OneRayTokens.numberFont,
+                          color: t.text,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(' /月', style: TextStyle(color: t.sub, fontSize: 12)),
+                    ],
+                  ],
+                ),
+                if (fit.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(fit, style: TextStyle(color: t.sub, fontSize: 12)),
+                ],
+                if (chips.isNotEmpty && !stdBlocked) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final c in chips)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(color: t.panel, borderRadius: BorderRadius.circular(8)),
+                          child: Text(c, style: TextStyle(color: t.text, fontSize: 12)),
+                        ),
+                    ],
+                  ),
+                ],
+                if (stdBlocked || seatBlocked) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    stdBlocked ? '你是精品版会员，标准线路已经包含，照常满速用。' : '这个月精品版名额已满，可以先用标准版。',
+                    style: TextStyle(color: t.sub, fontSize: 12, height: 1.5),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 时长一行（B 夜航：单选圆点 · 时长 · 推荐 …… 约 ¥X/天 · 价格）。
+class _DurationRow extends StatelessWidget {
+  const _DurationRow({required this.t, required this.offer, required this.selected, required this.onTap});
 
   final OneRayTokens t;
   final PlanOffer offer;
@@ -1191,37 +1112,59 @@ class OfferCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final priceLabel = offer.priceLabel.replaceAll(RegExp(r'\.00$'), '');
-    // 白卡；选中 = 主色细边 + 价格变主色。「推荐」小标签放卡片里右上（跟 Windows 一样）。
-    return Container(
-      decoration: _softCard(context, t),
+    final price = offer.priceLabel.replaceAll(RegExp(r'\.00$'), '');
+    final daily = offer.dailyLabel?.replaceFirst(RegExp(r'^每天\s*'), '');
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: '${offer.durationLabel} $price',
       child: Material(
-        type: MaterialType.transparency,
+        color: selected ? t.accSoft : t.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: selected ? BorderSide(color: t.acc, width: 2) : BorderSide.none,
+        ),
         child: InkWell(
+          borderRadius: BorderRadius.circular(14),
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            height: 72,
-            padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: selected ? Border.all(color: t.acc, width: 1.5) : null,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  Text(offer.durationLabel, style: TextStyle(color: t.sub, fontSize: 12)),
+          child: SizedBox(
+            height: 54,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 18,
+                    height: 18,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: selected ? t.acc : t.dim, width: 2),
+                    ),
+                    child: selected
+                        ? Container(width: 8, height: 8, decoration: BoxDecoration(color: t.acc, shape: BoxShape.circle))
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(offer.durationLabel, style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w600)),
+                  if (offer.badge != null) ...[
+                    const SizedBox(width: 8),
+                    _Pill(t: t, text: offer.badge!, tone: offer.recommended ? 'solid' : 'muted'),
+                  ],
                   const Spacer(),
-                  if (offer.badge != null) _Pill(t: t, text: offer.badge!, tone: 'warm'),
-                ]),
-                const SizedBox(height: 2),
-                Text(priceLabel,
-                    style: TextStyle(color: selected ? t.accHover : t.text, fontSize: 21, fontWeight: FontWeight.w600, height: 1.15)),
-                if (offer.dailyLabel != null)
-                  Text('约 ${offer.dailyLabel}', maxLines: 1, style: TextStyle(color: t.sub, fontSize: 11)),
-              ],
+                  if (daily != null) Text('约 $daily/天', style: TextStyle(color: t.sub, fontSize: 12)),
+                  const SizedBox(width: 10),
+                  Text(
+                    price,
+                    style: TextStyle(
+                      fontFamily: OneRayTokens.numberFont,
+                      color: t.text,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1257,51 +1200,35 @@ class CheckoutBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final priceLabel = (offer?.priceLabel ?? '').replaceAll(RegExp(r'\.00$'), '');
+    final payText = payLabel == '去支付' && priceLabel.isNotEmpty ? '支付 $priceLabel' : payLabel;
+    // B 夜航：底部一块写清「买的是什么 · 多少钱 · 买完能用到哪天」，下面一颗满宽的主按钮。
     return Material(
-      color: t.card,
-      shape: Border(top: BorderSide(color: t.ring.withValues(alpha: 0.6))),
+      color: t.sheet,
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          // 一行：左边「已选 / 买完能用到」两行小字，右边付款按钮（金额写在按钮上）。两端一样。
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      offer != null ? '$pickedName · ${offer!.durationLabel}' : '请选择一档',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: t.text, fontSize: 14, fontWeight: FontWeight.w500),
-                    ),
-                    // 手机上一行放不下，单独一行（Windows 宽，跟在「已选」后面）。
-                    if (offer != null && pickedNote != null) ...[
-                      const SizedBox(height: 2),
-                      Text(pickedNote!, maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: t.text, fontSize: 11, fontWeight: FontWeight.w500)),
-                    ],
-                    if (expiryHint != null) ...[
-                      const SizedBox(height: 2),
-                      Text(expiryHint!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: t.sub, fontSize: 11)),
-                    ],
-                  ],
-                ),
+              Text(
+                offer != null ? '$pickedName · ${offer!.durationLabel} · ${payText.replaceFirst('支付 ', '')}' : '请选择一档',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: t.text, fontSize: 15, fontWeight: FontWeight.w700),
               ),
-              const SizedBox(width: 10),
-              FilledButton(
-                // 颜色、胶囊形状都跟全局主题走（B 夜航主按钮）；这里只定尺寸和不可点时的底色。
-                style: FilledButton.styleFrom(disabledBackgroundColor: t.panel, minimumSize: const Size(132, 44)),
-                onPressed: onPay,
-                child: Text(
-                  payLabel == '去支付' && priceLabel.isNotEmpty ? '支付 $priceLabel' : payLabel,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              if (offer != null && pickedNote != null)
+                Text(pickedNote!, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.acc, fontSize: 12)),
+              if (expiryHint != null)
+                Text(expiryHint!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.sub, fontSize: 12)),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 52,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(disabledBackgroundColor: t.panel),
+                  onPressed: onPay,
+                  child: Text(payText),
                 ),
               ),
             ],
@@ -1364,6 +1291,24 @@ class _PendingOrderBanner extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 等待付款 / 付好了 页顶上那个圆：强调色浅底 + 图标（B 夜航状态卡）。
+class _StateBadge extends StatelessWidget {
+  const _StateBadge({required this.t, required this.icon});
+
+  final OneRayTokens t;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(color: t.accSoft, shape: BoxShape.circle),
+      child: Icon(icon, size: 28, color: t.acc),
     );
   }
 }

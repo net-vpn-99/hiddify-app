@@ -823,7 +823,7 @@ class _TieredLinesState extends State<_TieredLines> {
                               '${lines.length} 条线路${usingHere ? ' · 正在用这里的' : ''}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 10, color: ink3),
+                              style: TextStyle(fontSize: 11, color: ink3),
                             ),
                           ],
                         ),
@@ -834,7 +834,7 @@ class _TieredLinesState extends State<_TieredLines> {
                     if (!blocked && _bestGrade(lines) != null) ...[
                       _SpeedDot(level: _bestGrade(lines)!.level, tokens: tokens),
                       const SizedBox(width: 4),
-                      Text(_bestGrade(lines)!.word, style: TextStyle(fontSize: 10, color: tokens.sub)),
+                      Text(_bestGrade(lines)!.word, style: TextStyle(fontSize: 11, color: tokens.sub)),
                       const SizedBox(width: 6),
                     ],
                     if (blocked)
@@ -890,7 +890,7 @@ class _TieredLinesState extends State<_TieredLines> {
     final grade = down ? null : widget.speed.grades[o.name];
     final best = !down && widget.speed.bestName == o.name && grade != null && grade.level <= 2;
     Text label(String text, Color color) =>
-        Text(text, maxLines: 1, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color));
+        Text(text, maxLines: 1, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color));
     final Widget? status = down
         ? label('维修中', tokens.sub)
         : best && current
@@ -902,7 +902,7 @@ class _TieredLinesState extends State<_TieredLines> {
                     : recommended
                         ? label('推荐', tokens.acc)
                         : null;
-    final dot = Text(' · ', style: TextStyle(fontSize: 10, color: tokens.sub.withValues(alpha: 0.7)));
+    final dot = Text(' · ', style: TextStyle(fontSize: 11, color: tokens.sub.withValues(alpha: 0.7)));
     final row = Material(
       key: current ? _currentLineKey : null,
       color: current ? tokens.accSoft : Colors.transparent,
@@ -951,14 +951,14 @@ class _TieredLinesState extends State<_TieredLines> {
                                 maxLines: 1,
                                 softWrap: false,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 10, color: tokens.sub.withValues(alpha: 0.7)),
+                                style: TextStyle(fontSize: 11, color: tokens.sub.withValues(alpha: 0.7)),
                               ),
                             ),
                           if (grade != null) ...[
                             if (o.desc.isNotEmpty) const SizedBox(width: 8),
                             _SpeedDot(level: grade.level, tokens: tokens),
                             const SizedBox(width: 4),
-                            Text(grade.word, style: TextStyle(fontSize: 10, color: tokens.sub)),
+                            Text(grade.word, style: TextStyle(fontSize: 11, color: tokens.sub)),
                           ],
                           if (status != null) ...[
                             if (o.desc.isNotEmpty || grade != null) dot,

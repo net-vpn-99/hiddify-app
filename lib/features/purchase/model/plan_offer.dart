@@ -166,6 +166,7 @@ class ShopTier {
     this.dailyGb = 0,
     this.dailyMbps = 0,
     this.points = const [],
+    this.tags = const [],
     this.recommended = false,
     this.compare = const [],
   });
@@ -189,6 +190,9 @@ class ShopTier {
   /// 好处列表，每条一句（GslShop 1.9.0 起下发）。老插件没有时退回 [sub] 一句。
   final List<String> points;
 
+  /// 版本卡上的三个短标签（GslShop 1.13.0 起下发）。老插件没有时退回 [points] 前三条。
+  final List<String> tags;
+
   /// 推荐档（精品版），放第一张、带「推荐」角标、新买默认选它。老插件没这个字段时按精品版。
   final bool recommended;
 
@@ -202,6 +206,7 @@ class ShopTier {
       if (planId <= 0) continue;
       final seats = row['seats_left'];
       final pts = row['points'];
+      final tgs = row['tags'];
       final rec = row['recommended'];
       final cmp = row['compare'];
       out.add(ShopTier(
@@ -213,6 +218,7 @@ class ShopTier {
               ]
             : const [],
         points: pts is List ? [for (final p in pts) if ('$p'.trim().isNotEmpty) '$p'.trim()] : const [],
+        tags: tgs is List ? [for (final g in tgs) if ('$g'.trim().isNotEmpty) '$g'.trim()] : const [],
         recommended: rec is bool ? rec : '${row['tier']}' == 'pro',
         tier: '${row['tier'] ?? ''}',
         planId: planId,

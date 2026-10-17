@@ -7,9 +7,7 @@ import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
-import 'package:hiddify/core/theme/app_theme_mode.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
-import 'package:hiddify/core/theme/theme_preferences.dart';
 import 'package:hiddify/features/common/soft_card.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -34,20 +32,15 @@ enum ConfigOptionSection {
   };
 }
 
-/// 「我的」页（10-15 精简，跟 Windows「更多」同一个思路：首页有的这里不再放一遍）。
+/// 「我的」页（B 夜航，画布「我的」；跟 Windows「我的」侧栏同样的内容）。
 ///
-/// 从上到下：**账号卡**（我是谁 + 剩多久，点进账号管理；续费 / 在另一台设备上用）→
-/// **四个方块**（邀请返利 / 在线客服 / 常见问题 / 连接诊断）→ **初始化本地网络** →
+/// 从上到下：**账户卡**（我是谁 + 剩多久，点进账号管理；今日高速、设备；一颗「续费 / 升级」）→
+/// **一列入口**（在另一台设备上用 / 邀请返利 / 联系客服 / 常见问题 / 连接诊断 / 初始化本地网络 / 设置）→
 /// **最下面一行小字**（版本号 · 官网 · 备用入口，点版本号进「关于」检查更新）。
 ///
 /// 不在这里的：常用网站、TG 频道在首页。「应用设置」（内存上限 / 日志级别 / 调试模式…）和
 /// 「高级设置」（路由 / DNS / 入站 / TLS / WARP / 日志）普通用户用不上，在「关于」页连点版本号
 /// 5 次才显出来（Preferences.devMode），客服排障时用。
-///
-/// 样子参照 GoMami 会员中心（运营 10-15 定）：暖浅灰底、白卡不描边只带淡阴影（SoftCard）、
-/// 每个图标垫一块强调色浅底小方块（IconTile），主按钮用强调色（B 夜航只有一种强调色）。
-/// 底色和字色用 OneRayTokens（跟 Windows / 官网同一套）。
-/// 试过两版不要的：Material 从金色种子算出来的米色卡 + 橄榄棕按钮（土）；黑白（压抑）。
 class SettingsPage extends HookConsumerWidget {
   SettingsPage({super.key, String? section})
     : section = section != null ? ConfigOptionSection.values.byName(section) : null;
@@ -58,6 +51,8 @@ class SettingsPage extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(translationsProvider).requireValue;
     final devMode = ref.watch(Preferences.devMode);
+    final unseen = ref.watch(supportChatNotifierProvider.select((s) => s.unseenAgentCount));
+    final loggedIn = ref.watch(Preferences.panelLoggedIn);
 
     final tk = OneRayTokens.of(context);
     return Scaffold(
@@ -66,36 +61,54 @@ class SettingsPage extends HookConsumerWidget {
       body: ListView(
         children: [
           const AccountCard(),
-          const _ActionGrid(),
-          const MenuGroup(children: [_AppearanceRow(), _LocalInitRow()]),
+          MenuGroup(
+            children: [
+              if (loggedIn) MenuRow(title: '在另一台设备上用', hint: '配对码', onTap: () => context.pushNamed('addDevice')),
+              MenuRow(
+                title: '邀请返利',
+                hint: '好友付款你得返利',
+                // 没账号也照样摆在这儿（首页不拦人那套），点了才说要先有账号。
+                onTap: () => loggedIn
+                    ? openInvite(context)
+                    : ref.read(dialogNotifierProvider.notifier).showNeedAccount(
+                        message: '邀请返利要先有账号。登录已有账号，或者买个套餐就能用。',
+                      ),
+              ),
+              MenuRow(title: '联系客服', dot: unseen > 0, onTap: () => context.pushNamed('supportChat')),
+              MenuRow(
+                title: '常见问题',
+                onTap: () async {
+                  await RemoteSiteConfig.ensureLoaded();
+                  await UriUtils.tryLaunch(Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.faqUrl)));
+                },
+              ),
+              DiagTile(builder: (context, busy, run) => MenuRow(title: '连接诊断', busy: busy, onTap: run)),
+              const _LocalInitRow(),
+              MenuRow(title: '设置', hint: '外观', onTap: () => context.pushNamed('appSettings')),
+            ],
+          ),
           const _FootLinks(),
           // 连点版本号解锁出来的那堆，普通用户永远看不到。
           if (devMode) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Text(
-                '高级设置（客服排障用）',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
-                ),
-              ),
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text('高级设置（客服排障用）', style: TextStyle(fontSize: 12, color: tk.fault)),
             ),
             MenuGroup(
               children: [
-                MenuRow(icon: Icons.tune_rounded, title: '应用设置', onTap: () => context.pushNamed('general')),
-                for (final (title, icon, name) in [
-                  (t.pages.settings.routing.title, Icons.route_rounded, 'routeOptions'),
-                  (t.pages.settings.dns.title, Icons.dns_rounded, 'dnsOptions'),
-                  (t.pages.settings.inbound.title, Icons.input_rounded, 'inboundOptions'),
-                  (t.pages.settings.tlsTricks.title, Icons.content_cut_rounded, 'tlsTricks'),
-                  (t.pages.settings.warp.title, Icons.cloud_rounded, 'warpOptions'),
-                  (t.pages.logs.title, Icons.description_rounded, 'logs'),
+                MenuRow(title: '应用设置', onTap: () => context.pushNamed('general')),
+                for (final (title, name) in [
+                  (t.pages.settings.routing.title, 'routeOptions'),
+                  (t.pages.settings.dns.title, 'dnsOptions'),
+                  (t.pages.settings.inbound.title, 'inboundOptions'),
+                  (t.pages.settings.tlsTricks.title, 'tlsTricks'),
+                  (t.pages.settings.warp.title, 'warpOptions'),
+                  (t.pages.logs.title, 'logs'),
                 ])
-                  MenuRow(icon: icon, title: title, onTap: () => context.go(context.namedLocation(name))),
+                  MenuRow(title: title, onTap: () => context.go(context.namedLocation(name))),
                 // 订阅管理：1.1.28 起首页和线路页都不再有入口（订阅是自动导入的，用户没
                 // 必要碰）。留在这里，万一要手动导一份配置排障还能找到。
                 MenuRow(
-                  icon: Icons.swap_horiz_rounded,
                   title: t.pages.profiles.title,
                   onTap: () => ref.read(bottomSheetsNotifierProvider.notifier).showProfilesOverview(),
                 ),
@@ -109,50 +122,7 @@ class SettingsPage extends HookConsumerWidget {
   }
 }
 
-/// 外观三选一（B 夜航 §3.9，跟 Windows 设置里同一个样子）。以前藏在「高级设置 → 应用设置」，普通用户找不到。
-/// 「纯黑」不单独给入口：选过的人这里显示成「深色」。
-class _AppearanceRow extends ConsumerWidget {
-  const _AppearanceRow();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tk = OneRayTokens.of(context);
-    final mode = ref.watch(themePreferencesProvider);
-    final shown = mode == AppThemeMode.black ? AppThemeMode.dark : mode;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      // 标题一行、三选一另起一行占满宽：窄屏、系统字号调大时「跟随系统」也不会被挤断。
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const IconTile(Icons.contrast_rounded, size: 38),
-              const SizedBox(width: 16),
-              Text('外观', style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: tk.text)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<AppThemeMode>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: AppThemeMode.system, label: Text('跟随系统')),
-                ButtonSegment(value: AppThemeMode.dark, label: Text('深色')),
-                ButtonSegment(value: AppThemeMode.light, label: Text('浅色')),
-              ],
-              selected: {shown},
-              onSelectionChanged: (v) => ref.read(themePreferencesProvider.notifier).changeThemeMode(v.first),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 一组行放在一张白卡里，行之间画细线。
+/// 一组行放在一张卡里（不描边），行之间画细线。
 class MenuGroup extends StatelessWidget {
   const MenuGroup({super.key, required this.children});
 
@@ -167,7 +137,7 @@ class MenuGroup extends StatelessWidget {
         child: Column(
           children: [
             for (var i = 0; i < children.length; i++) ...[
-              if (i > 0) Divider(height: 1, indent: 72, color: tk.ring.withValues(alpha: 0.5)),
+              if (i > 0) Divider(height: 1, indent: 16, endIndent: 16, color: tk.ring.withValues(alpha: 0.5)),
               children[i],
             ],
           ],
@@ -177,41 +147,40 @@ class MenuGroup extends StatelessWidget {
   }
 }
 
-/// 一行：强调色小方块的图标 + 名字 + 右边灰色小字（hint）+ ›。「我的」页所有行都用它。
+/// 一行：名字（有新消息带强调色小点）+ 右边灰色小字（hint）+ ›。「我的」页所有行都用它。
 class MenuRow extends StatelessWidget {
-  const MenuRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    this.hint,
-    this.busy = false,
-    this.onTap,
-  });
+  const MenuRow({super.key, required this.title, this.hint, this.dot = false, this.busy = false, this.onTap});
 
-  final IconData icon;
   final String title;
   final String? hint;
+  final bool dot;
   final bool busy;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final tk = OneRayTokens.of(context);
-    final muted = tk.sub;
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: IconTile(icon, size: 38),
-      title: Text(title, style: theme.textTheme.bodyLarge?.copyWith(color: tk.text)),
+      minTileHeight: 52,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      title: Row(
+        children: [
+          Flexible(child: Text(title, style: TextStyle(fontSize: 15, color: tk.text))),
+          if (dot) ...[
+            const SizedBox(width: 6),
+            Container(width: 7, height: 7, decoration: BoxDecoration(color: tk.acc, shape: BoxShape.circle)),
+          ],
+        ],
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (hint != null) Text(hint!, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+          if (hint != null) Text(hint!, style: TextStyle(fontSize: 12, color: tk.sub)),
           const SizedBox(width: 4),
           if (busy)
             const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
           else
-            Icon(Icons.chevron_right_rounded, color: muted),
+            Icon(Icons.chevron_right_rounded, color: tk.sub, size: 20),
         ],
       ),
       onTap: busy ? null : onTap,
@@ -282,119 +251,10 @@ class _LocalInitRowState extends ConsumerState<_LocalInitRow> {
   @override
   Widget build(BuildContext context) {
     return MenuRow(
-      icon: Icons.restart_alt_rounded,
       title: '初始化本地网络',
       hint: '网页打不开时用',
       busy: _busy,
       onTap: _run,
-    );
-  }
-}
-
-/// 邀请返利 / 在线客服 / 常见问题 / 连接诊断 —— 最常点的四个，一屏之内够得着。
-class _ActionGrid extends ConsumerWidget {
-  const _ActionGrid();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final unseen = ref.watch(supportChatNotifierProvider.select((s) => s.unseenAgentCount));
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: Row(
-        children: [
-          Expanded(
-            child: _cell(
-              context,
-              icon: Icons.card_giftcard_outlined,
-              label: '邀请返利',
-              // 没账号也照样摆在这儿（首页不拦人那套），点了才说要先有账号。
-              onTap: () => ref.read(Preferences.panelLoggedIn)
-                  ? openInvite(context)
-                  : ref.read(dialogNotifierProvider.notifier).showNeedAccount(
-                      message: '邀请返利要先有账号。登录已有账号，或者买个套餐就能用。',
-                    ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _cell(
-              context,
-              icon: Icons.support_agent_outlined,
-              label: '在线客服',
-              badge: unseen > 0,
-              onTap: () => context.pushNamed('supportChat'),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _cell(
-              context,
-              icon: Icons.help_outline_rounded,
-              label: '常见问题',
-              onTap: () async {
-                await RemoteSiteConfig.ensureLoaded();
-                await UriUtils.tryLaunch(Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.faqUrl)));
-              },
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: DiagTile(
-              builder: (context, busy, run) => _cell(
-                context,
-                icon: Icons.build_outlined,
-                label: '连接诊断',
-                busy: busy,
-                onTap: run,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _cell(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required VoidCallback? onTap,
-    bool badge = false,
-    bool busy = false,
-  }) {
-    final theme = Theme.of(context);
-    final tk = OneRayTokens.of(context);
-    return SoftCard(
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                height: 40,
-                child: busy
-                    ? const Center(
-                        child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-                      )
-                    : Badge(
-                        isLabelVisible: badge,
-                        smallSize: 9,
-                        child: IconTile(icon),
-                      ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(color: tk.text),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

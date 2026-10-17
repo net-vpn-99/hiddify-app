@@ -120,7 +120,7 @@ class ProBadge extends StatelessWidget {
       decoration: BoxDecoration(color: tokens.acc, borderRadius: BorderRadius.circular(5)),
       child: Text(
         '精品',
-        style: TextStyle(fontSize: 10, height: 1.3, fontWeight: FontWeight.w700, color: tokens.accInk),
+        style: TextStyle(fontSize: 11, height: 1.3, fontWeight: FontWeight.w700, color: tokens.accInk),
       ),
     );
   }
