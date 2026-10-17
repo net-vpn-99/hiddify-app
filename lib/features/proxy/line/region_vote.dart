@@ -4,9 +4,9 @@ import 'package:circle_flags/circle_flags.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
-import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class RegionItem {
@@ -440,7 +440,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
   @override
   Widget build(BuildContext context) {
     final board = ref.watch(regionVoteProvider);
-    final tokens = PurchaseTokens.of(context);
+    final tokens = OneRayTokens.of(context);
     final firstLoad = board.busy && !board.voting && board.regions.isEmpty && !board.loadFailed;
     final failed = board.loadFailed && board.regions.isEmpty;
     final voted = board.regions.any((row) => row.mine);
@@ -462,7 +462,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
               '够 ${board.threshold} 票，${board.promiseDays} 天内开通。每人 1 票，可以改投。精品线路只有精品版会员能投。',
-              style: TextStyle(fontSize: 12, color: tokens.secondary),
+              style: TextStyle(fontSize: 12, color: tokens.sub),
             ),
           ),
           if (board.banner.isNotEmpty)
@@ -470,14 +470,14 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: board.bannerOk ? tokens.okSoft : tokens.empty,
+                  color: board.bannerOk ? tokens.accSoft : tokens.fault,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Text(
                     board.banner,
-                    style: TextStyle(fontSize: 12, color: board.bannerOk ? tokens.remaining : tokens.raised),
+                    style: TextStyle(fontSize: 12, color: board.bannerOk ? tokens.acc : tokens.card),
                   ),
                 ),
               ),
@@ -491,7 +491,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                         Container(
                           height: 46,
                           margin: const EdgeInsets.only(bottom: 8),
-                          decoration: BoxDecoration(color: tokens.fill, borderRadius: BorderRadius.circular(10)),
+                          decoration: BoxDecoration(color: tokens.panel, borderRadius: BorderRadius.circular(10)),
                         ),
                     ],
                   )
@@ -500,10 +500,10 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text('没读到投票，检查网络后重试', style: TextStyle(fontSize: 13, color: tokens.secondary)),
+                            Text('没读到投票，检查网络后重试', style: TextStyle(fontSize: 13, color: tokens.sub)),
                             const SizedBox(height: 8),
                             FilledButton(
-                              style: FilledButton.styleFrom(backgroundColor: tokens.text, foregroundColor: tokens.raised),
+                              style: FilledButton.styleFrom(backgroundColor: tokens.text, foregroundColor: tokens.card),
                               onPressed: () => ref.read(regionVoteProvider.notifier).load(),
                               child: const Text('重试'),
                             ),
@@ -524,7 +524,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                                   const SizedBox(height: 4),
                                   Text(
                                     board.member ? '输入一个国家或地区，发起第一个投票' : '会员可以发起第一个地区',
-                                    style: TextStyle(fontSize: 12, color: tokens.secondary),
+                                    style: TextStyle(fontSize: 12, color: tokens.sub),
                                   ),
                                 ],
                               ),
@@ -543,7 +543,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
     );
   }
 
-  Widget _regionRow(RegionItem row, RegionBoard board, PurchaseTokens tokens, bool voted) {
+  Widget _regionRow(RegionItem row, RegionBoard board, OneRayTokens tokens, bool voted) {
     final showButton = board.member && !row.reached && row.canVote;
     final spinning = board.voting && !board.pendingCreate && (row.mine ? board.pendingCode.isEmpty : board.pendingCode == row.code);
     final label = row.mine ? '取消' : (voted ? '改投' : '投票');
@@ -562,18 +562,18 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
               Text(row.name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.text)),
               if (row.mine) ...[
                 const SizedBox(width: 4),
-                Text('· 你投的', style: TextStyle(fontSize: 11, color: tokens.remaining)),
+                Text('· 你投的', style: TextStyle(fontSize: 11, color: tokens.acc)),
               ],
               const Spacer(),
               if (row.reached)
                 Flexible(
-                  child: Text(row.note.isEmpty ? '已达成' : row.note, style: TextStyle(fontSize: 11, color: tokens.remaining)),
+                  child: Text(row.note.isEmpty ? '已达成' : row.note, style: TextStyle(fontSize: 11, color: tokens.acc)),
                 )
               else
-                Text('${row.votes} / ${board.threshold}', style: TextStyle(fontSize: 11, color: tokens.secondary)),
+                Text('${row.votes} / ${board.threshold}', style: TextStyle(fontSize: 11, color: tokens.sub)),
               if (!showButton && board.member && !row.reached && row.locked == 'pro_only') ...[
                 const SizedBox(width: 8),
-                Text('精品版会员可投', style: TextStyle(fontSize: 11, color: tokens.secondary)),
+                Text('精品版会员可投', style: TextStyle(fontSize: 11, color: tokens.sub)),
               ],
               if (showButton) ...[
                 const SizedBox(width: 8),
@@ -581,7 +581,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                   color: row.mine ? Colors.transparent : tokens.text,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
-                    side: row.mine ? BorderSide(color: tokens.border) : BorderSide.none,
+                    side: row.mine ? BorderSide(color: tokens.ring) : BorderSide.none,
                   ),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(8),
@@ -594,14 +594,14 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                           ? SizedBox(
                               width: 14,
                               height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: row.mine ? tokens.text : tokens.raised),
+                              child: CircularProgressIndicator(strokeWidth: 2, color: row.mine ? tokens.text : tokens.card),
                             )
                           : Text(
                               label,
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: row.mine ? tokens.text : tokens.raised,
+                                color: row.mine ? tokens.text : tokens.card,
                               ),
                             ),
                     ),
@@ -616,8 +616,8 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
             child: LinearProgressIndicator(
               minHeight: 4,
               value: row.reached ? 1 : (row.votes / board.threshold).clamp(0, 1).toDouble(),
-              color: (row.mine || row.reached) ? tokens.remaining : tokens.secondary,
-              backgroundColor: tokens.fill,
+              color: (row.mine || row.reached) ? tokens.acc : tokens.sub,
+              backgroundColor: tokens.panel,
             ),
           ),
         ],
@@ -625,7 +625,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
     );
   }
 
-  Widget _composer(RegionBoard board, PurchaseTokens tokens) {
+  Widget _composer(RegionBoard board, OneRayTokens tokens) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -649,7 +649,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
-                Text('发起', style: TextStyle(fontSize: 12, color: tokens.secondary)),
+                Text('发起', style: TextStyle(fontSize: 12, color: tokens.sub)),
                 const SizedBox(width: 8),
                 for (final pro in const [false, true]) ...[
                   ChoiceChip(
@@ -705,8 +705,8 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   child: board.voting && board.pendingCreate
-                      ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: tokens.raised))
-                      : Text('发起', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.raised)),
+                      ? SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: tokens.card))
+                      : Text('发起', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: tokens.card)),
                 ),
               ),
             ),
@@ -719,15 +719,15 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                 ? Wrap(
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Text('已经有${board.resultName}线路了 · ', style: TextStyle(fontSize: 12, color: tokens.empty)),
+                      Text('已经有${board.resultName}线路了 · ', style: TextStyle(fontSize: 12, color: tokens.fault)),
                       GestureDetector(
                         // 线路列表按地区名定位：「香港（精品）」去掉后缀才对得上。
                         onTap: () => Navigator.of(context).pop(board.resultName.replaceAll('（精品）', '')),
-                        child: Text('去看看', style: TextStyle(fontSize: 12, color: tokens.remaining, decoration: TextDecoration.underline)),
+                        child: Text('去看看', style: TextStyle(fontSize: 12, color: tokens.acc, decoration: TextDecoration.underline)),
                       ),
                     ],
                   )
-                : Text(board.inputHint, style: TextStyle(fontSize: 12, color: tokens.empty)),
+                : Text(board.inputHint, style: TextStyle(fontSize: 12, color: tokens.fault)),
           ),
       ],
     );
@@ -737,7 +737,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
     ref.read(regionVoteProvider.notifier).setInputHint('从下面的提示里选一个地区');
   }
 
-  Widget _card(RegionBoard board, PurchaseTokens tokens) {
+  Widget _card(RegionBoard board, OneRayTokens tokens) {
     final voter = board.voter.isEmpty ? (board.member ? 'member' : 'guest') : board.voter;
     var title = '投票和发起是付费会员的权益';
     var sub = '你现在是试用账号';
@@ -757,7 +757,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: tokens.border),
+        border: Border.all(color: tokens.ring),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -769,14 +769,14 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                 children: [
                   Text(title, style: TextStyle(fontSize: 13, color: tokens.text)),
                   const SizedBox(height: 2),
-                  Text(sub, style: TextStyle(fontSize: 12, color: tokens.secondary)),
+                  Text(sub, style: TextStyle(fontSize: 12, color: tokens.sub)),
                 ],
               ),
             ),
             if (button.isNotEmpty) ...[
               const SizedBox(width: 8),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: tokens.text, foregroundColor: tokens.raised),
+                style: FilledButton.styleFrom(backgroundColor: tokens.text, foregroundColor: tokens.card),
                 onPressed: () => context.pushNamed('purchase'),
                 child: Text(button),
               ),

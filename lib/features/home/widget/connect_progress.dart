@@ -218,8 +218,6 @@ class _ConnectStepsBarState extends State<ConnectStepsBar> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    const green = Color(0xFF34A06C);
-    final gold = scheme.primary; // 主色（橙），跟连接按钮同一个
     final n = _count;
     if (n == 0) return const SizedBox(width: 180, height: 4);
     return Semantics(
@@ -234,11 +232,8 @@ class _ConnectStepsBarState extends State<ConnectStepsBar> with SingleTickerProv
         child: AnimatedBuilder(
           animation: _fill,
           builder: (context, _) {
-            final color = _mode == 'done'
-                ? green
-                : _mode == 'fail'
-                ? scheme.error
-                : gold;
+            // B 夜航只有一种强调色：走完和正在走同色，失败才换珊瑚红。
+            final color = _mode == 'fail' ? scheme.error : scheme.primary;
             return Stack(
               children: [
                 Container(

@@ -187,6 +187,13 @@ flutter:
     - family: Emoji
       fonts:
         - asset: assets/fonts/Emoji.ttf
+    # 数字（延迟、速度、价格、天数、配对码）用 Saira（SIL OFL），跟 Windows 同一套（B 夜航 §3.2）。
+    - family: Saira
+      fonts:
+        - asset: assets/fonts/Saira-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Saira-SemiBold.ttf
+          weight: 600
 
 flutter_gen:
   output: lib/gen/

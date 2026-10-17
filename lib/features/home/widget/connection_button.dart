@@ -10,7 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
-import 'package:hiddify/core/theme/theme_extensions.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/core/widget/animated_text.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
@@ -28,7 +28,6 @@ import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
-import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
 import 'package:hiddify/gen/assets.gen.dart';
@@ -79,7 +78,7 @@ class ConnectionButton extends HookConsumerWidget {
     //   //   },
     //   // );
 
-    const buttonTheme = ConnectionButtonTheme.light;
+    final tk = OneRayTokens.of(context);
     final account = ref.watch(panelAuthProvider.select((s) => s.account));
     final quotaEnded = account?.exhausted == true;
 
@@ -102,8 +101,8 @@ class ConnectionButton extends HookConsumerWidget {
             ? '流量已用完'
             : (ref.watch(panelAuthProvider.select((s) => s.isGuest)) ? '试用已结束' : '会员已到期'),
         hint: '点一下买套餐继续用',
-        buttonColor: buttonTheme.idleColor!,
-        newButtonColor: buttonTheme.idleColor!,
+        buttonColor: tk.acc,
+        newButtonColor: tk.acc,
         animated: false,
         secureLabel: '',
       );
@@ -379,18 +378,18 @@ class ConnectionButton extends HookConsumerWidget {
           ? () => ref.read(localRepairProvider).repairAndReconnect('start')
           : null,
       buttonColor: switch (connectionStatus) {
-        AsyncData(value: Connected()) when requiresReconnect == true => Colors.teal,
-        AsyncData(value: Connected()) when !confirmed => const Color.fromARGB(255, 185, 176, 103),
-        AsyncData(value: Connected()) => buttonTheme.connectedColor!,
-        AsyncData(value: _) => buttonTheme.idleColor!,
-        _ => Colors.red,
+        AsyncData(value: Connected()) when requiresReconnect == true => tk.acc,
+        AsyncData(value: Connected()) when !confirmed => tk.blip,
+        AsyncData(value: Connected()) => tk.acc,
+        AsyncData(value: _) => tk.acc,
+        _ => tk.fault,
       },
       newButtonColor: switch (connectionStatus) {
-        AsyncData(value: Connected()) when requiresReconnect == true => Colors.teal,
-        AsyncData(value: Connected()) when !confirmed => const Color.fromARGB(255, 185, 176, 103),
-        AsyncData(value: Connected()) => buttonTheme.connectedColor!,
-        AsyncData(value: _) => buttonTheme.idleColor!,
-        _ => Colors.red,
+        AsyncData(value: Connected()) when requiresReconnect == true => tk.acc,
+        AsyncData(value: Connected()) when !confirmed => tk.blip,
+        AsyncData(value: Connected()) => tk.acc,
+        AsyncData(value: _) => tk.acc,
+        _ => tk.fault,
       },
       animated:
           busy ||
@@ -533,11 +532,11 @@ class VpnPromptSketch extends StatelessWidget {
   // 示意图：缩小的系统窗口轮廓，正文画成灰条（一看就是插图，不是能点的窗口），只把「确定」圈出来。
   @override
   Widget build(BuildContext context) {
-    final t = PurchaseTokens.of(context);
+    final t = OneRayTokens.of(context);
     Widget bar(double w) => Container(
           width: w,
           height: 6,
-          decoration: BoxDecoration(color: t.border, borderRadius: BorderRadius.circular(3)),
+          decoration: BoxDecoration(color: t.ring, borderRadius: BorderRadius.circular(3)),
         );
     return SizedBox(
       width: 236,
@@ -547,13 +546,13 @@ class VpnPromptSketch extends StatelessWidget {
           Container(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
             decoration: BoxDecoration(
-              color: t.background,
+              color: t.bg,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: t.border),
+              border: Border.all(color: t.ring),
             ),
             child: Column(
               children: [
-                Text('网络连接请求', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: t.secondary)),
+                Text('网络连接请求', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: t.sub)),
                 const SizedBox(height: 10),
                 bar(170),
                 const SizedBox(height: 6),
@@ -565,7 +564,7 @@ class VpnPromptSketch extends StatelessWidget {
                       child: Container(
                         height: 28,
                         alignment: Alignment.center,
-                        child: Text('取消', style: TextStyle(fontSize: 12, color: t.secondary)),
+                        child: Text('取消', style: TextStyle(fontSize: 12, color: t.sub)),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -574,9 +573,9 @@ class VpnPromptSketch extends StatelessWidget {
                         height: 28,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: t.selected,
+                          color: t.accSoft,
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: t.primary, width: 2),
+                          border: Border.all(color: t.acc, width: 2),
                         ),
                         child: Text('确定', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: t.text)),
                       ),
@@ -589,7 +588,7 @@ class VpnPromptSketch extends StatelessWidget {
           const SizedBox(height: 6),
           Align(
             alignment: const Alignment(0.55, 0),
-            child: Text('↑ 点这个', style: TextStyle(fontSize: 11, color: t.warning, fontWeight: FontWeight.w600)),
+            child: Text('↑ 点这个', style: TextStyle(fontSize: 11, color: t.fault, fontWeight: FontWeight.w600)),
           ),
         ],
       ),

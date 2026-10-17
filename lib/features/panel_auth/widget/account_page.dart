@@ -213,7 +213,7 @@ class AccountPage extends HookConsumerWidget {
           v,
           style: TextStyle(
             fontWeight: FontWeight.w600,
-            color: warn ? const Color(0xFFA66116) : null,
+            color: warn ? Theme.of(context).colorScheme.error : null,
           ),
         ),
       );

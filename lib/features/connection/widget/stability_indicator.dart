@@ -20,10 +20,9 @@ class StabilityIndicator extends ConsumerWidget {
     if (!s.confirmed || s.outage) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final color = switch (s.score) {
-      >= 8 => const Color(0xFF3FA372),
+      >= 8 => theme.colorScheme.primary,
       >= 6 => theme.colorScheme.onSurfaceVariant,
-      >= 4 => const Color(0xFFCF8A3B),
-      >= 0 => theme.colorScheme.error,
+      >= 0 => theme.colorScheme.error, // 6 分以下就提醒（以前 4–5 橙、0–3 红，B 只有珊瑚红一种）
       _ => theme.colorScheme.onSurfaceVariant,
     };
 

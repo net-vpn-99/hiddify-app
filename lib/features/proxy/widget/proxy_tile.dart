@@ -63,10 +63,10 @@ class _NodeSignal extends StatelessWidget {
     final theme = Theme.of(context);
     final (label, bars, color) = switch (delay) {
       >= 65000 => ('超时', 0, theme.colorScheme.error),
-      < 200 => ('很稳', 4, const Color(0xFF3FA372)),
-      < 400 => ('稳定', 3, const Color(0xFF3FA372)),
+      < 200 => ('很稳', 4, theme.colorScheme.primary),
+      < 400 => ('稳定', 3, theme.colorScheme.primary),
       < 800 => ('一般', 2, theme.colorScheme.onSurfaceVariant),
-      _ => ('慢', 1, const Color(0xFFCF8A3B)),
+      _ => ('慢', 1, theme.colorScheme.error),
     };
     return Row(
       mainAxisSize: MainAxisSize.min,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/common/soft_card.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -12,7 +13,6 @@ import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_tier.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
-import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 首页最下面那条状态条：一眼知道自己是什么身份、还剩多久、下一步点哪。
@@ -63,14 +63,14 @@ class AccountStatusBar extends HookConsumerWidget {
         ? ('精品线路体验已结束，可以选一条标准线路继续用，或者升级精品版', '升级精品版', _Tone.warn, 'purchase')
         : _describe(auth, boot, loggedIn, now);
 
-    // 白卡（SoftCard）+ 左边一个小圆点说状态（GoMami「● 运行中」那种）：正常绿、要注意橙、其他灰。
-    // 右边的操作字用主色橙。
-    final tk = PurchaseTokens.of(context);
+    // 白卡（SoftCard）+ 左边一个小圆点说状态：正常强调色、要注意珊瑚红小点、其他灰。
+    // 右边的操作字用强调色。
+    final tk = OneRayTokens.of(context);
     final fg = tk.text;
     final dot = switch (tone) {
-      _Tone.good => IconTile.green,
-      _Tone.warn => tk.primary,
-      _Tone.plain => tk.secondary,
+      _Tone.good => tk.acc,
+      _Tone.warn => tk.fault,
+      _Tone.plain => tk.sub,
     };
 
     final isUnavailable = !loggedIn && boot.reason == GuestBlockReason.unavailable;
@@ -123,8 +123,8 @@ class AccountStatusBar extends HookConsumerWidget {
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(action, style: theme.textTheme.labelMedium?.copyWith(color: tk.primary, fontWeight: FontWeight.w600)),
-              Icon(Icons.chevron_right_rounded, size: 18, color: tk.primary),
+              Text(action, style: theme.textTheme.labelMedium?.copyWith(color: tk.acc, fontWeight: FontWeight.w600)),
+              Icon(Icons.chevron_right_rounded, size: 18, color: tk.acc),
             ],
           );
 

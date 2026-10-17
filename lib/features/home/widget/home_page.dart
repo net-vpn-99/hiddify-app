@@ -554,9 +554,6 @@ class _GoogleTestButton extends ConsumerWidget {
 
   static const _url = 'https://www.google.com/search?q=%E4%BB%8A%E5%A4%A9%E5%A4%A9%E6%B0%94';
 
-  // 跟 StabilityIndicator 分数 ≥ 8 的「稳定」绿同一色。
-  static const _stableGreen = Color(0xFF3FA372);
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final connected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
@@ -575,8 +572,8 @@ class _GoogleTestButton extends ConsumerWidget {
         style: FilledButton.styleFrom(
           shape: const StadiumBorder(),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          backgroundColor: _stableGreen.withValues(alpha: 0.14),
-          foregroundColor: _stableGreen,
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          foregroundColor: Theme.of(context).colorScheme.primary,
         ),
       ),
     );
@@ -643,7 +640,7 @@ class _RouteRulesEntry extends HookConsumerWidget {
             style: linkStyle,
             onPressed: () => context.pushNamed('routeRules'),
             icon: warn
-                ? const Icon(Icons.circle, size: 8, color: Color(0xFFCF8A3B))
+                ? Icon(Icons.circle, size: 8, color: Theme.of(context).colorScheme.error)
                 : const Icon(Icons.help_outline, size: 16),
             label: const Text('智能分流'),
           ),

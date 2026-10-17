@@ -102,7 +102,7 @@ class _RouteRulesPageState extends ConsumerState<RouteRulesPage> {
     final connected = ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
     final check = ref.watch(routeCheckProvider);
     final lineName = ref.watch(Preferences.lastNodeName);
-    const green = Color(0xFF3FA372);
+    final green = scheme.primary;
 
     Widget chip(String s) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

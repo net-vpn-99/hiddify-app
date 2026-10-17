@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/soft_card.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -18,7 +19,6 @@ import 'package:hiddify/features/proxy/line/region_vote.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/features/proxy/model/node_flag.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
-import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -48,7 +48,7 @@ Future<void> showLinePicker(BuildContext context, WidgetRef ref) async {
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    backgroundColor: PurchaseTokens.of(context).background,
+    backgroundColor: OneRayTokens.of(context).bg,
     builder: (context) => const _LinePickerSheet(),
   );
 }
@@ -215,7 +215,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                 onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
               ),
             _FooterLinks(
-              tokens: PurchaseTokens.of(context),
+              tokens: OneRayTokens.of(context),
               regionSubtitle: region.enabled ? regionEntrySubtitle(region) : null,
               onRegion: !region.enabled
                   ? null
@@ -539,9 +539,9 @@ class _TieredLinesState extends State<_TieredLines> {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = PurchaseTokens.of(context);
-    final ink3 = tokens.secondary.withValues(alpha: 0.7);
-    final okDeep = Theme.of(context).brightness == Brightness.dark ? tokens.remaining : const Color(0xFF1F6F59);
+    final tokens = OneRayTokens.of(context);
+    final ink3 = tokens.sub.withValues(alpha: 0.7);
+    final okDeep = tokens.acc;
     final pro = <String, List<LineOption>>{};
     final std = <String, List<LineOption>>{};
     final proOrder = <String>[];
@@ -627,9 +627,9 @@ class _TieredLinesState extends State<_TieredLines> {
                 color: Colors.transparent,
                 child: InkWell(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                  hoverColor: isPro ? tokens.okSoft : tokens.fill,
-                  highlightColor: isPro ? tokens.okSoft : tokens.fill,
-                  splashColor: isPro ? tokens.okSoft : tokens.fill,
+                  hoverColor: isPro ? tokens.accSoft : tokens.panel,
+                  highlightColor: isPro ? tokens.accSoft : tokens.panel,
+                  splashColor: isPro ? tokens.accSoft : tokens.panel,
                   onTap: () => setState(() {
                     if (isPro) {
                       _proOpen = !_proOpen;
@@ -660,7 +660,7 @@ class _TieredLinesState extends State<_TieredLines> {
                                     : '$hint · ${order.join(' · ')}',
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 11, color: hintWarn ? tokens.warning : ink3),
+                                style: TextStyle(fontSize: 11, color: hintWarn ? tokens.fault : ink3),
                               ),
                             ],
                           ),
@@ -717,7 +717,7 @@ class _TieredLinesState extends State<_TieredLines> {
     );
   }
 
-  Widget? _promo(bool isPro, bool open, bool proLocked, PurchaseTokens tokens, Color okDeep) {
+  Widget? _promo(bool isPro, bool open, bool proLocked, OneRayTokens tokens, Color okDeep) {
     if (!isPro) return null;
     if (widget.tiers.trial == 'active') {
       final mins = (widget.tiers.seconds / 60).ceil().clamp(1, 9999);
@@ -754,7 +754,7 @@ class _TieredLinesState extends State<_TieredLines> {
     required String country,
     required List<LineOption> lines,
     required bool blocked,
-    required PurchaseTokens tokens,
+    required OneRayTokens tokens,
     required Color ink3,
     required String recommended,
   }) {
@@ -769,8 +769,8 @@ class _TieredLinesState extends State<_TieredLines> {
           color: Colors.transparent,
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
-            hoverColor: tokens.fill,
-            highlightColor: tokens.fill,
+            hoverColor: tokens.panel,
+            highlightColor: tokens.panel,
             onTap: blocked ? widget.onUpgrade : () => setState(() => _openKey = expanded ? '' : key),
             child: SizedBox(
               height: 52,
@@ -789,7 +789,7 @@ class _TieredLinesState extends State<_TieredLines> {
                             Container(
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                border: Border.all(color: tokens.border),
+                                border: Border.all(color: tokens.ring),
                               ),
                             ),
                           ],
@@ -825,11 +825,11 @@ class _TieredLinesState extends State<_TieredLines> {
                     if (!blocked && _bestGrade(lines) != null) ...[
                       _SpeedDot(level: _bestGrade(lines)!.level, tokens: tokens),
                       const SizedBox(width: 4),
-                      Text(_bestGrade(lines)!.word, style: TextStyle(fontSize: 10, color: tokens.secondary)),
+                      Text(_bestGrade(lines)!.word, style: TextStyle(fontSize: 10, color: tokens.sub)),
                       const SizedBox(width: 6),
                     ],
                     if (blocked)
-                      Text('升级精品版 ›', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.primary))
+                      Text('升级精品版 ›', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.acc))
                     else ...[
                       Transform.rotate(
                         angle: expanded ? 1.5708 : 0,
@@ -846,7 +846,7 @@ class _TieredLinesState extends State<_TieredLines> {
           Padding(
             padding: const EdgeInsets.only(left: 44),
             child: DecoratedBox(
-              decoration: BoxDecoration(border: Border(left: BorderSide(color: tokens.border))),
+              decoration: BoxDecoration(border: Border(left: BorderSide(color: tokens.ring))),
               child: Padding(
                 padding: const EdgeInsets.only(left: 6),
                 child: Column(
@@ -874,7 +874,7 @@ class _TieredLinesState extends State<_TieredLines> {
     return best;
   }
 
-  Widget _lineRow(LineOption o, String country, PurchaseTokens tokens, bool recommended) {
+  Widget _lineRow(LineOption o, String country, OneRayTokens tokens, bool recommended) {
     final current = o.name == widget.currentName;
     final down = widget.downLines.contains(o.name);
     final short = _shortName(country, o.name);
@@ -883,25 +883,25 @@ class _TieredLinesState extends State<_TieredLines> {
     Text label(String text, Color color) =>
         Text(text, maxLines: 1, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color));
     final Widget? status = down
-        ? label('维修中', tokens.secondary)
+        ? label('维修中', tokens.sub)
         : best && current
-            ? label('使用中 · 最快', tokens.remaining)
+            ? label('使用中 · 最快', tokens.acc)
             : best
-                ? label('你这里最快', tokens.primary)
+                ? label('你这里最快', tokens.acc)
                 : current
-                    ? label(widget.connected ? '使用中' : '上次用的', widget.connected ? tokens.remaining : tokens.secondary)
+                    ? label(widget.connected ? '使用中' : '上次用的', widget.connected ? tokens.acc : tokens.sub)
                     : recommended
-                        ? label('推荐', tokens.primary)
+                        ? label('推荐', tokens.acc)
                         : null;
-    final dot = Text(' · ', style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)));
+    final dot = Text(' · ', style: TextStyle(fontSize: 10, color: tokens.sub.withValues(alpha: 0.7)));
     final row = Material(
       key: current ? _currentLineKey : null,
-      color: current ? tokens.selected : Colors.transparent,
+      color: current ? tokens.accSoft : Colors.transparent,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
-        hoverColor: tokens.fill,
-        highlightColor: tokens.fill,
+        hoverColor: tokens.panel,
+        highlightColor: tokens.panel,
         onTap: () => widget.onPick(o),
         // 两行：第一行名字（永远单行）+「精品」，第二行说明 · 测速 · 状态；右边 LOGO 区固定宽、靠右。
         // 以前一行塞下名字、精品、说明、LOGO、状态，最挤的精品线路名字被挤到折行（10-17 运营真机）。
@@ -942,14 +942,14 @@ class _TieredLinesState extends State<_TieredLines> {
                                 maxLines: 1,
                                 softWrap: false,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)),
+                                style: TextStyle(fontSize: 10, color: tokens.sub.withValues(alpha: 0.7)),
                               ),
                             ),
                           if (grade != null) ...[
                             if (o.desc.isNotEmpty) const SizedBox(width: 8),
                             _SpeedDot(level: grade.level, tokens: tokens),
                             const SizedBox(width: 4),
-                            Text(grade.word, style: TextStyle(fontSize: 10, color: tokens.secondary)),
+                            Text(grade.word, style: TextStyle(fontSize: 10, color: tokens.sub)),
                           ],
                           if (status != null) ...[
                             if (o.desc.isNotEmpty || grade != null) dot,
@@ -979,12 +979,12 @@ class _GoldButton extends StatelessWidget {
 
   final String label;
   final VoidCallback onTap;
-  final PurchaseTokens tokens;
+  final OneRayTokens tokens;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: tokens.primary,
+      color: tokens.acc,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
@@ -993,7 +993,7 @@ class _GoldButton extends StatelessWidget {
           height: 28,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           alignment: Alignment.center,
-          child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.onPrimary)),
+          child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.accInk)),
         ),
       ),
     );
@@ -1013,7 +1013,7 @@ class _PromoRow extends StatelessWidget {
   final String label;
   final String action;
   final bool warm;
-  final PurchaseTokens tokens;
+  final OneRayTokens tokens;
   final Color okDeep;
   final VoidCallback onTap;
 
@@ -1023,7 +1023,7 @@ class _PromoRow extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: warm ? tokens.selected : tokens.okSoft,
+          color: tokens.accSoft,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Padding(
@@ -1044,7 +1044,7 @@ class _PromoRow extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: warm ? tokens.primary : tokens.remaining,
+                    color: tokens.acc,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -1052,7 +1052,7 @@ class _PromoRow extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: warm ? tokens.onPrimary : Colors.white,
+                      color: tokens.accInk,
                     ),
                   ),
                 ),
@@ -1082,8 +1082,8 @@ class _SpeedButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final speed = ref.watch(lineSpeedProvider);
-    final tokens = PurchaseTokens.of(context);
-    final ok = Theme.of(context).brightness == Brightness.dark ? tokens.remaining : const Color(0xFF1F6F59);
+    final tokens = OneRayTokens.of(context);
+    final ok = tokens.acc;
     final label = speed.running ? '测速中 ${speed.done}/${speed.total}' : '测速';
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1091,14 +1091,14 @@ class _SpeedButton extends ConsumerWidget {
         if (speed.stamp.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: Text(speed.stamp, style: TextStyle(fontSize: 11, color: tokens.secondary.withValues(alpha: 0.7))),
+            child: Text(speed.stamp, style: TextStyle(fontSize: 11, color: tokens.sub.withValues(alpha: 0.7))),
           ),
         TextButton(
           style: TextButton.styleFrom(
             minimumSize: const Size(0, 28),
             padding: const EdgeInsets.symmetric(horizontal: 10),
             foregroundColor: ok,
-            backgroundColor: speed.running ? tokens.fill : null,
+            backgroundColor: speed.running ? tokens.panel : null,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
           onPressed: speed.running ? null : () => ref.read(lineSpeedProvider.notifier).start(),
@@ -1113,15 +1113,15 @@ class _SpeedDot extends StatelessWidget {
   const _SpeedDot({required this.level, required this.tokens});
 
   final int level;
-  final PurchaseTokens tokens;
+  final OneRayTokens tokens;
 
   @override
   Widget build(BuildContext context) {
     final color = switch (level) {
-      1 => tokens.remaining,
-      2 => tokens.warning,
-      3 => tokens.empty,
-      _ => tokens.secondary.withValues(alpha: 0.7),
+      1 => tokens.acc,
+      2 => tokens.fault,
+      3 => tokens.fault,
+      _ => tokens.sub.withValues(alpha: 0.7),
     };
     return Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle));
   }
@@ -1131,7 +1131,7 @@ class _SpeedDot extends StatelessWidget {
 class _FooterLinks extends StatelessWidget {
   const _FooterLinks({required this.tokens, this.regionSubtitle, this.onRegion, this.onCustom});
 
-  final PurchaseTokens tokens;
+  final OneRayTokens tokens;
   final String? regionSubtitle;
   final Future<void> Function()? onRegion;
   final VoidCallback? onCustom;
@@ -1152,7 +1152,7 @@ class _FooterLinks extends StatelessWidget {
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 12, color: tokens.secondary),
+          style: TextStyle(fontSize: 12, color: tokens.sub),
         ),
       ),
     );

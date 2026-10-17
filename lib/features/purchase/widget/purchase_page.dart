@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/purchase/data/purchase_service.dart';
 import 'package:hiddify/features/purchase/model/plan_offer.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
-import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 推荐档（精品版）放第一张。
@@ -80,7 +80,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
 
   @override
   Widget build(BuildContext context) {
-    final t = PurchaseTokens.of(context);
+    final t = OneRayTokens.of(context);
     final state = ref.watch(purchaseNotifierProvider);
     // 标题看人说话：只有买过套餐的老会员才叫「续费 / 升级」。游客和第一次来的人是
     // 头一回开通，顶着「续费」两个字会让他以为自己已经买过了。
@@ -88,16 +88,16 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final acc = ref.watch(purchaseAccountProvider).asData?.value ?? auth.account;
     final renewing = auth.loggedIn && !auth.isGuest && (acc?.planName?.trim().isNotEmpty ?? false);
     return Scaffold(
-      backgroundColor: t.background,
+      backgroundColor: t.bg,
       appBar: AppBar(
-        backgroundColor: t.background,
+        backgroundColor: t.bg,
         surfaceTintColor: Colors.transparent,
         foregroundColor: t.text,
         elevation: 0,
         title: Text(renewing ? '续费 / 升级' : '选择套餐'),
       ),
       body: switch (state.stage) {
-        PurchaseStage.working => Center(child: CircularProgressIndicator(color: t.primary)),
+        PurchaseStage.working => Center(child: CircularProgressIndicator(color: t.acc)),
         PurchaseStage.awaitingPayment => _awaitingPayment(t, state),
         PurchaseStage.success => _success(t, state),
         PurchaseStage.browsing => _browsing(t, state),
@@ -107,9 +107,9 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
 
   // ---------------------------------------------------------------- 选套餐
 
-  Widget _browsing(PurchaseTokens t, PurchaseState state) {
+  Widget _browsing(OneRayTokens t, PurchaseState state) {
     if (state.plansLoading) {
-      return Center(child: CircularProgressIndicator(color: t.primary));
+      return Center(child: CircularProgressIndicator(color: t.acc));
     }
     if (state.plansError != null) {
       return _centered(
@@ -147,7 +147,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                   runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Text(auth.accountLabel, style: TextStyle(color: t.secondary, fontSize: 12)),
+                    Text(auth.accountLabel, style: TextStyle(color: t.sub, fontSize: 12)),
                     _Pill(
                       t: t,
                       text: _accountLine(account, state.me),
@@ -179,7 +179,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               if (state.error != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(state.error!, style: TextStyle(color: t.empty, fontSize: 12)),
+                  child: Text(state.error!, style: TextStyle(color: t.fault, fontSize: 12)),
                 ),
               if (state.tiers.length >= 2) ...[
                 Text('选择版本', style: TextStyle(color: t.text, fontSize: 14, fontWeight: FontWeight.w600)),
@@ -220,7 +220,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                   Container(
                     margin: const EdgeInsets.only(top: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(color: t.selected, borderRadius: BorderRadius.circular(10)),
+                    decoration: BoxDecoration(color: t.accSoft, borderRadius: BorderRadius.circular(10)),
                     child: Text(
                       '你是精品版会员，精品版已经包含全部标准线路，标准线路照常满速用。精品版到期后（${state.me?.expiresOn ?? ''} 之后）可以购买标准版。',
                       style: TextStyle(color: t.text, fontSize: 12),
@@ -237,7 +237,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Text(_rulesOpen ? '流量与购买说明  ˄' : '流量与购买说明  ›',
-                        style: TextStyle(color: t.primaryHover, fontSize: 12)),
+                        style: TextStyle(color: t.accHover, fontSize: 12)),
                   ),
                 ),
               ]),
@@ -355,10 +355,10 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     return null;
   }
 
-  Widget _benefits(PurchaseTokens t, PlanOffer? offer) {
+  Widget _benefits(OneRayTokens t, PlanOffer? offer) {
     final devices = offer?.deviceLimit;
     final deviceText = (devices != null && devices > 0) ? '最多 $devices 台设备同时在线' : '设备数以套餐为准';
-    final s = TextStyle(color: t.secondary, fontSize: 11);
+    final s = TextStyle(color: t.sub, fontSize: 11);
     final acc = ref.watch(panelAuthProvider).account;
     final paid = acc?.paidQuota ?? 0;
     final paidMbps = acc?.paidThrottleMbps ?? 0;
@@ -388,7 +388,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     return Text(traffic != null ? '$traffic　·　$deviceText' : deviceText, style: s.copyWith(height: 1.45));
   }
 
-  Widget _rules(PurchaseTokens t, PlanOffer? offer) {
+  Widget _rules(OneRayTokens t, PlanOffer? offer) {
     final planRule = offer == null
         ? '购买后套餐权益以订单和后台规则为准。'
         : '本档 ${offer.durationLabel}：${offer.trafficLabel}。到期时间、流量是否重置以订单确认结果为准。';
@@ -400,7 +400,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
             padding: const EdgeInsets.only(top: 8, bottom: 6),
             child: Text(
               '$planRule\n日均价按参考天数折算，仅用于比较；省额与同套餐连续月付比较。最终付款金额以订单核算为准。',
-              style: TextStyle(color: t.secondary, fontSize: 11, height: 1.4),
+              style: TextStyle(color: t.sub, fontSize: 11, height: 1.4),
             ),
           ),
       ],
@@ -419,7 +419,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     }
   }
 
-  Future<void> _confirm(PurchaseTokens t, PlanOffer offer) async {
+  Future<void> _confirm(OneRayTokens t, PlanOffer offer) async {
     // 1.1.28 起游客默认不用先绑邮箱就能买（GslGuest 1.1.0 的「允许游客直接购买」）。
     // 后台把那个开关关掉时服务端仍会拦下单，所以这里也跟着先跳绑定页 —— 不然用户
     // 填完支付信息才被服务端退回来。
@@ -433,7 +433,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: t.raised,
+        backgroundColor: t.card,
         title: const Text('确认购买'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -450,7 +450,6 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: t.primary, foregroundColor: t.onPrimary),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('去支付'),
           ),
@@ -462,11 +461,11 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     }
   }
 
-  Future<void> _confirmCancelPending(PurchaseTokens t) async {
+  Future<void> _confirmCancelPending(OneRayTokens t) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: t.raised,
+        backgroundColor: t.card,
         content: const Text('取消这笔未完成的订单？如果你已经付款，请不要取消，改点「去支付」查状态。'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('再想想')),
@@ -481,7 +480,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
 
   // ---------------------------------------------------------------- 其它阶段
 
-  Widget _awaitingPayment(PurchaseTokens t, PurchaseState state) {
+  Widget _awaitingPayment(OneRayTokens t, PurchaseState state) {
     final notifier = ref.read(purchaseNotifierProvider.notifier);
     return SafeArea(
       child: Padding(
@@ -489,26 +488,25 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.open_in_new_rounded, size: 48, color: t.secondary),
+            Icon(Icons.open_in_new_rounded, size: 48, color: t.sub),
             const SizedBox(height: 16),
             Text('已打开收银台', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: t.text)),
             const SizedBox(height: 8),
             Text('在收银台完成付款，然后回到这里点下面的按钮。',
-                textAlign: TextAlign.center, style: TextStyle(color: t.secondary)),
+                textAlign: TextAlign.center, style: TextStyle(color: t.sub)),
             if (state.quote != null) ...[
               const SizedBox(height: 10),
               Text('应付 ${state.quote!.payableLabel}',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: t.text)),
               if (state.quote!.note.isNotEmpty)
-                Text(state.quote!.note, style: TextStyle(fontSize: 11, color: t.secondary)),
+                Text(state.quote!.note, style: TextStyle(fontSize: 11, color: t.sub)),
             ],
             if (state.error != null) ...[
               const SizedBox(height: 12),
-              Text(state.error!, textAlign: TextAlign.center, style: TextStyle(color: t.empty)),
+              Text(state.error!, textAlign: TextAlign.center, style: TextStyle(color: t.fault)),
             ],
             const SizedBox(height: 24),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: t.primary, foregroundColor: t.onPrimary),
               onPressed: notifier.checkPayment,
               child: const Text('我已完成支付'),
             ),
@@ -520,7 +518,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                 final ok = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
-                    backgroundColor: t.raised,
+                    backgroundColor: t.card,
                     content: const Text('放弃这笔订单？如果你已经付款，请不要放弃，改点「我已完成支付」。'),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('再等等')),
@@ -538,7 +536,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     );
   }
 
-  Widget _success(PurchaseTokens t, PurchaseState state) {
+  Widget _success(OneRayTokens t, PurchaseState state) {
     final fulfilled = state.fulfilled;
     return SafeArea(
       child: Padding(
@@ -547,14 +545,14 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(fulfilled ? Icons.check_circle_rounded : Icons.hourglass_top_rounded,
-                size: 56, color: fulfilled ? t.remaining : t.warning),
+                size: 56, color: fulfilled ? t.acc : t.fault),
             const SizedBox(height: 16),
             Text(fulfilled ? '购买成功，套餐已开通' : '已收到付款，套餐开通中',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: t.text)),
             const SizedBox(height: 12),
             if (!fulfilled) ...[
               Text('后台正在开通权益，通常一两分钟内完成。',
-                  textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: t.secondary)),
+                  textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: t.sub)),
               const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: () => ref.read(purchaseNotifierProvider.notifier).recheckFulfillment(),
@@ -563,12 +561,12 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               const SizedBox(height: 12),
             ],
             if (state.refreshing)
-              Text('正在刷新订阅信息…', style: TextStyle(fontSize: 13, color: t.secondary))
+              Text('正在刷新订阅信息…', style: TextStyle(fontSize: 13, color: t.sub))
             else if (state.refreshFailed) ...[
               Text(
                 '订阅用量 / 到期时间还没刷新过来。回首页下拉刷新即可，不影响已开通的套餐。',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: t.secondary),
+                style: TextStyle(fontSize: 13, color: t.sub),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -584,19 +582,18 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: t.raised,
+                  color: t.card,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: t.warning.withValues(alpha: .5)),
+                  border: Border.all(color: t.fault.withValues(alpha: .5)),
                 ),
                 child: Column(
                   children: [
                     Text('加个邮箱，防丢',
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: t.text)),
                     const SizedBox(height: 8),
-                    Text('手机丢了或重装也能找回这个套餐', style: TextStyle(fontSize: 13, color: t.secondary)),
+                    Text('手机丢了或重装也能找回这个套餐', style: TextStyle(fontSize: 13, color: t.sub)),
                     const SizedBox(height: 10),
                     FilledButton(
-                      style: FilledButton.styleFrom(backgroundColor: t.primary, foregroundColor: t.onPrimary),
                       onPressed: () => context.pushNamed('bindEmail'),
                       child: const Text('加邮箱'),
                     ),
@@ -613,7 +610,6 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
               )
             else
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: t.primary, foregroundColor: t.onPrimary),
                 onPressed: () => context.canPop() ? context.pop() : context.goNamed('home'),
                 child: const Text('完成'),
               ),
@@ -623,12 +619,12 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     );
   }
 
-  Widget _centered(PurchaseTokens t, String text, {(String, VoidCallback)? action}) {
+  Widget _centered(OneRayTokens t, String text, {(String, VoidCallback)? action}) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(text, style: TextStyle(color: t.secondary)),
+          Text(text, style: TextStyle(color: t.sub)),
           if (action != null) ...[
             const SizedBox(height: 12),
             OutlinedButton(onPressed: action.$2, child: Text(action.$1)),
@@ -653,7 +649,7 @@ class _AccountCard extends StatelessWidget {
     required this.onLogin,
   });
 
-  final PurchaseTokens t;
+  final OneRayTokens t;
   final PanelAccount? account;
   final bool loading;
   final bool isGuest;
@@ -671,9 +667,9 @@ class _AccountCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: t.surface,
+        color: t.card,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: t.border),
+        border: Border.all(color: t.ring),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -691,7 +687,7 @@ class _AccountCard extends StatelessWidget {
                   knownAccountMask != null
                       ? ''
                       : (loggedIn && !isGuest ? '当前账号 ' : '购买给 '),
-                  style: TextStyle(color: t.secondary, fontSize: 11)),
+                  style: TextStyle(color: t.sub, fontSize: 11)),
               Expanded(
                 child: Text(
                   knownAccountMask != null
@@ -706,7 +702,7 @@ class _AccountCard extends StatelessWidget {
                 GestureDetector(
                   onTap: onLogin,
                   child: Text(knownAccountMask != null ? '登录' : '已有账号？登录',
-                      style: TextStyle(color: t.primary, fontSize: 11, fontWeight: FontWeight.w600)),
+                      style: TextStyle(color: t.acc, fontSize: 11, fontWeight: FontWeight.w600)),
                 ),
             ],
           ),
@@ -716,16 +712,16 @@ class _AccountCard extends StatelessWidget {
               // 短、准、不吓人。「只能本机使用」那种说法会被读成「买了就锁死」，
               // 而事实是绑个邮箱就能换机 —— 两件事必须放在同一句里说完。
               '买在这个账号上，其它设备用配对码登录就能一起用',
-              style: TextStyle(color: t.secondary, fontSize: 11, height: 1.3),
+              style: TextStyle(color: t.sub, fontSize: 11, height: 1.3),
             ),
           ],
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Divider(height: 1, color: t.border),
+            child: Divider(height: 1, color: t.ring),
           ),
           Row(
             children: [
-              Text('当前套餐 ', style: TextStyle(color: t.secondary, fontSize: 11)),
+              Text('当前套餐 ', style: TextStyle(color: t.sub, fontSize: 11)),
               Text(
                 a?.planName?.isNotEmpty == true ? a!.planName! : (loading ? '读取中…' : '尚未开通'),
                 style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.bold),
@@ -736,7 +732,7 @@ class _AccountCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               a.lifetime ? '长期有效' : _expiryText(a.expiredAt!),
-              style: TextStyle(color: t.secondary, fontSize: 11),
+              style: TextStyle(color: t.sub, fontSize: 11),
             ),
           ],
           if (state != QuotaState.unknown) ...[
@@ -744,7 +740,7 @@ class _AccountCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Expanded(child: Text('剩余流量', style: TextStyle(color: t.secondary, fontSize: 11))),
+                Expanded(child: Text('剩余流量', style: TextStyle(color: t.sub, fontSize: 11))),
                 Text(
                   _headline(state, a),
                   style: TextStyle(color: t.text, fontSize: 18, fontWeight: FontWeight.bold),
@@ -757,15 +753,15 @@ class _AccountCard extends StatelessWidget {
             ],
             const SizedBox(height: 6),
             if (state == QuotaState.unlimited)
-              Text('${_used(a)} · 无固定流量上限', style: TextStyle(color: t.secondary, fontSize: 11))
+              Text('${_used(a)} · 无固定流量上限', style: TextStyle(color: t.sub, fontSize: 11))
             else
               Row(
                 children: [
-                  Expanded(child: Text(_used(a), style: TextStyle(color: t.secondary, fontSize: 11))),
+                  Expanded(child: Text(_used(a), style: TextStyle(color: t.sub, fontSize: 11))),
                   Text(
                     state == QuotaState.empty ? '流量已用完' : '剩余 ${((ratio ?? 0) * 100).round()}%',
                     style: TextStyle(
-                      color: state == QuotaState.empty ? t.empty : t.secondary,
+                      color: state == QuotaState.empty ? t.fault : t.sub,
                       fontSize: 11,
                     ),
                   ),
@@ -774,7 +770,7 @@ class _AccountCard extends StatelessWidget {
           ] else ...[
             const SizedBox(height: 8),
             Text('开通后即可连接。选择下面任意一档完成购买。',
-                style: TextStyle(color: t.secondary, fontSize: 12)),
+                style: TextStyle(color: t.sub, fontSize: 12)),
           ],
         ],
       ),
@@ -802,22 +798,22 @@ class _AccountCard extends StatelessWidget {
 class _MeterBar extends StatelessWidget {
   const _MeterBar({required this.t, required this.ratio, required this.state});
 
-  final PurchaseTokens t;
+  final OneRayTokens t;
   final double ratio;
   final QuotaState state;
 
   @override
   Widget build(BuildContext context) {
     final fill = switch (state) {
-      QuotaState.low => t.warning,
-      QuotaState.empty => t.empty,
-      _ => t.remaining,
+      QuotaState.low => t.fault,
+      QuotaState.empty => t.fault,
+      _ => t.acc,
     };
     return ClipRRect(
       borderRadius: BorderRadius.circular(4),
       child: Stack(
         children: [
-          Container(height: 8, color: t.fill),
+          Container(height: 8, color: t.panel),
           FractionallySizedBox(
             widthFactor: ratio.clamp(0.0, 1.0),
             child: Container(height: 8, color: fill),
@@ -840,7 +836,7 @@ class _TierCard extends StatelessWidget {
     this.moreLine,
   });
 
-  final PurchaseTokens t;
+  final OneRayTokens t;
   final ShopTier tier;
   final bool picked;
   final bool current;
@@ -853,7 +849,7 @@ class _TierCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tone = tier.keyTone == 'good' || tier.keyTone == 'connected' ? t.remaining : t.empty;
+    final tone = tier.keyTone == 'good' || tier.keyTone == 'connected' ? t.acc : t.fault;
     final stdBlocked = tier.tier == 'std' && me?.canBuyStd == false;
     final gift = me != null && tier.tier == 'std' && (me!.trial == 'locked' || me!.trial == 'offer');
     return Opacity(
@@ -868,10 +864,10 @@ class _TierCard extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
           decoration: BoxDecoration(
-            color: blocked ? t.fill : t.surface,
+            color: blocked ? t.panel : t.card,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: picked ? t.primary : (current ? t.remaining : t.border),
+              color: picked ? t.acc : (current ? t.acc : t.ring),
               width: picked || current ? 2 : 1,
             ),
           ),
@@ -881,7 +877,7 @@ class _TierCard extends StatelessWidget {
               if (blocked)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('本月名额已满', style: TextStyle(color: t.secondary, fontSize: 11)),
+                  child: Text('本月名额已满', style: TextStyle(color: t.sub, fontSize: 11)),
                 ),
               Wrap(
                 spacing: 6,
@@ -901,10 +897,10 @@ class _TierCard extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('✓', style: TextStyle(color: t.remaining, fontSize: 12, height: 1.35)),
+                      Text('✓', style: TextStyle(color: t.acc, fontSize: 12, height: 1.35)),
                       const SizedBox(width: 5),
                       Expanded(
-                        child: Text(p, style: TextStyle(color: t.secondary, fontSize: 12, height: 1.35)),
+                        child: Text(p, style: TextStyle(color: t.sub, fontSize: 12, height: 1.35)),
                       ),
                     ],
                   ),
@@ -918,9 +914,9 @@ class _TierCard extends StatelessWidget {
                     children: [
                       if (moreLine != null && !current)
                         Text(moreLine!,
-                            style: TextStyle(color: t.primary, fontSize: 12, fontWeight: FontWeight.w700)),
+                            style: TextStyle(color: t.acc, fontSize: 12, fontWeight: FontWeight.w700)),
                       if (tier.tier == 'pro' && tier.dailyGb > 0)
-                        Text('精品线路每天 ${tier.dailyGb}GB 高速', style: TextStyle(color: t.secondary, fontSize: 11)),
+                        Text('精品线路每天 ${tier.dailyGb}GB 高速', style: TextStyle(color: t.sub, fontSize: 11)),
                     ],
                   ),
                 ),
@@ -929,7 +925,7 @@ class _TierCard extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
                     (me!.trialMinutes == 60) ? '送 1 小时精品线路体验' : '送 ${me!.trialMinutes} 分钟精品线路体验',
-                    style: TextStyle(color: t.remaining, fontSize: 11),
+                    style: TextStyle(color: t.acc, fontSize: 11),
                   ),
                 ),
             ],
@@ -943,8 +939,8 @@ class _TierCard extends StatelessWidget {
                 child: Center(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-                    decoration: BoxDecoration(color: t.remaining, borderRadius: BorderRadius.circular(8)),
-                    child: const Text('✓ 你现在用的', style: TextStyle(color: Colors.white, fontSize: 10)),
+                    decoration: BoxDecoration(color: t.acc, borderRadius: BorderRadius.circular(8)),
+                    child: Text('✓ 你现在用的', style: TextStyle(color: t.accInk, fontSize: 11)),
                   ),
                 ),
               ),
@@ -955,8 +951,8 @@ class _TierCard extends StatelessWidget {
                 right: 10,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(color: t.primary, borderRadius: BorderRadius.circular(8)),
-                  child: Text('推荐', style: TextStyle(color: t.onPrimary, fontSize: 10, fontWeight: FontWeight.bold)),
+                  decoration: BoxDecoration(color: t.acc, borderRadius: BorderRadius.circular(8)),
+                  child: Text('推荐', style: TextStyle(color: t.accInk, fontSize: 10, fontWeight: FontWeight.bold)),
                 ),
               ),
           ],
@@ -967,10 +963,10 @@ class _TierCard extends StatelessWidget {
 }
 
 /// 10-16 运营定方案 B（参照 GoMami，两端一样）：浅灰底上一张白卡，不描边，只带很淡的阴影。
-BoxDecoration _softCard(BuildContext context, PurchaseTokens t) {
+BoxDecoration _softCard(BuildContext context, OneRayTokens t) {
   final dark = Theme.of(context).brightness == Brightness.dark;
   return BoxDecoration(
-    color: t.raised,
+    color: t.card,
     borderRadius: BorderRadius.circular(16),
     boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: dark ? 0.25 : 0.06), blurRadius: 14, offset: const Offset(0, 1))],
   );
@@ -980,18 +976,18 @@ BoxDecoration _softCard(BuildContext context, PurchaseTokens t) {
 class _Pill extends StatelessWidget {
   const _Pill({required this.t, required this.text, required this.tone});
 
-  final PurchaseTokens t;
+  final OneRayTokens t;
   final String text;
   final String tone;
 
   @override
   Widget build(BuildContext context) {
-    final bg = switch (tone) { 'warm' => t.selected, 'ok' => t.okSoft, _ => t.fill };
+    final bg = switch (tone) { 'warm' => t.accSoft, 'ok' => t.accSoft, _ => t.panel };
     final fg = switch (tone) {
-      'warm' => t.primaryHover,
-      'ok' => t.remaining,
-      'current' => t.secondary,
-      _ => t.secondary.withValues(alpha: 0.8),
+      'warm' => t.accHover,
+      'ok' => t.acc,
+      'current' => t.sub,
+      _ => t.sub.withValues(alpha: 0.8),
     };
     // 不设 alignment：设了会把小标签撑满整行。
     return Container(
@@ -1006,7 +1002,7 @@ class _Pill extends StatelessWidget {
 class _PickRadio extends StatelessWidget {
   const _PickRadio({required this.t, required this.checked});
 
-  final PurchaseTokens t;
+  final OneRayTokens t;
   final bool checked;
 
   @override
@@ -1014,11 +1010,11 @@ class _PickRadio extends StatelessWidget {
         width: 18,
         height: 18,
         decoration: BoxDecoration(
-          color: checked ? t.primary : t.raised,
+          color: checked ? t.acc : t.card,
           shape: BoxShape.circle,
-          border: checked ? null : Border.all(color: t.border, width: 1.5),
+          border: checked ? null : Border.all(color: t.ring, width: 1.5),
         ),
-        child: checked ? Icon(Icons.check_rounded, size: 13, color: t.onPrimary) : null,
+        child: checked ? Icon(Icons.check_rounded, size: 13, color: t.accInk) : null,
       );
 }
 
@@ -1035,7 +1031,7 @@ class TierCompareTable extends StatelessWidget {
     this.monthPrice = const {},
   });
 
-  final PurchaseTokens t;
+  final OneRayTokens t;
   final List<ShopTier> tiers;
   /// 推荐角标的字，跟时长卡片的角标同一句；没有就写「推荐」。
   final String? badge;
@@ -1105,20 +1101,20 @@ class TierCompareTable extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(tier.name,
-                          style: TextStyle(color: _dim(tier) ? t.secondary : t.text, fontSize: 16, fontWeight: FontWeight.w600)),
+                          style: TextStyle(color: _dim(tier) ? t.sub : t.text, fontSize: 16, fontWeight: FontWeight.w600)),
                       if (_badge(tier) case final b?) ...[
                         const SizedBox(height: 4),
                         _Pill(t: t, text: b.$1, tone: b.$2),
                       ],
                       if (_tagline(tier).isNotEmpty) ...[
                         const SizedBox(height: 5),
-                        Text(_tagline(tier), style: TextStyle(color: t.secondary, fontSize: 12, height: 1.3)),
+                        Text(_tagline(tier), style: TextStyle(color: t.sub, fontSize: 12, height: 1.3)),
                       ],
                       if (monthPrice[tier.planId] case final p?) ...[
                         const SizedBox(height: 4),
                         Text.rich(TextSpan(children: [
-                          TextSpan(text: p, style: TextStyle(color: _dim(tier) ? t.secondary : t.text, fontSize: 17, fontWeight: FontWeight.w600)),
-                          TextSpan(text: ' /月', style: TextStyle(color: t.secondary, fontSize: 12)),
+                          TextSpan(text: p, style: TextStyle(color: _dim(tier) ? t.sub : t.text, fontSize: 17, fontWeight: FontWeight.w600)),
+                          TextSpan(text: ' /月', style: TextStyle(color: t.sub, fontSize: 12)),
                         ])),
                       ],
                     ],
@@ -1130,7 +1126,7 @@ class TierCompareTable extends StatelessWidget {
         ]);
 
         Widget rule(Widget child) => DecoratedBox(
-              decoration: BoxDecoration(border: Border(top: BorderSide(color: t.border.withValues(alpha: 0.22)))),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: t.ring.withValues(alpha: 0.22)))),
               child: child,
             );
 
@@ -1141,7 +1137,7 @@ class TierCompareTable extends StatelessWidget {
                 padding: EdgeInsets.fromLTRB(8, 8, 4, r == rowIdx.last ? 10 : 8),
                 child: Text(
                   tiers.map((x) => r < x.compare.length ? x.compare[r].label : '').firstWhere((s) => s.isNotEmpty, orElse: () => ''),
-                  style: TextStyle(color: t.secondary.withValues(alpha: 0.85), fontSize: 11.5),
+                  style: TextStyle(color: t.sub.withValues(alpha: 0.85), fontSize: 11.5),
                 ),
               )),
               for (final tier in tiers)
@@ -1151,7 +1147,7 @@ class TierCompareTable extends StatelessWidget {
                     padding: EdgeInsets.fromLTRB(10, 8, 6, r == rowIdx.last ? 10 : 8),
                     child: Text(
                       r < tier.compare.length ? tier.compare[r].value : '',
-                      style: TextStyle(color: _dim(tier) ? t.secondary : t.text, fontSize: 13),
+                      style: TextStyle(color: _dim(tier) ? t.sub : t.text, fontSize: 13),
                     ),
                   )),
                 ),
@@ -1168,7 +1164,7 @@ class TierCompareTable extends StatelessWidget {
                 bottom: 0,
                 width: colW,
                 child: DecoratedBox(
-                  decoration: BoxDecoration(color: t.selected.withValues(alpha: 0.8), borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(color: t.accSoft.withValues(alpha: 0.8), borderRadius: BorderRadius.circular(12)),
                 ),
               ),
           Table(
@@ -1188,7 +1184,7 @@ class TierCompareTable extends StatelessWidget {
 class OfferCard extends StatelessWidget {
   const OfferCard({required this.t, required this.offer, required this.selected, required this.onTap});
 
-  final PurchaseTokens t;
+  final OneRayTokens t;
   final PlanOffer offer;
   final bool selected;
   final VoidCallback onTap;
@@ -1209,22 +1205,22 @@ class OfferCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              border: selected ? Border.all(color: t.primary, width: 1.5) : null,
+              border: selected ? Border.all(color: t.acc, width: 1.5) : null,
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  Text(offer.durationLabel, style: TextStyle(color: t.secondary, fontSize: 12)),
+                  Text(offer.durationLabel, style: TextStyle(color: t.sub, fontSize: 12)),
                   const Spacer(),
                   if (offer.badge != null) _Pill(t: t, text: offer.badge!, tone: 'warm'),
                 ]),
                 const SizedBox(height: 2),
                 Text(priceLabel,
-                    style: TextStyle(color: selected ? t.primaryHover : t.text, fontSize: 21, fontWeight: FontWeight.w600, height: 1.15)),
+                    style: TextStyle(color: selected ? t.accHover : t.text, fontSize: 21, fontWeight: FontWeight.w600, height: 1.15)),
                 if (offer.dailyLabel != null)
-                  Text('约 ${offer.dailyLabel}', maxLines: 1, style: TextStyle(color: t.secondary, fontSize: 11)),
+                  Text('约 ${offer.dailyLabel}', maxLines: 1, style: TextStyle(color: t.sub, fontSize: 11)),
               ],
             ),
           ),
@@ -1248,7 +1244,7 @@ class CheckoutBar extends StatelessWidget {
   /// 跟在「已选」后面的一句：精品版比标准版每天多多少 / 标准版送的精品线路体验（原来在版本卡片头里，10-16 挪过来）。
   final String? pickedNote;
 
-  final PurchaseTokens t;
+  final OneRayTokens t;
   final PlanOffer? offer;
   final VoidCallback? onPay;
   final String payLabel;
@@ -1262,8 +1258,8 @@ class CheckoutBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final priceLabel = (offer?.priceLabel ?? '').replaceAll(RegExp(r'\.00$'), '');
     return Material(
-      color: t.raised,
-      shape: Border(top: BorderSide(color: t.border.withValues(alpha: 0.6))),
+      color: t.card,
+      shape: Border(top: BorderSide(color: t.ring.withValues(alpha: 0.6))),
       child: SafeArea(
         top: false,
         child: Padding(
@@ -1293,20 +1289,15 @@ class CheckoutBar extends StatelessWidget {
                       Text(expiryHint!,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: t.secondary, fontSize: 11)),
+                          style: TextStyle(color: t.sub, fontSize: 11)),
                     ],
                   ],
                 ),
               ),
               const SizedBox(width: 10),
               FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: t.primary,
-                  foregroundColor: t.onPrimary,
-                  disabledBackgroundColor: t.fill,
-                  minimumSize: const Size(132, 44),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
+                // 颜色、胶囊形状都跟全局主题走（B 夜航主按钮）；这里只定尺寸和不可点时的底色。
+                style: FilledButton.styleFrom(disabledBackgroundColor: t.panel, minimumSize: const Size(132, 44)),
                 onPressed: onPay,
                 child: Text(
                   payLabel == '去支付' && priceLabel.isNotEmpty ? '支付 $priceLabel' : payLabel,
@@ -1331,7 +1322,7 @@ class _PendingOrderBanner extends StatelessWidget {
     required this.onCancel,
   });
 
-  final PurchaseTokens t;
+  final OneRayTokens t;
   final RecoverableOrder order;
   final VoidCallback onPay;
   final VoidCallback onCancel;
@@ -1346,9 +1337,9 @@ class _PendingOrderBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: t.selected,
+        color: t.accSoft,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: t.primary),
+        border: Border.all(color: t.acc),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1357,17 +1348,13 @@ class _PendingOrderBanner extends StatelessWidget {
               style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.bold)),
           if (desc.isNotEmpty) ...[
             const SizedBox(height: 2),
-            Text(desc, style: TextStyle(color: t.secondary, fontSize: 12)),
+            Text(desc, style: TextStyle(color: t.sub, fontSize: 12)),
           ],
           const SizedBox(height: 8),
           Row(
             children: [
               FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: t.primary,
-                  foregroundColor: t.onPrimary,
-                  visualDensity: VisualDensity.compact,
-                ),
+                style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
                 onPressed: onPay,
                 child: Text(activating ? '查看状态' : '去支付'),
               ),

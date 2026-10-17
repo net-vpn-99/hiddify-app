@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
-import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 
 /// 线路适合哪家宽带：运营商 LOGO、「精品」小标签、列表顶上那句提示、同国家里适合的排前面。
 ///
@@ -55,7 +55,7 @@ class IspLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     final asset = _logoAssets[isp];
     if (asset == null) return const SizedBox.shrink();
-    final tokens = PurchaseTokens.of(context);
+    final tokens = OneRayTokens.of(context);
     final image = asset.endsWith('.svg')
         ? SvgPicture.asset(asset, width: size, height: size)
         : Image.asset(asset, width: size, height: size, fit: BoxFit.contain);
@@ -67,7 +67,7 @@ class IspLogo extends StatelessWidget {
               // LOGO 是彩色图，深色模式下也垫白底，跟橙圈一起像一枚徽章。
               color: Colors.white,
               borderRadius: BorderRadius.circular(4),
-              boxShadow: [BoxShadow(color: tokens.primary, spreadRadius: 1.5)],
+              boxShadow: [BoxShadow(color: tokens.acc, spreadRadius: 1.5)],
             )
           : null,
       child: image,
@@ -114,13 +114,13 @@ class ProBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tokens = PurchaseTokens.of(context);
+    final tokens = OneRayTokens.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration: BoxDecoration(color: tokens.primary, borderRadius: BorderRadius.circular(5)),
+      decoration: BoxDecoration(color: tokens.acc, borderRadius: BorderRadius.circular(5)),
       child: Text(
         '精品',
-        style: TextStyle(fontSize: 10, height: 1.3, fontWeight: FontWeight.w700, color: tokens.onPrimary),
+        style: TextStyle(fontSize: 10, height: 1.3, fontWeight: FontWeight.w700, color: tokens.accInk),
       ),
     );
   }
@@ -141,12 +141,12 @@ class IspHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!lines.any((o) => lineFitsIsp(o, isp))) return const SizedBox.shrink();
-    final tokens = PurchaseTokens.of(context);
-    final style = TextStyle(fontSize: 12, color: tokens.warning);
+    final tokens = OneRayTokens.of(context);
+    final style = TextStyle(fontSize: 12, color: tokens.fault);
     return Padding(
       padding: margin,
       child: DecoratedBox(
-        decoration: BoxDecoration(color: tokens.selected, borderRadius: BorderRadius.circular(10)),
+        decoration: BoxDecoration(color: tokens.accSoft, borderRadius: BorderRadius.circular(10)),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Text.rich(

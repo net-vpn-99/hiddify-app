@@ -7,6 +7,9 @@ import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/core/theme/app_theme_mode.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
+import 'package:hiddify/core/theme/theme_preferences.dart';
 import 'package:hiddify/features/common/soft_card.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -14,7 +17,6 @@ import 'package:hiddify/features/connection/notifier/local_repair.dart';
 import 'package:hiddify/features/diagnostic/diag_tile.dart';
 import 'package:hiddify/features/panel_auth/widget/account_card.dart';
 import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
-import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hiddify/features/support/notifier/support_chat_notifier.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -43,8 +45,8 @@ enum ConfigOptionSection {
 /// 5 次才显出来（Preferences.devMode），客服排障时用。
 ///
 /// 样子参照 GoMami 会员中心（运营 10-15 定）：暖浅灰底、白卡不描边只带淡阴影（SoftCard）、
-/// 每个图标垫一块同色系浅色小方块（IconTile，绿 / 蓝 / 紫 / 橙）、主按钮用品牌金。
-/// 底色和字色用 PurchaseTokens（跟 Windows / 官网同一套）。
+/// 每个图标垫一块强调色浅底小方块（IconTile），主按钮用强调色（B 夜航只有一种强调色）。
+/// 底色和字色用 OneRayTokens（跟 Windows / 官网同一套）。
 /// 试过两版不要的：Material 从金色种子算出来的米色卡 + 橄榄棕按钮（土）；黑白（压抑）。
 class SettingsPage extends HookConsumerWidget {
   SettingsPage({super.key, String? section})
@@ -57,15 +59,15 @@ class SettingsPage extends HookConsumerWidget {
     final t = ref.watch(translationsProvider).requireValue;
     final devMode = ref.watch(Preferences.devMode);
 
-    final tk = PurchaseTokens.of(context);
+    final tk = OneRayTokens.of(context);
     return Scaffold(
-      backgroundColor: tk.background,
-      appBar: AppBar(title: const Text('我的'), backgroundColor: tk.background, surfaceTintColor: Colors.transparent),
+      backgroundColor: tk.bg,
+      appBar: AppBar(title: const Text('我的'), backgroundColor: tk.bg, surfaceTintColor: Colors.transparent),
       body: ListView(
         children: [
           const AccountCard(),
           const _ActionGrid(),
-          const MenuGroup(children: [_LocalInitRow()]),
+          const MenuGroup(children: [_AppearanceRow(), _LocalInitRow()]),
           const _FootLinks(),
           // 连点版本号解锁出来的那堆，普通用户永远看不到。
           if (devMode) ...[
@@ -107,6 +109,49 @@ class SettingsPage extends HookConsumerWidget {
   }
 }
 
+/// 外观三选一（B 夜航 §3.9，跟 Windows 设置里同一个样子）。以前藏在「高级设置 → 应用设置」，普通用户找不到。
+/// 「纯黑」不单独给入口：选过的人这里显示成「深色」。
+class _AppearanceRow extends ConsumerWidget {
+  const _AppearanceRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tk = OneRayTokens.of(context);
+    final mode = ref.watch(themePreferencesProvider);
+    final shown = mode == AppThemeMode.black ? AppThemeMode.dark : mode;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      // 标题一行、三选一另起一行占满宽：窄屏、系统字号调大时「跟随系统」也不会被挤断。
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const IconTile(Icons.contrast_rounded, size: 38),
+              const SizedBox(width: 16),
+              Text('外观', style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: tk.text)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<AppThemeMode>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: AppThemeMode.system, label: Text('跟随系统')),
+                ButtonSegment(value: AppThemeMode.dark, label: Text('深色')),
+                ButtonSegment(value: AppThemeMode.light, label: Text('浅色')),
+              ],
+              selected: {shown},
+              onSelectionChanged: (v) => ref.read(themePreferencesProvider.notifier).changeThemeMode(v.first),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 一组行放在一张白卡里，行之间画细线。
 class MenuGroup extends StatelessWidget {
   const MenuGroup({super.key, required this.children});
@@ -115,14 +160,14 @@ class MenuGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tk = PurchaseTokens.of(context);
+    final tk = OneRayTokens.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: SoftCard(
         child: Column(
           children: [
             for (var i = 0; i < children.length; i++) ...[
-              if (i > 0) Divider(height: 1, indent: 72, color: tk.border.withValues(alpha: 0.5)),
+              if (i > 0) Divider(height: 1, indent: 72, color: tk.ring.withValues(alpha: 0.5)),
               children[i],
             ],
           ],
@@ -132,20 +177,18 @@ class MenuGroup extends StatelessWidget {
   }
 }
 
-/// 一行：带色小方块的图标 + 名字 + 右边灰色小字（hint）+ ›。「我的」页所有行都用它。
+/// 一行：强调色小方块的图标 + 名字 + 右边灰色小字（hint）+ ›。「我的」页所有行都用它。
 class MenuRow extends StatelessWidget {
   const MenuRow({
     super.key,
     required this.icon,
     required this.title,
-    this.color = IconTile.slate,
     this.hint,
     this.busy = false,
     this.onTap,
   });
 
   final IconData icon;
-  final Color color;
   final String title;
   final String? hint;
   final bool busy;
@@ -154,11 +197,11 @@ class MenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tk = PurchaseTokens.of(context);
-    final muted = tk.secondary;
+    final tk = OneRayTokens.of(context);
+    final muted = tk.sub;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: IconTile(icon, color, size: 38),
+      leading: IconTile(icon, size: 38),
       title: Text(title, style: theme.textTheme.bodyLarge?.copyWith(color: tk.text)),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -184,8 +227,8 @@ class _FootLinks extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final tk = PurchaseTokens.of(context);
-    final style = theme.textTheme.bodySmall?.copyWith(color: tk.secondary);
+    final tk = OneRayTokens.of(context);
+    final style = theme.textTheme.bodySmall?.copyWith(color: tk.sub);
     final version = ref.watch(appInfoProvider).valueOrNull?.presentVersion ?? '';
     Widget link(String text, VoidCallback onTap) => InkWell(
       borderRadius: BorderRadius.circular(8),
@@ -240,7 +283,6 @@ class _LocalInitRowState extends ConsumerState<_LocalInitRow> {
   Widget build(BuildContext context) {
     return MenuRow(
       icon: Icons.restart_alt_rounded,
-      color: IconTile.green,
       title: '初始化本地网络',
       hint: '网页打不开时用',
       busy: _busy,
@@ -264,7 +306,6 @@ class _ActionGrid extends ConsumerWidget {
             child: _cell(
               context,
               icon: Icons.card_giftcard_outlined,
-              color: IconTile.orange,
               label: '邀请返利',
               // 没账号也照样摆在这儿（首页不拦人那套），点了才说要先有账号。
               onTap: () => ref.read(Preferences.panelLoggedIn)
@@ -279,7 +320,6 @@ class _ActionGrid extends ConsumerWidget {
             child: _cell(
               context,
               icon: Icons.support_agent_outlined,
-              color: IconTile.blue,
               label: '在线客服',
               badge: unseen > 0,
               onTap: () => context.pushNamed('supportChat'),
@@ -290,7 +330,6 @@ class _ActionGrid extends ConsumerWidget {
             child: _cell(
               context,
               icon: Icons.help_outline_rounded,
-              color: IconTile.purple,
               label: '常见问题',
               onTap: () async {
                 await RemoteSiteConfig.ensureLoaded();
@@ -304,7 +343,6 @@ class _ActionGrid extends ConsumerWidget {
               builder: (context, busy, run) => _cell(
                 context,
                 icon: Icons.build_outlined,
-                color: IconTile.green,
                 label: '连接诊断',
                 busy: busy,
                 onTap: run,
@@ -319,14 +357,13 @@ class _ActionGrid extends ConsumerWidget {
   Widget _cell(
     BuildContext context, {
     required IconData icon,
-    required Color color,
     required String label,
     required VoidCallback? onTap,
     bool badge = false,
     bool busy = false,
   }) {
     final theme = Theme.of(context);
-    final tk = PurchaseTokens.of(context);
+    final tk = OneRayTokens.of(context);
     return SoftCard(
       child: InkWell(
         onTap: onTap,
@@ -344,7 +381,7 @@ class _ActionGrid extends ConsumerWidget {
                     : Badge(
                         isLabelVisible: badge,
                         smallSize: 9,
-                        child: IconTile(icon, color),
+                        child: IconTile(icon),
                       ),
               ),
               const SizedBox(height: 8),

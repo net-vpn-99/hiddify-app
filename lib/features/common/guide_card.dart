@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/line_icon.dart';
-import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hiddify/gen/assets.gen.dart';
 
 /// 通用引导卡（10-13 运营定，两端统一；Windows 是 qml/overlays/GuideCard.qml，两边一起改）。
@@ -18,8 +18,7 @@ class GuideLink {
 }
 
 /// 引导卡 / 公告后面的浅底：像邮件的底色，盖住首页但不压暗。
-Color guideCanvasColor(BuildContext context) =>
-    Theme.of(context).brightness == Brightness.dark ? const Color(0xF00E1012) : const Color(0xF0F3F2EE);
+Color guideCanvasColor(BuildContext context) => OneRayTokens.of(context).bg.withValues(alpha: 0.94);
 
 /// 卡片外面左上角「是谁在说话」：金底雷达标 + 光速雷达（首页顶栏同一个标）。
 class GuideBrandRow extends StatelessWidget {
@@ -27,7 +26,7 @@ class GuideBrandRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = PurchaseTokens.of(context);
+    final t = OneRayTokens.of(context);
     return Padding(
       padding: const EdgeInsets.only(left: 6, bottom: 10),
       child: Row(
@@ -41,14 +40,13 @@ class GuideBrandRow extends StatelessWidget {
   }
 }
 
-/// 白卡本身：大圆角、细边、很淡的阴影。
+/// 卡片本身：大圆角、不描边，浮在底色上只靠一层淡阴影（B 夜航：卡片不描边）。
 BoxDecoration guideCardDecoration(BuildContext context) {
-  final t = PurchaseTokens.of(context);
+  final t = OneRayTokens.of(context);
   final dark = Theme.of(context).brightness == Brightness.dark;
   return BoxDecoration(
-    color: t.raised,
+    color: t.card,
     borderRadius: BorderRadius.circular(22),
-    border: Border.all(color: dark ? const Color(0xFF2C3136) : const Color(0xFFECEAE4)),
     boxShadow: [
       BoxShadow(color: Colors.black.withValues(alpha: dark ? 0.35 : 0.07), blurRadius: 24, offset: const Offset(0, 6)),
     ],
@@ -96,7 +94,7 @@ class GuideCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = PurchaseTokens.of(context);
+    final t = OneRayTokens.of(context);
     final tip = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -104,8 +102,8 @@ class GuideCard extends StatelessWidget {
           width: 32,
           height: 32,
           alignment: Alignment.center,
-          decoration: BoxDecoration(color: t.selected, shape: BoxShape.circle),
-          child: LineIcon(tipIcon, color: t.warning),
+          decoration: BoxDecoration(color: t.accSoft, shape: BoxShape.circle),
+          child: LineIcon(tipIcon, color: t.fault),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -114,7 +112,7 @@ class GuideCard extends StatelessWidget {
             children: [
               Text(tipTitle, style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.w600)),
               const SizedBox(height: 3),
-              Text(tipText, style: TextStyle(color: t.secondary, fontSize: 13, height: 1.45)),
+              Text(tipText, style: TextStyle(color: t.sub, fontSize: 13, height: 1.45)),
             ],
           ),
         ),
@@ -156,7 +154,7 @@ class GuideCard extends StatelessWidget {
                           child: Text(
                             body,
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: t.secondary, fontSize: 14, height: 1.55),
+                            style: TextStyle(color: t.sub, fontSize: 14, height: 1.55),
                           ),
                         ),
                       ],
@@ -165,7 +163,7 @@ class GuideCard extends StatelessWidget {
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(color: t.background, borderRadius: BorderRadius.circular(14)),
+                          decoration: BoxDecoration(color: t.bg, borderRadius: BorderRadius.circular(14)),
                           child: illustration,
                         ),
                       ],
@@ -179,8 +177,8 @@ class GuideCard extends StatelessWidget {
                         height: 48,
                         child: FilledButton(
                           style: FilledButton.styleFrom(
-                            backgroundColor: t.primary,
-                            foregroundColor: t.onPrimary,
+                            backgroundColor: t.acc,
+                            foregroundColor: t.accInk,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
                           ),
@@ -195,7 +193,7 @@ class GuideCard extends StatelessWidget {
                           height: 46,
                           child: TextButton(
                             style: TextButton.styleFrom(
-                              backgroundColor: t.fill,
+                              backgroundColor: t.panel,
                               foregroundColor: t.text,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               textStyle: const TextStyle(fontSize: 14),
@@ -207,30 +205,30 @@ class GuideCard extends StatelessWidget {
                       ],
                       for (final l in links)
                         TextButton(
-                          style: TextButton.styleFrom(foregroundColor: t.secondary, minimumSize: const Size(48, 40)),
+                          style: TextButton.styleFrom(foregroundColor: t.sub, minimumSize: const Size(48, 40)),
                           onPressed: l.onTap,
                           child: Text(l.text, style: const TextStyle(fontSize: 13)),
                         ),
                       // 「顺带一提」的小贴士：跟要你做的事隔开一大段，分得清主次。
                       if (tipTitle.isNotEmpty && tipBelow) ...[
                         const SizedBox(height: 14),
-                        Divider(height: 1, thickness: 1, color: t.border.withValues(alpha: 0.7)),
+                        Divider(height: 1, thickness: 1, color: t.ring.withValues(alpha: 0.7)),
                         const SizedBox(height: 18),
                         tip,
                         const SizedBox(height: 10),
                       ],
                       if (onContact != null)
                         TextButton(
-                          style: TextButton.styleFrom(foregroundColor: t.secondary, minimumSize: const Size(48, 40)),
+                          style: TextButton.styleFrom(foregroundColor: t.sub, minimumSize: const Size(48, 40)),
                           onPressed: onContact,
                           child: Text.rich(
                             TextSpan(
                               text: '还是不行？',
-                              style: TextStyle(color: t.secondary, fontSize: 12),
+                              style: TextStyle(color: t.sub, fontSize: 12),
                               children: [
                                 TextSpan(
                                   text: '联系客服',
-                                  style: TextStyle(color: t.warning, decoration: TextDecoration.underline),
+                                  style: TextStyle(color: t.fault, decoration: TextDecoration.underline),
                                 ),
                               ],
                             ),
@@ -292,11 +290,11 @@ Future<void> showGuideSheet(
   LineIconName fineprintIcon = LineIconName.shield,
   String actionText = '知道了',
 }) {
-  final t = PurchaseTokens.of(context);
+  final t = OneRayTokens.of(context);
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: t.raised,
-    barrierColor: Colors.black.withValues(alpha: 0.35),
+    backgroundColor: t.card,
+    barrierColor: t.scrim,
     isScrollControlled: true,
     showDragHandle: true,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
@@ -311,7 +309,7 @@ Future<void> showGuideSheet(
             Text(title, style: TextStyle(color: t.text, fontSize: 20, fontWeight: FontWeight.w600, height: 1.3)),
             if (body.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(body, style: TextStyle(color: t.secondary, fontSize: 14, height: 1.55)),
+              Text(body, style: TextStyle(color: t.sub, fontSize: 14, height: 1.55)),
             ],
             if (illustration != null) ...[
               const SizedBox(height: 20),
@@ -322,8 +320,8 @@ Future<void> showGuideSheet(
               height: 48,
               child: FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: t.primary,
-                  foregroundColor: t.onPrimary,
+                  backgroundColor: t.acc,
+                  foregroundColor: t.accInk,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
                 ),
@@ -336,9 +334,9 @@ Future<void> showGuideSheet(
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  LineIcon(fineprintIcon, color: t.secondary, size: 14),
+                  LineIcon(fineprintIcon, color: t.sub, size: 14),
                   const SizedBox(width: 5),
-                  Flexible(child: Text(fineprint, style: TextStyle(color: t.secondary, fontSize: 12))),
+                  Flexible(child: Text(fineprint, style: TextStyle(color: t.sub, fontSize: 12))),
                 ],
               ),
             ],
@@ -373,9 +371,9 @@ Future<void> showUnknownFaultGuide(BuildContext context) {
 
 /// 「你的网络连不上我们的线路」：服务器 ✓ / 线路 ✕ 两行示意。
 Future<void> showNetBlockedGuide(BuildContext context, int tried) {
-  final t = PurchaseTokens.of(context);
+  final t = OneRayTokens.of(context);
   Widget row(String label, bool ok) {
-    final c = ok ? t.remaining : t.empty;
+    final c = ok ? t.acc : t.fault;
     return Row(
       children: [
         Text('你的手机', style: TextStyle(color: t.text, fontSize: 12)),

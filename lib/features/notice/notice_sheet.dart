@@ -2,13 +2,13 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/common/line_icon.dart';
 import 'package:hiddify/features/notice/notice_html.dart';
 import 'package:hiddify/features/notice/notice_store.dart';
 import 'package:hiddify/features/panel_auth/data/tg_gift_link.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
-import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -40,7 +40,7 @@ class NoticeBell extends ConsumerWidget {
     final theme = Theme.of(context);
     final color = theme.colorScheme.primary;
     final ring = theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
-    final dot = theme.brightness == Brightness.dark ? const Color(0xFFEC6A5C) : const Color(0xFFD9473A);
+    final dot = theme.colorScheme.primary; // 未读圆点用强调色（B 夜航 §二.2）
     return TextButton(
       style: TextButton.styleFrom(
         padding: EdgeInsets.zero,
@@ -92,12 +92,12 @@ class NoticeStrip extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final item = ref.watch(noticeProvider.select((s) => s.strip));
     if (item == null) return const SizedBox.shrink();
-    final tokens = PurchaseTokens.of(context);
-    final ink3 = tokens.secondary.withValues(alpha: 0.7);
+    final tokens = OneRayTokens.of(context);
+    final ink3 = tokens.sub.withValues(alpha: 0.7);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
       child: Material(
-        color: tokens.selected,
+        color: tokens.accSoft,
         borderRadius: BorderRadius.circular(10),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
@@ -137,9 +137,8 @@ void _openLink(String url) {
   if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) UriUtils.tryLaunch(uri);
 }
 
-// 「重要」用的浅红（Windows Theme.fault 同色）。
-Color _alert(BuildContext context) =>
-    Theme.of(context).brightness == Brightness.dark ? const Color(0xFFD59A57) : const Color(0xFF9A581F);
+// 「重要」用珊瑚红小标签（Windows Theme.fault 同色）。
+Color _alert(BuildContext context) => Theme.of(context).colorScheme.error;
 
 class _Pill extends StatelessWidget {
   const _Pill(this.label, {this.alert = false});
@@ -148,12 +147,12 @@ class _Pill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = PurchaseTokens.of(context);
-    final fg = alert ? _alert(context) : t.warning;
+    final t = OneRayTokens.of(context);
+    final fg = alert ? _alert(context) : t.fault;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
-        color: alert ? fg.withValues(alpha: 0.12) : t.selected,
+        color: alert ? fg.withValues(alpha: 0.12) : t.accSoft,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: fg)),
@@ -185,10 +184,10 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(noticeProvider);
-    final t = PurchaseTokens.of(context);
+    final t = OneRayTokens.of(context);
     final maxCard = MediaQuery.sizeOf(context).height * 0.75;
-    final ink3 = t.secondary.withValues(alpha: 0.7);
-    final line = t.border.withValues(alpha: 0.6);
+    final ink3 = t.sub.withValues(alpha: 0.7);
+    final line = t.ring.withValues(alpha: 0.6);
     NoticeItem? current;
     for (final it in state.items) {
       if (it.id == _open) current = it;
@@ -233,8 +232,8 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
               width: 30,
               height: 30,
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: t.selected, borderRadius: BorderRadius.circular(8)),
-              child: LineIcon(LineIconName.bell, color: t.warning, size: 17),
+              decoration: BoxDecoration(color: t.accSoft, borderRadius: BorderRadius.circular(8)),
+              child: LineIcon(LineIconName.bell, color: t.fault, size: 17),
             ),
             const SizedBox(width: 10),
             Text('公告', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: t.text)),
@@ -242,7 +241,7 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
             const SizedBox(width: 12),
             TextButton(
               style: TextButton.styleFrom(
-                foregroundColor: t.warning,
+                foregroundColor: t.fault,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 minimumSize: const Size(48, 40),
               ),
@@ -289,7 +288,7 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
                     height: 52,
                     child: Center(
                       child: TextButton(
-                        style: TextButton.styleFrom(foregroundColor: t.warning),
+                        style: TextButton.styleFrom(foregroundColor: t.fault),
                         onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.panelProfileUrl)),
                         child: const Text('更早的公告在官网会员中心  →',
                             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
@@ -316,8 +315,8 @@ class _NoticeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = PurchaseTokens.of(context);
-    final ink3 = t.secondary.withValues(alpha: 0.7);
+    final t = OneRayTokens.of(context);
+    final ink3 = t.sub.withValues(alpha: 0.7);
     final meta = item.date.isNotEmpty && item.preview.isNotEmpty ? '${item.date}  ·  ${item.preview}' : '${item.date}${item.preview}';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -328,7 +327,7 @@ class _NoticeRow extends StatelessWidget {
           height: 70,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           decoration: BoxDecoration(
-            border: last ? null : Border(bottom: BorderSide(color: t.border.withValues(alpha: 0.6))),
+            border: last ? null : Border(bottom: BorderSide(color: t.ring.withValues(alpha: 0.6))),
           ),
           child: Row(
             children: [
@@ -415,7 +414,7 @@ class _NoticeDetailState extends State<_NoticeDetail> {
     }
   }
 
-  Widget _block(NoticeBlock b, PurchaseTokens t) {
+  Widget _block(NoticeBlock b, OneRayTokens t) {
     final h = b.kind == 'h';
     final style = TextStyle(
       fontSize: h ? 15 : 14,
@@ -424,7 +423,7 @@ class _NoticeDetailState extends State<_NoticeDetail> {
       color: h ? t.text : t.text.withValues(alpha: 0.82),
     );
     final text = Text.rich(TextSpan(
-      children: NoticeHtml.spans(b.html, style, t.warning, keep: _recognizers.add, onLink: _open),
+      children: NoticeHtml.spans(b.html, style, t.fault, keep: _recognizers.add, onLink: _open),
     ));
     switch (b.kind) {
       case 'li':
@@ -433,7 +432,7 @@ class _NoticeDetailState extends State<_NoticeDetail> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(width: 18, child: Text('•', style: style.copyWith(color: t.primary))),
+              SizedBox(width: 18, child: Text('•', style: style.copyWith(color: t.acc))),
               Expanded(child: text),
             ],
           ),
@@ -443,9 +442,9 @@ class _NoticeDetailState extends State<_NoticeDetail> {
           margin: const EdgeInsets.only(bottom: 16),
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           decoration: BoxDecoration(
-            color: t.selected,
+            color: t.accSoft,
             borderRadius: BorderRadius.circular(8),
-            border: Border(left: BorderSide(color: t.primary, width: 3)),
+            border: Border(left: BorderSide(color: t.acc, width: 3)),
           ),
           child: text,
         );
@@ -458,7 +457,7 @@ class _NoticeDetailState extends State<_NoticeDetail> {
 
   @override
   Widget build(BuildContext context) {
-    final t = PurchaseTokens.of(context);
+    final t = OneRayTokens.of(context);
     final button = _blocks.where((b) => b.kind == 'button').firstOrNull;
     final buttonText = button != null && widget.gift != null && isOurTgChannel(button.href)
         ? (widget.gift!['label'] as String? ?? '关注TG频道再领一天')
@@ -478,7 +477,7 @@ class _NoticeDetailState extends State<_NoticeDetail> {
       children: [
         Row(
           children: [
-            Text(widget.item.date, style: TextStyle(fontSize: 12, color: t.secondary.withValues(alpha: 0.7))),
+            Text(widget.item.date, style: TextStyle(fontSize: 12, color: t.sub.withValues(alpha: 0.7))),
             if (widget.item.important) ...[const SizedBox(width: 8), const _Pill('重要', alert: true)],
           ],
         ),
@@ -514,7 +513,7 @@ class _NoticeDetailState extends State<_NoticeDetail> {
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [t.raised.withValues(alpha: 0), t.raised],
+                          colors: [t.card.withValues(alpha: 0), t.card],
                         ),
                       ),
                     ),
@@ -531,8 +530,8 @@ class _NoticeDetailState extends State<_NoticeDetail> {
               height: 46,
               child: FilledButton(
                 style: FilledButton.styleFrom(
-                  backgroundColor: t.primary,
-                  foregroundColor: t.onPrimary,
+                  backgroundColor: t.acc,
+                  foregroundColor: t.accInk,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: 15, fontWeight: FontWeight.w700),
                 ),

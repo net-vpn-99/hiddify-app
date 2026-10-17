@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/soft_card.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
-import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 「我的」页顶部的账号卡（1.1.28 重做，原来是一行 ListTile）。
@@ -16,11 +16,11 @@ class AccountCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final tk = PurchaseTokens.of(context);
+    final tk = OneRayTokens.of(context);
     final buttonText = theme.textTheme.labelLarge?.copyWith(fontSize: 15, fontWeight: FontWeight.w600);
     final secondary = OutlinedButton.styleFrom(
       foregroundColor: tk.text,
-      side: BorderSide(color: tk.border.withValues(alpha: 0.8)),
+      side: BorderSide(color: tk.ring.withValues(alpha: 0.8)),
       minimumSize: const Size.fromHeight(44),
       textStyle: buttonText,
     );
@@ -73,7 +73,7 @@ class AccountCard extends ConsumerWidget {
               onTap: () => context.pushNamed(loggedIn ? 'account' : 'login'),
               child: Row(
                 children: [
-                  IconTile(loggedIn ? Icons.person_rounded : Icons.person_outline_rounded, IconTile.orange, size: 44),
+                  IconTile(loggedIn ? Icons.person_rounded : Icons.person_outline_rounded, size: 44),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -91,12 +91,12 @@ class AccountCard extends ConsumerWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall
-                              ?.copyWith(color: tk.secondary),
+                              ?.copyWith(color: tk.sub),
                         ),
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, color: tk.secondary),
+                  Icon(Icons.chevron_right_rounded, color: tk.sub),
                 ],
               ),
             ),
@@ -140,9 +140,9 @@ class AccountCard extends ConsumerWidget {
                       if (auth.isGuest)
                         Text(
                           '换手机也能用',
-                          style: theme.textTheme.bodySmall?.copyWith(color: tk.secondary),
+                          style: theme.textTheme.bodySmall?.copyWith(color: tk.sub),
                         ),
-                      Icon(Icons.chevron_right_rounded, color: tk.secondary),
+                      Icon(Icons.chevron_right_rounded, color: tk.sub),
                     ],
                   ),
                 ),
@@ -190,14 +190,14 @@ class _PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tk = PurchaseTokens.of(context);
+    final tk = OneRayTokens.of(context);
     final text = Theme.of(context).textTheme.labelLarge?.copyWith(
       fontSize: 15,
       fontWeight: FontWeight.w600,
-      color: tk.onPrimary,
+      color: tk.accInk,
     );
     return Material(
-      color: tk.primary,
+      color: tk.acc,
       borderRadius: BorderRadius.circular(22),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
