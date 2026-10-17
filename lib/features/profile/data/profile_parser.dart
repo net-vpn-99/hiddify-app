@@ -162,10 +162,9 @@ class ProfileParser {
           ? _httpClient.userAgent.replaceAll("HiddifyNext", "HiddifyNextX")
           : null,
     );
-    Response<dynamic> rs;
-    try {
-      rs = await fetch(url);
-    } on DioException catch (err) {
+    // 下载失败：用户取消照「取消」处理，其余记一笔 sub_download 失败。第一次和换地址重下的那次都走这里
+    // （finecomb 审查 A-5：以前重下那次失败不记、取消也不认）。
+    void noteFailed(DioException err, String u) {
       if (CancelToken.isCancel(err)) {
         throw const ProfileFailure.cancelByUser('HTTP request for getting profile content canceled by user.');
       }
@@ -173,8 +172,15 @@ class ProfileParser {
         stage: 'sub_download',
         ok: false,
         ms: swProfile.elapsedMilliseconds,
-        host: Uri.tryParse(url.trim())?.host,
+        host: Uri.tryParse(u.trim())?.host,
       );
+    }
+
+    Response<dynamic> rs;
+    try {
+      rs = await fetch(url);
+    } on DioException catch (err) {
+      noteFailed(err, url);
       if (!looksLikeOwnPanelSubscribe(url) || !isKnownPanelHost(url)) rethrow;
       // 自家订阅地址连不上：记下这个地址、重新选一个，换过去再下一次（体检修复 R4）。以前直接失败，
       // 首次打开要等两次 15 秒超时（10-17 体检 uid 1863：首启到能连用了 191 秒）。
@@ -182,7 +188,13 @@ class ProfileParser {
       PanelApiBase.noteFailure(origin, status: err.response?.statusCode, type: err.type);
       final next = await PanelApiBase.resolve();
       if (next == origin || !url.trim().startsWith(origin)) rethrow;
-      rs = await fetch(next + url.trim().substring(origin.length));
+      final retryUrl = next + url.trim().substring(origin.length);
+      try {
+        rs = await fetch(retryUrl);
+      } on DioException catch (retryErr) {
+        noteFailed(retryErr, retryUrl);
+        rethrow;
+      }
     }
     await expandRemoteLinesInParallel(
       tempFilePath: tempFilePath,

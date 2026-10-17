@@ -131,6 +131,7 @@ class PanelApi {
   Future<PanelSubscribe> getSubscribe(String token) async {
     final sw = Stopwatch()..start();
     Response<dynamic> res;
+    final snapEpoch = _snapshotEpoch;
     try {
       res = await _dio.get<dynamic>(
         '/api/v1/user/getSubscribe',
@@ -160,7 +161,7 @@ class PanelApi {
     if (url.isEmpty) {
       throw PanelApiException('该账号还没有可用套餐，请先在会员中心购买');
     }
-    unawaited(_saveSnapshot(data));
+    unawaited(_saveSnapshot(data, snapEpoch));
     return PanelSubscribe(
       subscribeUrl: url,
       email: (data['email'] as String?)?.trim(),
@@ -172,6 +173,7 @@ class PanelApi {
   Future<PanelAccount> getAccount(String token) async {
     final sw = Stopwatch()..start();
     Response<dynamic> res;
+    final snapEpoch = _snapshotEpoch;
     try {
       res = await _dio.get<dynamic>(
         '/api/v1/user/getSubscribe',
@@ -187,7 +189,7 @@ class PanelApi {
     }
     final data = _dataOf(res.data);
     if (data == null) throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '获取账号信息失败');
-    unawaited(_saveSnapshot(data));
+    unawaited(_saveSnapshot(data, snapEpoch));
     return _accountOf(data);
   }
 
@@ -207,14 +209,25 @@ class PanelApi {
 
   // ---- 账号快照（体检修复 A2）：冷启动先显示上次的「剩几天 / 套餐 / 流量」，后台再刷新。----
   // 以前账号只在内存里，每次打开先看「正在读取账号…」，网不好要等 15 秒（Windows 早就有缓存）。
-  // 存加密存储；订阅地址和 token 不存（只要账号状态）。
+  // 存加密存储；只存界面要显示的字段（白名单）。订阅地址、token、完整 uuid（连节点的凭证）都不存，
+  // uuid 只留前 8 位够算账号编号（finecomb 审查 A-3）。
   static const _snapshotKey = 'panel_account_snapshot';
   static const _snapshotStore = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+  static const _snapshotFields = [
+    'email', 'expired_at', 'plan', 'plan_id', 'plan_name', 'device_limit', 'transfer_enable', 'u', 'd',
+    'gsl_daily', 'gsl_free_trial', 'gsl_down', 'gsl_isp',
+  ];
+  // 退出登录时加一：退出前发出、退出后才回来的那次读账号，不能把旧号的快照又写回去。
+  static int _snapshotEpoch = 0;
 
-  static Future<void> _saveSnapshot(Map<String, dynamic> data) async {
-    final keep = Map<String, dynamic>.from(data)
-      ..remove('subscribe_url')
-      ..remove('token');
+  static Future<void> _saveSnapshot(Map<String, dynamic> data, int epoch) async {
+    if (epoch != _snapshotEpoch) return;
+    final keep = <String, dynamic>{
+      for (final k in _snapshotFields)
+        if (data.containsKey(k)) k: data[k],
+    };
+    final uuid = (data['uuid'] as String?)?.replaceAll('-', '') ?? '';
+    if (uuid.length >= 8) keep['uuid'] = uuid.substring(0, 8);
     try {
       await _snapshotStore.write(key: _snapshotKey, value: jsonEncode(keep));
     } catch (_) {}
@@ -233,6 +246,7 @@ class PanelApi {
   }
 
   static Future<void> clearAccountSnapshot() async {
+    _snapshotEpoch++;
     try {
       await _snapshotStore.delete(key: _snapshotKey);
     } catch (_) {}

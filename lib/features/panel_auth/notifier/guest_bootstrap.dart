@@ -222,8 +222,11 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
 
       final url = r.subscribeUrl;
       if (r.error != null || url == null || url.isEmpty) {
-        unawaited(PanelApi().reportGuestFail(r.error ?? 'no_subscribe_url', _appVersion()));
         final opts = await optsFuture;
+        // 后台关了免费试用那种不算开号失败，不报（不然开号成功率被「功能关着」拉低。finecomb 审查 A-4）。
+        if (opts == null || opts.enabled) {
+          unawaited(PanelApi().reportGuestFail(r.error ?? 'no_subscribe_url', _appVersion()));
+        }
         if (opts != null && !opts.enabled) {
           _done = true;
           state = const GuestBootstrapState(

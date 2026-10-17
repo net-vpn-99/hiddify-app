@@ -913,7 +913,8 @@ class ConnectReporter {
       final res = await _dio(baseUrl).post<dynamic>(_reportPath, data: payload, options: opt);
       final s = res.statusCode ?? 0;
       if (s >= 200 && s < 300) return _PostResult.ok;
-      if (s >= 400 && s < 600) return _PostResult.rejected;
+      // 服务器自己出错（5xx）不算被拒：跟网络不通一样换地址 / 排队补传，别把这次结果丢了（finecomb 审查 S-1）。
+      if (s >= 400 && s < 500) return _PostResult.rejected;
       return _PostResult.network;
     } on DioException {
       return _PostResult.network;

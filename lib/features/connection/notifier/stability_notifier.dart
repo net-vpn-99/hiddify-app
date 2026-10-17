@@ -75,6 +75,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
   Timer? _ifaceTimer;
   String _ifaces = '';
   int _misses = 0;
+  DateTime? _firstMissAt;   // 这一串没回音从什么时候开始的（有回音就清空）
   bool _running = false;
   bool _confirmed = false;
   int _gen = 0;
@@ -118,6 +119,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
       // 在后台时没回音的那几次不算数（见 _probe）：回到前台重新数，马上探一次。
       if (_misses > 0) {
         _misses = 0;
+        _firstMissAt = null;
         unawaited(_probe(_gen));
       }
     });
@@ -134,6 +136,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _gen++;
     _running = true;
     _misses = 0;
+    _firstMissAt = null;
     _confirmed = false;
     _probeNotes.clear();
     // 有上次的分数就先照着显示，探完再更新；没有才是「测量中」。
@@ -212,6 +215,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     }
     if (proved) {
       _misses = 0;
+      _firstMissAt = null;
       final reporter = ref.read(connectReporterProvider);
       if (reporter.attemptOpen) {
         reporter.markStage(ConnectReporter.stageProxyRequest);
@@ -244,18 +248,20 @@ class StabilityNotifier extends Notifier<StabilityState> {
       _fault('egress');
       return;
     }
-    // 刚换过网络（换 Wi-Fi / 开关飞行模式 / 从睡眠醒来网卡重连）：这一次不算，重新确认。
+    // 跟 Windows 同一套（R3，finecomb 审查 A-1）：
+    //  - 换网络后 1 分钟内的没回音都不算（整整 1 分钟，不是只挡一次：换之前发出的那轮和换网卡时那轮往往都会失败）；
+    //  - 没换网络：没回音要持续 30 秒以上（期间 5 秒再探一次、都不通）才断开。以前两次没回音、约 8 秒就断。
+    final now = DateTime.now();
     final changedAt = _ifacesChangedAt;
-    if (changedAt != null && DateTime.now().difference(changedAt) < const Duration(minutes: 1)) {
-      _ifacesChangedAt = null;
-      _timer?.cancel();
-      _timer = Timer(const Duration(seconds: 3), () => _probe(gen));
+    if (changedAt != null && now.difference(changedAt) < const Duration(minutes: 1)) {
+      _recheckSoon(gen);
       return;
     }
     _misses++;
+    final since = _firstMissAt ??= now;
     state = StabilityState(4, confirmed: true, egressAudit: audit);
-    if (_misses >= 2) {
-      // App 在后台时手机会限制它联网，探测没回音不等于线路断了：先不断开，照常每分钟探，
+    if (_misses >= 2 && now.difference(since) >= const Duration(seconds: 30)) {
+      // App 在后台时手机会限制它联网，探测没回音不等于线路断了：先不断开，照常探，
       // 回到前台再重新判断。跟「还没确认网通、人在后台」同一条规矩（connection_notifier
       // _armUnconfirmedDeadline）。10-15 查：7 天 25 次「用着用着断了」24 次在后台，
       // 连了几小时被我们自己断开还弹通知。
@@ -266,8 +272,13 @@ class StabilityNotifier extends Notifier<StabilityState> {
       _fault('line');
       return;
     }
-    // 没换网络：马上再探一次（不等 20 秒），还不回才断开。
-    unawaited(_probe(gen));
+    _recheckSoon(gen);
+  }
+
+  /// 没回音时 5 秒后再探一次（跟 Windows 用着时 5 秒一探一样）；有回音会换回 30 秒一次（_armSteady）。
+  void _recheckSoon(int gen) {
+    _timer?.cancel();
+    _timer = Timer(const Duration(seconds: 5), () => _probe(gen));
   }
 
   /// 确认通之后每 30 秒探一次（一个很小的请求，两端同一套，体检修复 R3）。以前 1 分钟；更早是 5 分钟，
@@ -331,16 +342,32 @@ class StabilityNotifier extends Notifier<StabilityState> {
       }
     }
 
-    final done = Completer<_Exit?>();
-    var pending = _exitUrls.length;
-    for (final url in _exitUrls) {
-      unawaited(ask(url).then((exit) {
-        pending--;
-        if (done.isCompleted) return;
-        if (exit != null || pending == 0) done.complete(exit);
-      }));
+    // 确认网通之前三家同时问（要快）；确认之后 30 秒一次，先问 Cloudflare，它没答再依次问后两家
+    // （节点后面所有人共用一个出口 IP，每次三家都问，ipinfo / ip.sb 很快会限流，真用得上它们时反而答不了。
+    // finecomb 审查 A-2，跟 Windows fetchExit 一样依次问）。
+    Future<_Exit?> askAll() {
+      final done = Completer<_Exit?>();
+      var pending = _exitUrls.length;
+      for (final url in _exitUrls) {
+        unawaited(ask(url).then((exit) {
+          pending--;
+          if (done.isCompleted) return;
+          if (exit != null || pending == 0) done.complete(exit);
+        }));
+      }
+      return done.future;
     }
-    final exit = await done.future.timeout(const Duration(seconds: 4), onTimeout: () => null);
+
+    Future<_Exit?> askInOrder() async {
+      for (final url in _exitUrls) {
+        final exit = await ask(url);
+        if (exit != null) return exit;
+      }
+      return null;
+    }
+
+    final exit = await (_confirmed ? askInOrder() : askAll())
+        .timeout(const Duration(seconds: 4), onTimeout: () => null);
     client.close(force: true);
     return exit;
   }
