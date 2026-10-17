@@ -51,6 +51,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   // 不能把这次尝试作废：失败分支马上要按它报 fail（10-14 C2A4：端口被占启动失败，复核账号
   // 那 0.4 秒里 Disconnected 先到、abandon 掉，服务器一条都没收到）。
   bool _connectInFlight = false;
+  // 首连 tun permission denied 后等核心真的报「已停止」（状态流里的 Disconnected）再重连。
+  Completer<void>? _coreStopped;
   int _heldSerial = 0;
 
   @override
@@ -121,6 +123,10 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     });
 
     yield* _connectionRepo.watchConnectionStatus().doOnData((event) {
+      if (event is Disconnected) {
+        _coreStopped?.complete();
+        _coreStopped = null;
+      }
       if (event case Disconnected(connectionFailure: final _?) when PlatformUtils.isDesktop) {
         ref.read(Preferences.startedByUser.notifier).update(false);
       }
@@ -525,24 +531,33 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
     }
 
-    final grantedBefore = await VpnPermission.granted();
     await reporter.beginAttempt(activeProfile.name, preferredLine: ref.read(Preferences.preferredLineName));
     _connectInFlight = true;
     try {
       var outcome = await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).run();
-      // 这次连接中途刚在系统弹窗里允许了 VPN，后台核心却是允许之前就起来的那个：OPPO / vivo /
-      // 真我 / 华为会拒绝它建网卡（tun permission denied），核心随即停下，再连一次就好。
-      // 10-15 查：1.1.63 新用户第一次连接 38 个里 12 个是这个，再点一次 10 秒内全连上。
-      // 只在「连之前没允许过、现在允许了、核心已经停下」时重来一次，别的失败照常报。
+      // 核心建网卡被拒（tun permission denied）：刚在系统弹窗里允许 VPN 的新用户最常见（OPPO / vivo /
+      // 真我 / 华为：允许之前就起来的后台核心建不了网卡），刚断开马上再连也会碰到。核心随即停下，
+      // 再连一次就好。这时 VPN 授权必须已经有了，否则是真没授权，照常报。
+      // 必须等核心在状态流里报「已停止」再连：connect() 返回比 Disconnected 早几毫秒，1.1.64 在返回那一刻
+      // 就看状态，永远还是「连接中」，自动重连一次都没触发过（10-16～17 新用户 8 个首连失败都要自己再点）。
+      // 等待从 connect() 返回这一刻开始（同步挂上，中间插不进状态事件）：授权弹窗那会儿状态流里也闪过
+      // 一次 Disconnected，从连接前就等会被它提前放行。15 秒是放弃线：核心一直不报停就不重连，照常报这次失败。
       final firstErr = outcome.getLeft().toNullable();
+      final stopped = firstErr != null && state.valueOrNull is! Disconnected ? (_coreStopped = Completer<void>()) : null;
       if (firstErr != null &&
-          !grantedBefore &&
           firstErr.toString().contains('configure tun interface: permission denied') &&
-          state.valueOrNull is Disconnected &&
           await VpnPermission.granted()) {
-        loggy.info('tun denied right after VPN grant, starting core once more');
-        outcome = await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).run();
+        final didStop = stopped == null ||
+            await stopped.future.then((_) => true).timeout(const Duration(seconds: 15), onTimeout: () => false);
+        if (didStop) {
+          loggy.info('tun permission denied, core stopped, starting once more');
+          _coreStopped = null;
+          outcome = await _connectionRepo.connect(activeProfile, ref.read(Preferences.disableMemoryLimit)).run();
+        } else {
+          loggy.info('tun permission denied, core did not report stopped in 15s, not retrying');
+        }
       }
+      _coreStopped = null;
       final result = outcome.mapLeft((ConnectionFailure err) async {
         loggy.warning("error connecting", err);
         //Go err is not normal object to see the go errors are string and need to be dumped
