@@ -42,7 +42,7 @@ class HomeRadar extends HookConsumerWidget {
     final lines = ref.watch(lineSetProvider).valueOrNull?.lines ?? const <LineOption>[];
     final grades = ref.watch(lineSpeedProvider.select((s) => s.grades));
     final current = ref.watch(Preferences.lastNodeName);
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final sweep = useAnimationController(duration: const Duration(milliseconds: 2400));
     final blink = useAnimationController(duration: const Duration(milliseconds: 900));
     final connecting = state == RadarState.connecting && !reduceMotion;
@@ -81,11 +81,13 @@ class HomeRadar extends HookConsumerWidget {
             ),
             if (state == RadarState.connecting || (state == RadarState.connected && cur != null))
               Positioned.fill(
-                child: AnimatedBuilder(
-                  animation: sweep,
-                  builder: (context, _) => Transform.rotate(
-                    angle: state == RadarState.connected ? cur!.deg * math.pi / 180 : sweep.value * 2 * math.pi,
-                    child: CustomPaint(painter: _SweepPainter(color: tk.acc, k: k)),
+                child: RepaintBoundary(
+                  child: AnimatedBuilder(
+                    animation: sweep,
+                    builder: (context, _) => Transform.rotate(
+                      angle: state == RadarState.connected ? cur!.deg * math.pi / 180 : sweep.value * 2 * math.pi,
+                      child: CustomPaint(painter: _SweepPainter(color: tk.acc, k: k)),
+                    ),
                   ),
                 ),
               ),

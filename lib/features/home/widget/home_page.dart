@@ -154,11 +154,13 @@ class HomePage extends HookConsumerWidget {
       if (!context.mounted) return;
       if (next case AppUpdateStateAvailable(:final versionInfo)) {
         final appInfo = ref.read(appInfoProvider).requireValue;
-        await ref.read(dialogNotifierProvider.notifier).showNewVersion(
-          currentVersion: appInfo.presentVersion,
-          newVersion: versionInfo,
-          canIgnore: !versionInfo.mandatory,
-        );
+        await ref
+            .read(dialogNotifierProvider.notifier)
+            .showNewVersion(
+              currentVersion: appInfo.presentVersion,
+              newVersion: versionInfo,
+              canIgnore: !versionInfo.mandatory,
+            );
       }
     });
 
@@ -199,18 +201,17 @@ class HomePage extends HookConsumerWidget {
                 borderRadius: BorderRadius.circular(7),
               ),
               child: Assets.images.logo.svg(
-                colorFilter: ColorFilter.mode(theme.brightness == Brightness.dark ? tk.bg : OneRayTokens.paper, BlendMode.srcIn),
+                colorFilter: ColorFilter.mode(
+                  theme.brightness == Brightness.dark ? tk.bg : OneRayTokens.paper,
+                  BlendMode.srcIn,
+                ),
               ),
             ),
             const Gap(10),
             Text(t.common.appTitle, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
           ],
         ),
-        actions: [
-          const AccountChip(),
-          if (loggedIn) const NoticeBell(),
-          const Gap(8),
-        ],
+        actions: [const AccountChip(), if (loggedIn) const NoticeBell(), const Gap(8)],
       ),
       body: SafeArea(
         top: false,
@@ -288,7 +289,7 @@ class _HomeNote extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final text = homeAccountNote(ref);
+    final (text, canUpgrade) = homeAccountNote(ref);
     if (text.isEmpty) return const SizedBox.shrink();
     final tk = OneRayTokens.of(context);
     return Container(
@@ -299,15 +300,16 @@ class _HomeNote extends ConsumerWidget {
         TextSpan(
           children: [
             TextSpan(text: text),
-            TextSpan(
-              text: '  升级 ›',
-              style: TextStyle(color: tk.acc),
-              recognizer: TapGestureRecognizer()
-                ..onTap = () {
-                  ref.read(purchasePreferTierProvider.notifier).state = 'pro';
-                  context.pushNamed('purchase');
-                },
-            ),
+            if (canUpgrade)
+              TextSpan(
+                text: '  升级 ›',
+                style: TextStyle(color: tk.acc),
+                recognizer: TapGestureRecognizer()
+                  ..onTap = () {
+                    ref.read(purchasePreferTierProvider.notifier).state = 'pro';
+                    context.pushNamed('purchase');
+                  },
+              ),
           ],
         ),
         textAlign: TextAlign.center,
@@ -373,8 +375,8 @@ class _ActivityCard extends StatelessWidget {
                     )
                   : ElevatedButton(
                       style: ElevatedButton.styleFrom(minimumSize: const Size(64, 36)),
-                      onPressed: null,
-                      child: const Text('确认中…', style: TextStyle(fontSize: 13)),
+                      onPressed: onClaim,
+                      child: const Text('再打开', style: TextStyle(fontSize: 13)),
                     ),
             ),
           IconButton(
@@ -451,7 +453,12 @@ class _SitesBlock extends HookConsumerWidget {
                 children: [
                   icon,
                   const SizedBox(height: 4),
-                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: tk.text)),
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: tk.text),
+                  ),
                 ],
               ),
             ),
@@ -465,7 +472,10 @@ class _SitesBlock extends HookConsumerWidget {
       height: 24,
       alignment: Alignment.center,
       decoration: BoxDecoration(color: tk.panel, shape: BoxShape.circle),
-      child: Text(name.isEmpty ? '?' : name.characters.first, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tk.text)),
+      child: Text(
+        name.isEmpty ? '?' : name.characters.first,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tk.text),
+      ),
     );
 
     return Padding(
@@ -478,7 +488,9 @@ class _SitesBlock extends HookConsumerWidget {
               padding: const EdgeInsets.only(bottom: 6),
               child: Row(
                 children: [
-                  Expanded(child: Text(tip, style: TextStyle(fontSize: 12, color: tk.sub))),
+                  Expanded(
+                    child: Text(tip, style: TextStyle(fontSize: 12, color: tk.sub)),
+                  ),
                   TextButton(
                     style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                     onPressed: () => showLinePicker(context, ref),
@@ -580,7 +592,11 @@ class _HomeLinks extends HookConsumerWidget {
           Text(text),
           if (dot != null) ...[
             const SizedBox(width: 4),
-            Container(width: 6, height: 6, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+            ),
           ],
         ],
       ),
@@ -594,11 +610,12 @@ class _HomeLinks extends HookConsumerWidget {
         children: [
           link('智能分流', () => context.pushNamed('routeRules'), dot: warn ? tk.fault : null),
           sep(),
-          link(group != null ? 'TG 频道' : '官网', openTg, dot: gift != null || (group != null && !visited.value) ? tk.acc : null),
-          if (customUrl.value != null) ...[
-            sep(),
-            link('定制线路', () => UriUtils.tryLaunch(Uri.parse(customUrl.value!))),
-          ],
+          link(
+            group != null ? 'TG 频道' : '官网',
+            openTg,
+            dot: gift != null || (group != null && !visited.value) ? tk.acc : null,
+          ),
+          if (customUrl.value != null) ...[sep(), link('定制线路', () => UriUtils.tryLaunch(Uri.parse(customUrl.value!)))],
         ],
       ),
     );

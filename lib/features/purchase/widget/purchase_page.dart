@@ -131,6 +131,11 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final auth = ref.watch(panelAuthProvider);
     final boot = ref.watch(guestBootstrapProvider);
     final knownMask = !auth.loggedIn ? boot.knownAccountMask : null;
+    // 每档「¥49 /月」：这档 30 天那一项的价格。
+    final monthPrice = {
+      for (final o in state.plans)
+        if (o.periodDays == 30) o.planId: o.priceLabel.replaceAll(RegExp(r'\.00$'), ''),
+    };
 
     return Column(
       children: [
@@ -192,10 +197,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                       tier: tier,
                       me: state.me,
                       picked: selected?.planId == tier.planId && !(tier.tier == 'std' && state.me?.canBuyStd == false),
-                      monthPrice: {
-                        for (final o in state.plans)
-                          if (o.periodDays == 30) o.planId: o.priceLabel.replaceAll(RegExp(r'\.00$'), ''),
-                      }[tier.planId],
+                      monthPrice: monthPrice[tier.planId],
                       onTap: () => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
                     ),
                   ),
@@ -225,10 +227,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
                       tiers: _orderedTiers(state.tiers),
                       selectedPlanId: selected?.planId,
                       me: state.me,
-                      monthPrice: {
-                        for (final o in state.plans)
-                          if (o.periodDays == 30) o.planId: o.priceLabel.replaceAll(RegExp(r'\.00$'), ''),
-                      },
+                      monthPrice: monthPrice,
                       onTap: (tier) => ref.read(purchaseNotifierProvider.notifier).selectTier(tier),
                     ),
                 ],

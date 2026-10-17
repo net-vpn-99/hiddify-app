@@ -184,21 +184,23 @@ class AccountChip extends HookConsumerWidget {
   }
 }
 
-/// 主页状态下面那行提示（限速、精品体验结束）。没事说就是空。跟 Windows Main.qml homeNote 同一套。
-String homeAccountNote(WidgetRef ref) {
+/// 主页状态下面那行提示（限速、精品体验结束）和要不要挂「升级 ›」。没事说就是空。
+/// 跟 Windows Main.qml homeNote 同一套。
+(String, bool) homeAccountNote(WidgetRef ref) {
   final acc = ref.watch(panelAuthProvider.select((s) => s.account));
   final guest = ref.watch(panelAuthProvider.select((s) => s.isGuest));
   final tier = ref.watch(lineTierProvider);
   final connected = ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
   final lineName = ref.watch(Preferences.lastNodeName);
-  if (acc == null) return '';
+  if (acc == null) return ('', false);
   if (connected && acc.proThrottled && tier.isProName(lineName)) {
-    return '精品线路今天已超 ${formatDailyAmount(acc.proQuota)}，已限速 ${acc.proThrottleMbps}Mbps；标准线路照常满速';
+    return ('精品线路今天已超 ${formatDailyAmount(acc.proQuota)}，已限速 ${acc.proThrottleMbps}Mbps；标准线路照常满速', false);
   }
-  if (tier.trialEnded && !connected) return '精品线路体验已结束，可以选一条标准线路继续用，或者升级精品版';
-  if (!acc.dailyThrottled) return '';
+  if (tier.trialEnded && !connected) return ('精品线路体验已结束，可以选一条标准线路继续用，或者升级精品版', true);
+  if (!acc.dailyThrottled) return ('', false);
+  final upgrade = !(acc.planName?.contains('精品') ?? false);
   if (guest && acc.dailyTier == 'trial' && acc.paidQuota > 0) {
-    return '今日标准高速已用完，限速 ${acc.dailyThrottleMbps}Mbps · 买套餐每天 ${formatDailyAmount(acc.paidQuota)} 高速';
+    return ('今日标准高速已用完，限速 ${acc.dailyThrottleMbps}Mbps · 买套餐每天 ${formatDailyAmount(acc.paidQuota)} 高速', upgrade);
   }
-  return '今日标准高速已用完，现在限速 ${acc.dailyThrottleMbps}Mbps，0 点恢复。';
+  return ('今日标准高速已用完，现在限速 ${acc.dailyThrottleMbps}Mbps，0 点恢复。', upgrade);
 }
