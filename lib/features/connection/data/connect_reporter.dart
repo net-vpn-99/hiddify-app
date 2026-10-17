@@ -4,10 +4,11 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
-import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
+import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
+import 'package:hiddify/features/connection/data/vpn_permission.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
@@ -442,6 +443,16 @@ class ConnectReporter {
 
   // -------------------------------------------------------------- payload
 
+  // ---- 打开程序到线路就绪多久（体检修复 R7，boot_ms）：只跟打开程序后的第一次连接报一次 ----
+  static DateTime appLaunchedAt = DateTime.now();   // bootstrap 一开头改成真正的启动时刻
+  static int? _bootMs;
+  static bool _bootSent = false;
+
+  /// 打开程序后第一次「账号和线路都备好了」（开号 / 读账号跑完）。只记第一次。
+  static void noteLinesReady() {
+    _bootMs ??= DateTime.now().difference(appLaunchedAt).inMilliseconds;
+  }
+
   Map<String, dynamic> _basePayload(String outcome) {
     final m = <String, dynamic>{
       'attempt_id': _attemptId,
@@ -455,6 +466,12 @@ class ConnectReporter {
       m['conflict_fix'] = conflictFix;
       conflictFix = '';
     }
+    if ((outcome == 'ok' || outcome == 'fail') && _bootMs != null && !_bootSent) {
+      m['boot_ms'] = _bootMs;
+      _bootSent = true;
+    }
+    // 点连接那一刻手机上别的 VPN 在不在（体检修复 R7，以前只在诊断包里）。
+    if (outcome == 'ok' || outcome == 'fail') m['other_vpn'] = VpnPermission.otherVpnBeforeConnect;
     if (_nodeTag.isNotEmpty) m['node_tag'] = _nodeTag;
     if (_subName.isNotEmpty) m['sub_name'] = _subName;
     final steps = ConnectFlowClock.text();

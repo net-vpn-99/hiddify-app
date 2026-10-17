@@ -17,7 +17,7 @@ class StabilityIndicator extends ConsumerWidget {
 
     final s = ref.watch(stabilityProvider);
     // 还没确认通 = 按钮还在「连接中」；中途断了 = 下面有专门的提示卡。这两种都不显示稳定度。
-    if (!s.confirmed || s.outage) return const SizedBox.shrink();
+    if (!s.confirmed) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final color = switch (s.score) {
       >= 8 => theme.colorScheme.primary,

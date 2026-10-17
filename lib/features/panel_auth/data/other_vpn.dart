@@ -27,9 +27,10 @@ abstract final class OtherVpn {
     } catch (_) {}
   }
 
-  // 别家 VPN 的说法只在这里写一份（10-15 两端合并）：首页横幅、开号被拦、连接第 4 步都用它。
-  // 跟 Windows 的「「X」正在接管网络，关掉它光速雷达才能用」同一句话。
-  static const title = '手机上开着别的 VPN';
-  static const message = '手机上开着别的 VPN，关掉它光速雷达才能用。';
-  static const howTo = '点「打开 VPN 设置」把它断开；如果它开着「始终开启的 VPN」，也要关掉。然后回来再点一下按钮。';
+  // 别家 VPN 的说法只在这里写一份（10-15 两端合并）：首页横幅、连接第 4 步都用它。
+  // 标题、句式跟 Windows 冲突卡一样（运营 10-17 定：「网络被其他软件占用」+「你的电脑上还开着…，关掉它光速雷达才能连上」）。
+  static const title = '网络被其他软件占用';
+  static const message = '你的手机上还开着别的 VPN，关掉它光速雷达才能连上。';
+  // 回来不用再点（体检修复 R5）：从 VPN 设置回到光速雷达时，别的 VPN 已经关了就自动接着连。
+  static const howTo = '点「打开 VPN 设置」把它断开；如果它开着「始终开启的 VPN」，也要关掉。回到光速雷达会自动接着连接。';
 }

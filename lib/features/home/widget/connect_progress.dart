@@ -48,6 +48,9 @@ final connectProgressProvider = StateProvider<ConnectProgress>((ref) => const Co
 /// 数字加一 = 请求一次；首页连接按钮听到后，没在连就走同一套多米诺流程。
 final connectRequestProvider = StateProvider<int>((ref) => 0);
 
+/// 为「别的 VPN」点了「打开 VPN 设置」：回到前台时别的 VPN 已经关了就自动接着连（体检修复 R5）。
+bool resumeAfterVpnSettings = false;
+
 const connectStepLabels = ['开通账号', '获取线路', '选择线路', '启动连接', '检查网络'];
 
 /// 第 4 步（启动连接）失败时给客户看的：标题直说要允许什么、「下一步怎么做」、能直接去的设置页。

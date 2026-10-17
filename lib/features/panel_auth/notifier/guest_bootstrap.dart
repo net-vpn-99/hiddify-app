@@ -1,5 +1,9 @@
+import 'dart:async';
+
+import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/utils/device_id.dart';
+import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
@@ -117,9 +121,23 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
   GuestBootstrapState build() => const GuestBootstrapState();
 
   /// 首页每次出现都会叫一次，成功过就不再重复跑。
+  /// 正在开号（开号 + 导入线路）就返回那一次；没在开返回 null。连接第 2 步先等它（体检修复 A1）。
+  Future<void>? get inflight => _inflight;
+
+  String _appVersion() {
+    try {
+      return ref.read(appInfoProvider).requireValue.version;
+    } catch (_) {
+      return '';
+    }
+  }
+
   Future<void> ensure() {
     if (_done) return Future.value();
-    return _inflight ??= _run().whenComplete(() => _inflight = null);
+    return _inflight ??= _run().whenComplete(() {
+      _inflight = null;
+      if (ref.read(Preferences.panelLoggedIn)) ConnectReporter.noteLinesReady();
+    });
   }
 
   /// 用户在首页点「重试」/ 从登录页回来时清掉记忆，让它能再开一次。
@@ -174,25 +192,9 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
     // 挡人：7 天 11 台被拦，8 台再也没连上。连接时系统会自动把别家顶掉，顶不掉才在第 4 步说清楚。
     state = const GuestBootstrapState(working: true);
     try {
-      late final GuestOptions opts;
-      try {
-        opts = await ref.read(panelAuthProvider.notifier).guestOptions();
-      } catch (e) {
-        state = const GuestBootstrapState(
-          reason: GuestBlockReason.offline,
-          message: '连不上服务器，请检查网络后点重试。如果开着别的 VPN，先关掉它',
-        );
-        return;
-      }
-      if (!opts.enabled) {
-        _done = true;
-        state = const GuestBootstrapState(
-          reason: GuestBlockReason.unavailable,
-          message: '免费试用暂时关闭，注册一个账号同样有试用',
-        );
-        return;
-      }
-
+      // 开号直接发，不先等「游客开没开」的配置（体检修复 A3：以前先拉配置再开号，多等 0.3～0.7 秒，
+      // 配置拉不到就直接说「连不上服务器」不开号）。配置并行拉，只在开号失败时用来说清楚原因。
+      final optsFuture = ref.read(panelAuthProvider.notifier).guestOptions().then<GuestOptions?>((o) => o, onError: (_) => null);
       final r = await ref.read(panelAuthProvider.notifier).guestLogin(
         // 开着别的 VPN 时服务端要先算一道题，一秒内：首页说清在干什么（对客户只说「人机验证」）（message 只在 working 时这样用）。
         onVerify: () => state = const GuestBootstrapState(working: true, message: '正在进行人机验证，马上就好…'),
@@ -220,6 +222,16 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
 
       final url = r.subscribeUrl;
       if (r.error != null || url == null || url.isEmpty) {
+        unawaited(PanelApi().reportGuestFail(r.error ?? 'no_subscribe_url', _appVersion()));
+        final opts = await optsFuture;
+        if (opts != null && !opts.enabled) {
+          _done = true;
+          state = const GuestBootstrapState(
+            reason: GuestBlockReason.unavailable,
+            message: '免费试用暂时关闭，注册一个账号同样有试用',
+          );
+          return;
+        }
         // 没标 _done：网络不好时下次回到首页还能再试一次。
         state = GuestBootstrapState(
           reason: r.isNetworkError == true

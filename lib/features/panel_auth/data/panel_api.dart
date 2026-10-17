@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hiddify/core/logger/logger.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
@@ -155,6 +159,7 @@ class PanelApi {
     if (url.isEmpty) {
       throw PanelApiException('该账号还没有可用套餐，请先在会员中心购买');
     }
+    unawaited(_saveSnapshot(data));
     return PanelSubscribe(
       subscribeUrl: url,
       email: (data['email'] as String?)?.trim(),
@@ -181,7 +186,55 @@ class PanelApi {
     }
     final data = _dataOf(res.data);
     if (data == null) throw PanelApiException(_messageOf(res.data, res.statusCode) ?? '获取账号信息失败');
+    unawaited(_saveSnapshot(data));
     return _accountOf(data);
+  }
+
+  /// 免注册开号失败报一条（体检修复 R7，POST /api/v1/guest/gsl_guest/fail）。以前服务器只记开成功的，
+  /// 算不出开号成功率。失败就算了，不影响开号流程。
+  static int _guestFailCount = 0;
+  Future<void> reportGuestFail(String reason, String appVer) async {
+    try {
+      await _dio.post<dynamic>('/api/v1/guest/gsl_guest/fail', data: {
+        'platform': 'android',
+        'app_ver': appVer,
+        'try_n': ++_guestFailCount,
+        'reason': reason.length > 100 ? reason.substring(0, 100) : reason,
+      });
+    } catch (_) {}
+  }
+
+  // ---- 账号快照（体检修复 A2）：冷启动先显示上次的「剩几天 / 套餐 / 流量」，后台再刷新。----
+  // 以前账号只在内存里，每次打开先看「正在读取账号…」，网不好要等 15 秒（Windows 早就有缓存）。
+  // 存加密存储；订阅地址和 token 不存（只要账号状态）。
+  static const _snapshotKey = 'panel_account_snapshot';
+  static const _snapshotStore = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+
+  static Future<void> _saveSnapshot(Map<String, dynamic> data) async {
+    final keep = Map<String, dynamic>.from(data)
+      ..remove('subscribe_url')
+      ..remove('token');
+    try {
+      await _snapshotStore.write(key: _snapshotKey, value: jsonEncode(keep));
+    } catch (_) {}
+  }
+
+  /// 上次拉到的账号；没有 / 读不出返回 null。
+  Future<PanelAccount?> loadAccountSnapshot() async {
+    try {
+      final raw = await _snapshotStore.read(key: _snapshotKey);
+      if (raw == null || raw.isEmpty) return null;
+      final m = jsonDecode(raw);
+      return m is Map ? _accountOf(m.cast<String, dynamic>()) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> clearAccountSnapshot() async {
+    try {
+      await _snapshotStore.delete(key: _snapshotKey);
+    } catch (_) {}
   }
 
   PanelAccount _accountOf(Map<String, dynamic> data) {

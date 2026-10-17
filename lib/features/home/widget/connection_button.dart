@@ -10,6 +10,7 @@ import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
+import 'package:hiddify/features/app/notifier/app_foreground.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
@@ -234,6 +235,13 @@ class ConnectionButton extends HookConsumerWidget {
       // ② 获取线路。开号那一步（guest_bootstrap）通常已经把线路导进来了 ——
       // **这里重新看一眼**，有了就直接往下走（以前用的是点按钮那一刻的旧判断）。
       stepTo(2);
+      // 首次打开时自动开号还在导入线路：等它导完再看有没有订阅，别自己再拉一遍导一遍
+      // （体检修复 A1：首次打开马上点连接的 19% 导入了两遍，线路列表闪一下、多等 1～2 秒）。
+      final opening = ref.read(guestBootstrapProvider.notifier).inflight;
+      if (opening != null) {
+        await opening;
+        if (stopped()) return;
+      }
       if ((await ref.read(activeProfileProvider.future)) == null) {
         // 登录了却没有可用订阅：多半是试用 / 会员到期或流量用完。补一次账号再判断，
         // 别再给用户看「还没有 VPN 服务器？免费设置一个」那种误导文案。
@@ -310,6 +318,14 @@ class ConnectionButton extends HookConsumerWidget {
       await ref.read(connectionNotifierProvider.notifier).toggleConnection();
     }
 
+    // 从 VPN 设置回来（App 回到前台这个事件）：别的 VPN 已经关了就直接接着连，不用他再点（体检修复 R5）。
+    ref.listen<bool>(appForegroundProvider, (prev, next) async {
+      if (!next || prev == true || !resumeAfterVpnSettings) return;
+      resumeAfterVpnSettings = false;
+      if (await OtherVpn.isActive()) return;
+      ref.read(connectProgressProvider.notifier).state = const ConnectProgress();
+      ref.read(connectRequestProvider.notifier).state++;
+    });
     ref.listen<int>(connectRequestProvider, (prev, next) {
       if (next == prev || preparing.value) return;
       final now = ref.read(connectionNotifierProvider);
@@ -678,7 +694,13 @@ class HomeConnectPanel extends StatelessWidget {
               if (steps != null) Padding(padding: const EdgeInsets.only(top: 8), child: steps),
               ...statusExtra,
               if (hintAction != SettingsAction.none)
-                TextButton(onPressed: hintAction.open, child: Text(hintAction.label)),
+                TextButton(
+                  onPressed: () {
+                    if (hintAction == SettingsAction.vpn) resumeAfterVpnSettings = true;
+                    hintAction.open();
+                  },
+                  child: Text(hintAction.label),
+                ),
               if (onRepair != null) TextButton(onPressed: onRepair, child: const Text('修复并重新连接')),
               if (secureLabel.isNotEmpty)
                 Row(

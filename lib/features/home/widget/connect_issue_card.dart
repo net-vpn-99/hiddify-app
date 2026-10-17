@@ -34,8 +34,8 @@ class ConnectIssueCard extends ConsumerWidget {
     final status = ref.watch(connectionNotifierProvider).valueOrNull;
     final deadLine = ref.watch(deadLineProvider);
     final fault = ref.watch(homeFaultProvider);
-    final outage = ref.watch(stabilityProvider.select((s) => s.outage));
     final unreachable = ref.watch(unreachableNodesProvider);
+    final reachableHost = ref.watch(reachableDeadNodeProvider);
     // 连接意外断开（不是系统收回）= 原因不明：给一次「修复并重新连接」，修过还断就只剩联系客服。
     final canRepair = ref.watch(repairedKindProvider) != 'engine';
 
@@ -63,6 +63,8 @@ class ConnectIssueCard extends ConsumerWidget {
     final bool lineDown = dead && ref.watch(panelAuthProvider.select((s) => s.account?.isLineDown(lineName) ?? false));
     final bool netBlocked = dead && !lineDown && unreachable.length >= 2;
     final bool thisLineBlocked = dead && !netBlocked && lastHost != null && unreachable.contains(lastHost);
+    // 直连节点是通的、隧道没走通：线路是好的，问题在这台手机这边，不叫他换线（体检修复 R2，跟 Windows tunnel_local 同一句）。
+    final bool localPath = dead && !lineDown && !netBlocked && !thisLineBlocked && lastHost != null && reachableHost == lastHost;
     final bool revoked = fault == 'revoked' && status is Disconnected;
     final bool engine = (fault == 'engine' || revoked) && status is Disconnected;
     final bool gone = engine && !revoked;
@@ -70,13 +72,12 @@ class ConnectIssueCard extends ConsumerWidget {
     // 近 7 天安卓 8 个人「核心没走正常停止就没了」）。只在查实没有权限时才说、才给按钮。
     final bool noBackground = gone && ref.watch(batteryOptimizationNotifierProvider).valueOrNull == false;
     final bool egress = fault == 'egress' && status is Disconnected;
-    final bool broken = !dead && !engine && !egress && outage && status is Connected;
-    if (!dead && !engine && !egress && !broken) return const SizedBox.shrink();
+    if (!dead && !engine && !egress) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final bg = (dead || engine || egress) ? scheme.errorContainer : scheme.tertiaryContainer;
-    final fg = (dead || engine || egress) ? scheme.onErrorContainer : scheme.onTertiaryContainer;
+    final bg = scheme.errorContainer;
+    final fg = scheme.onErrorContainer;
 
     final String title;
     final String body;
@@ -101,13 +102,13 @@ class ConnectIssueCard extends ConsumerWidget {
       body = '试了 ${unreachable.length} 条线路都没有回应，换线路也没用';
     } else if (thisLineBlocked) {
       title = '这条线路现在不通';
-      body = '你的网络连不上这条线路，换一条试试';
-    } else if (dead) {
+      body = '这条线路在你的网络里连不上，请换一条';
+    } else if (localPath) {
+      title = '这台手机没连通';
+      body = '线路是好的，是这台手机这边没连通。点「重新连接」再试一次，还不行请联系客服';
+    } else {
       title = '这条线路现在不通';
       body = '换一条线路试试，或者稍后点「重新连接」';
-    } else {
-      title = '网络中断了约 1 分钟';
-      body = '可能是这条线路临时波动，或者你的网络切换了。';
     }
 
     Future<void> reconnect() async {
@@ -183,7 +184,7 @@ class ConnectIssueCard extends ConsumerWidget {
                     onPressed: () => showNetBlockedGuide(context, unreachable.length),
                     child: const Text('怎么办'),
                   ),
-                if (dead && !netBlocked)
+                if (dead && !netBlocked && !localPath)
                   TextButton(
                     style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
                     onPressed: () {
@@ -199,7 +200,7 @@ class ConnectIssueCard extends ConsumerWidget {
                     onPressed: reconnect,
                     child: const Text('重新连接'),
                   ),
-                if (broken || (gone && !canRepair && !noBackground))
+                if (localPath || (gone && !canRepair && !noBackground))
                   TextButton(
                     style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
                     onPressed: () => context.pushNamed('supportChat'),

@@ -17,7 +17,7 @@ import 'package:hiddify/core/preferences/preferences_migration.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/features/app/widget/app.dart';
 import 'package:hiddify/features/auto_start/notifier/auto_start_notifier.dart';
-
+import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/log/data/log_data_providers.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
@@ -26,6 +26,7 @@ import 'package:hiddify/features/window/notifier/window_notifier.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/riverpod_observer.dart';
 import 'package:hiddify/utils/utils.dart';
+
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
@@ -38,6 +39,7 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
   WidgetsBinding.instance.platformDispatcher.onError = Logger.logPlatformDispatcherError;
 
   final stopWatch = Stopwatch()..start();
+  ConnectReporter.appLaunchedAt = DateTime.now();
 
   final container = ProviderContainer(overrides: [environmentProvider.overrideWithValue(env)]);
 

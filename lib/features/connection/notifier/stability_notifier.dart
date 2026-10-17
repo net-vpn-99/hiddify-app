@@ -1,7 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:dio/dio.dart';
 import 'package:hiddify/core/http_client/http_client_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/app/notifier/app_foreground.dart';
@@ -21,18 +21,14 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// **两端统一的规则**（和 Windows 一样，见 docs/连上但不通-两端统一-手册.md）：
 ///  - [confirmed] 之前首页还是「连接中」，第一次探测成功才算「已连接」；
 ///  - 10 秒一次都不通 → connection_notifier 断开并置 [deadLineProvider]，首页说原因和下一步；
-///  - 确认过之后约 1 分钟不通 → [outage]，只提示，不断开、**不换线**。
 class StabilityState {
-  const StabilityState(this.score, {this.confirmed = false, this.outage = false, this.egressAudit = ''});
+  const StabilityState(this.score, {this.confirmed = false, this.egressAudit = ''});
 
   /// 0~10；-1 = 这次连接还没测出过结果
   final int score;
 
   /// 这次连接至少有一次经隧道的请求成功了（= 真的通了）
   final bool confirmed;
-
-  /// 确认过之后又连着约 1 分钟不通
-  final bool outage;
 
   /// 诊断报告用：最近一次出口核对。
   final String egressAudit;
@@ -68,6 +64,9 @@ final deadLineProvider = StateProvider<bool>((ref) => false);
 /// 任何一次确认网通就清空。
 final unreachableNodesProvider = StateProvider<Set<String>>((ref) => const {});
 
+/// 判「不通」后直连节点是通的那台（体检修复 R2）：线路是好的，是这台手机这边没走通，首页不叫他换线。
+final reachableDeadNodeProvider = StateProvider<String?>((ref) => null);
+
 /// 首页故障原因。空 = 没有。engine / egress / line。
 final homeFaultProvider = StateProvider<String>((ref) => '');
 
@@ -79,7 +78,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
   bool _running = false;
   bool _confirmed = false;
   int _gen = 0;
-  bool _probing = false;
+  DateTime? _ifacesChangedAt;   // 网卡最近一次变化（换网络时「没回音」先不算）
   final List<String> _probeNotes = [];
   DateTime? _confirmedAt;
 
@@ -146,8 +145,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _timer?.cancel();
     final gen = _gen;
     if (immediate) unawaited(_probe(gen));
-    // 确认通之前每秒一探（和 Windows 一样；上一次没回来不会叠着发，见 _probing）：
-    // 隧道一通就立刻亮绿，不用等到下一个 3 秒。确认后在 _probe 里换成 1 分钟一次。
+    // 确认通之前每秒一探（和 Windows 一样；每一轮自己的连接，不等上一轮）：
+    // 隧道一通就立刻亮绿。确认后在 _probe 里换成 30 秒一次。
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _probe(gen));
     _ifaceTimer?.cancel();
     _ifaceTimer = Timer.periodic(const Duration(seconds: 5), (_) => _watchIfaces(gen));
@@ -179,21 +178,20 @@ class StabilityNotifier extends Notifier<StabilityState> {
       }
       if (now == _ifaces) return;
       _ifaces = now;
+      _ifacesChangedAt = DateTime.now();
       unawaited(_probe(gen));
     } catch (_) {}
   }
 
   Future<void> _probe(int gen) async {
     if (!_running || gen != _gen) return;
-    if (_probing) return;
-    _probing = true;
+    // 不等上一轮：每一轮都是自己的新连接、到点自己断（_readExit），第一轮卡住不会把后面几轮堵住
+    // （体检修复 R1：以前「上一个没回来就不发」，10 秒里常常只回来 1 个结果，能通的线被判成不通）。
     _Exit? exit;
     try {
       exit = await _readExit();
     } catch (_) {
       exit = null;
-    } finally {
-      _probing = false;
     }
     if (gen != _gen || !_running) {
       if (_running && gen != _gen) unawaited(_probe(_gen));
@@ -241,6 +239,14 @@ class StabilityNotifier extends Notifier<StabilityState> {
       _fault('egress');
       return;
     }
+    // 刚换过网络（换 Wi-Fi / 开关飞行模式 / 从睡眠醒来网卡重连）：这一次不算，重新确认。
+    final changedAt = _ifacesChangedAt;
+    if (changedAt != null && DateTime.now().difference(changedAt) < const Duration(minutes: 1)) {
+      _ifacesChangedAt = null;
+      _timer?.cancel();
+      _timer = Timer(const Duration(seconds: 3), () => _probe(gen));
+      return;
+    }
     _misses++;
     state = StabilityState(4, confirmed: true, egressAudit: audit);
     if (_misses >= 2) {
@@ -255,15 +261,15 @@ class StabilityNotifier extends Notifier<StabilityState> {
       _fault('line');
       return;
     }
-    _timer?.cancel();
-    _timer = Timer(const Duration(seconds: 20), () => _probe(gen));
+    // 没换网络：马上再探一次（不等 20 秒），还不回才断开。
+    unawaited(_probe(gen));
   }
 
-  /// 确认通之后每分钟探一次（一个很小的请求）。以前是 5 分钟：线路断了最晚要 5 分半
-  /// 才发现，人早就以为是自己网不好了（10-12 洛杉矶 05 断网那次）。现在约 1 分 20 秒内发现。
+  /// 确认通之后每 30 秒探一次（一个很小的请求，两端同一套，体检修复 R3）。以前 1 分钟；更早是 5 分钟，
+  /// 线路断了最晚要 5 分半才发现（10-12 洛杉矶 05 断网那次）。
   void _armSteady(int gen) {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(minutes: 1), (_) => _probe(gen));
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _probe(gen));
   }
 
   void _fault(String kind) {
@@ -288,42 +294,68 @@ class StabilityNotifier extends Notifier<StabilityState> {
     unawaited(ref.read(connectionNotifierProvider.notifier).abortConnection());
   }
 
+  /// 问「出口 IP + 国家」的三家，两端同一份（体检修复 R6）。Cloudflare trace 按 IP 地址访问、不用解析域名、
+  /// 不按 IP 限流，排第一。我们自己的域名在路由里强制直连、不走隧道，问自家接口拿到的是家里的 IP，不能用。
+  static const _exitUrls = [
+    'https://1.1.1.1/cdn-cgi/trace',
+    'https://api.ip.sb/geoip',
+    'https://ipinfo.io/json',
+  ];
+
   Future<_Exit?> _readExit() async {
-    final client = ref.read(httpClientProvider);
     // 本进程被排除在 VPN 之外，直接请求会绕过隧道。走本地 mixed 端口、不指定出站，
     // 和系统流量进隧道后走的是同一套规则。内核停了这个端口也不在。
     //
-    // 两个地址同时问，谁先答出来用谁；这一次最多 4 秒（和 Windows 一样）。以前用通用 HTTP
-    // 客户端的 15 秒超时 + 自动重试、两个地址挨个试，卡住一次最坏要一分钟，期间不发新的
-    // 探测，所以安卓只能把「10 秒不通」放宽成 15 秒（10-13 排查）。
-    final cancel = CancelToken();
-    final timer = Timer(const Duration(seconds: 4), () => cancel.cancel('probe timeout'));
+    // 每一轮都用自己的 HttpClient（全新连接、不复用、不自动重试），4 秒到点 close(force) 把 socket 一起掐掉
+    // （体检修复 R1）。以前用全局的 HTTP 客户端：连接复用 + 失败自动重试，取消了也没真断，下一轮排在后面。
+    final port = ref.read(httpClientProvider).port;
+    if (port <= 0) return null;
+    final client = HttpClient()
+      ..findProxy = ((_) => 'PROXY localhost:$port')
+      ..connectionTimeout = const Duration(seconds: 4)
+      ..idleTimeout = Duration.zero;
     Future<_Exit?> ask(String url) async {
       try {
-        final res = await client.get<dynamic>(url, proxyOnly: true, cancelToken: cancel);
-        final data = res.data;
-        if (data is! Map) return null;
-        final ip = '${data['ip'] ?? ''}'.trim();
-        final cc = '${data['country_code'] ?? data['country'] ?? ''}'.trim();
-        return ip.isEmpty ? null : _Exit(ip, cc);
+        final req = await client.getUrl(Uri.parse(url));
+        req.persistentConnection = false;
+        final res = await req.close();
+        final body = await res.transform(utf8.decoder).join();
+        return _parseExit(url, body);
       } catch (_) {
         return null;
       }
     }
 
     final done = Completer<_Exit?>();
-    var pending = 2;
-    for (final url in const ['https://api.ip.sb/geoip', 'https://ipinfo.io/json']) {
+    var pending = _exitUrls.length;
+    for (final url in _exitUrls) {
       unawaited(ask(url).then((exit) {
         pending--;
         if (done.isCompleted) return;
         if (exit != null || pending == 0) done.complete(exit);
       }));
     }
-    final exit = await done.future;
-    timer.cancel();
-    if (!cancel.isCancelled) cancel.cancel('answered');
+    final exit = await done.future.timeout(const Duration(seconds: 4), onTimeout: () => null);
+    client.close(force: true);
     return exit;
+  }
+
+  /// 三家的回答统一成 (ip, 国家码)：Cloudflare 是文本行 ip=… loc=US，另外两家是 JSON。
+  static _Exit? _parseExit(String url, String body) {
+    var ip = '';
+    var cc = '';
+    if (url.contains('cdn-cgi/trace')) {
+      for (final line in const LineSplitter().convert(body)) {
+        if (line.startsWith('ip=')) ip = line.substring(3).trim();
+        if (line.startsWith('loc=')) cc = line.substring(4).trim();
+      }
+    } else {
+      final data = jsonDecode(body);
+      if (data is! Map) return null;
+      ip = '${data['ip'] ?? ''}'.trim();
+      cc = '${data['country_code'] ?? data['country'] ?? ''}'.trim();
+    }
+    return ip.isEmpty ? null : _Exit(ip, cc);
   }
 
   bool _proves(_Exit exit, String line) {

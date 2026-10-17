@@ -292,6 +292,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     if (ref.read(panelAuthProvider).account?.isLineDown(ref.read(Preferences.lastNodeName)) ?? false) return;
     final r = await reporter.probeLastNodeDirect();
     final set = {...ref.read(unreachableNodesProvider)};
+    ref.read(reachableDeadNodeProvider.notifier).state = r.nodeOk ? host : null;
     if (r.nodeOk) {
       set.remove(host);
     } else if (r.noAnswer && r.apiOk) {

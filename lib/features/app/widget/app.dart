@@ -50,6 +50,9 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
     ref.read(supportChatNotifierProvider.notifier).setAppActive(false);
   }
 
+  // 首页打开时那次检查算第一次（home_page.dart），这里只管之后回前台。
+  static DateTime? _lastUpdateCheck = DateTime.now();
+
   void onResume(WidgetRef ref) {
     // if (PlatformUtils.isDesktop) return;
     ref.read(hiddifyCoreServiceProvider).init();
@@ -57,6 +60,12 @@ class App extends HookConsumerWidget with WidgetsBindingObserver, PresLogger {
     // 回前台顺手刷一次账号：用户可能在别处充了值 / 或流量刚用完，连接前的拦截要用到。
     ref.read(panelAuthProvider.notifier).syncAccountQuietly();
     unawaited(PanelApiBase.onForeground());
+    // 回前台也查一次更新，离上次查超过 6 小时才查（体检修复 A4）：常年挂着不关的人也能收到修复版。
+    final now = DateTime.now();
+    if (_lastUpdateCheck == null || now.difference(_lastUpdateCheck!) >= const Duration(hours: 6)) {
+      _lastUpdateCheck = now;
+      unawaited(ref.read(appUpdateNotifierProvider.notifier).check());
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (isOnPauseCalled && PlatformUtils.isAndroid) ref.invalidate(perAppProxyServiceProvider);

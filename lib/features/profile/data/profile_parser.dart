@@ -154,30 +154,36 @@ class ProfileParser {
     //   throw const ProfileFailure.invalidUrl('HTTP is not supported. Please use HTTPS for secure connection.');
 
     final swProfile = Stopwatch()..start();
-    final rs = await _httpClient
-        .download(
-          url.trim(),
-          tempFilePath,
-          cancelToken: cancelToken,
-          userAgent: _ref.read(ConfigOptions.useXrayCoreWhenPossible)
-              ? _httpClient.userAgent.replaceAll("HiddifyNext", "HiddifyNextX")
-              : null,
-        )
-        .catchError((err) {
-          if (CancelToken.isCancel(err as DioException)) {
-            throw const ProfileFailure.cancelByUser('HTTP request for getting profile content canceled by user.');
-          }
-          _writeSubFetch(
-            stage: 'sub_download',
-            ok: false,
-            ms: swProfile.elapsedMilliseconds,
-            host: Uri.tryParse(url.trim())?.host,
-          );
-          if (err is DioException && looksLikeOwnPanelSubscribe(url) && isKnownPanelHost(url)) {
-            PanelApiBase.noteFailure(originOf(url), status: err.response?.statusCode, type: err.type);
-          }
-          throw err;
-        });
+    Future<Response<dynamic>> fetch(String u) => _httpClient.download(
+      u.trim(),
+      tempFilePath,
+      cancelToken: cancelToken,
+      userAgent: _ref.read(ConfigOptions.useXrayCoreWhenPossible)
+          ? _httpClient.userAgent.replaceAll("HiddifyNext", "HiddifyNextX")
+          : null,
+    );
+    Response<dynamic> rs;
+    try {
+      rs = await fetch(url);
+    } on DioException catch (err) {
+      if (CancelToken.isCancel(err)) {
+        throw const ProfileFailure.cancelByUser('HTTP request for getting profile content canceled by user.');
+      }
+      _writeSubFetch(
+        stage: 'sub_download',
+        ok: false,
+        ms: swProfile.elapsedMilliseconds,
+        host: Uri.tryParse(url.trim())?.host,
+      );
+      if (!looksLikeOwnPanelSubscribe(url) || !isKnownPanelHost(url)) rethrow;
+      // 自家订阅地址连不上：记下这个地址、重新选一个，换过去再下一次（体检修复 R4）。以前直接失败，
+      // 首次打开要等两次 15 秒超时（10-17 体检 uid 1863：首启到能连用了 191 秒）。
+      final origin = originOf(url);
+      PanelApiBase.noteFailure(origin, status: err.response?.statusCode, type: err.type);
+      final next = await PanelApiBase.resolve();
+      if (next == origin || !url.trim().startsWith(origin)) rethrow;
+      rs = await fetch(next + url.trim().substring(origin.length));
+    }
     await expandRemoteLinesInParallel(
       tempFilePath: tempFilePath,
       httpClient: _httpClient,

@@ -21,6 +21,7 @@ class PanelApiBase {
   static const _primaryPrefKey = 'oneray_panel_api_primary';
 
   static String? _cached;
+  static bool _coldChecked = false;   // 这次打开程序探过上次的地址没有
   static Future<String>? _inflight;
   static DateTime? _cachedAt;
   static DateTime? _lastAttemptAt;
@@ -193,6 +194,15 @@ class PanelApiBase {
     await _dropStaleCache(prefs);
     await _loadPersistedConfig(prefs);
     final last = _normalize(prefs.getString(_prefKey));
+    // 冷启动第一次：上次的地址先探一下（3 秒）再用。它刚好坏了（被墙 / 中转机挂了）就别让第一个请求
+    // 干等 15 秒才换（体检修复 R4，10-16 源站停机那天「读账号 15002ms」就是这个）。之后照旧直接用、后台核对。
+    if (!force && last != null && _configOrder.contains(last) && !_skipped(last) && !_coldChecked) {
+      _coldChecked = true;
+      if (!await _probe(last)) {
+        Logger.app.info('api base 上次的 $last 冷启动探不通，重新选');
+        noteFailure(last, type: DioExceptionType.connectionTimeout);
+      }
+    }
     if (!force && last != null && _configOrder.contains(last) && !_skipped(last)) {
       _cached = last;
       _cachedAt = DateTime.now();

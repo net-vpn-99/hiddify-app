@@ -406,7 +406,7 @@ class _SitesBlock extends HookConsumerWidget {
     final health = ref.watch(stabilityProvider);
     final active = ref.watch(activeProxyNotifierProvider).valueOrNull?.tagDisplay ?? '';
     final stored = ref.watch(Preferences.lastNodeName);
-    final show = connected && health.confirmed && !health.outage;
+    final show = connected && health.confirmed;
     final links = useState<List<SiteLink>>(SitesCatalog.quick);
     final configTick = useState(0);
 

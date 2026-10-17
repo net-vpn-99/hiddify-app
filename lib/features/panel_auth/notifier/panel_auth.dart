@@ -150,6 +150,12 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
         state = state.copyWith(email: email);
       }
     });
+    // 冷启动先显示上次的账号（体检修复 A2），网络回来再刷新成最新；读失败也保留旧的，不停在「正在读取账号…」。
+    _api.loadAccountSnapshot().then((snap) {
+      if (snap != null && state.account == null && ref.read(Preferences.panelLoggedIn)) {
+        state = state.copyWith(account: snap);
+      }
+    });
     // 上次开号发的密码，用户还没按「我抄好了」——重开 App 还得能看到。
     _secureStorage.read(key: _kGuestPwKey).then((pw) {
       if (pw != null && pw.isNotEmpty) state = state.copyWith(guestPassword: pw);
@@ -556,6 +562,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     if (wipe) await ref.read(Preferences.guestOptOut.notifier).update(true);
     await _secureStorage.delete(key: _kTokenKey);
     await _secureStorage.delete(key: _kEmailKey);
+    await PanelApi.clearAccountSnapshot();
     // 钥匙跟着这个号走。免注册的号没有「退出登录」，走到这儿的都是有邮箱的正式账号。
     await _secureStorage.delete(key: _kGuestPwKey);
     await ref.read(Preferences.guestKeySaved.notifier).update(true);
