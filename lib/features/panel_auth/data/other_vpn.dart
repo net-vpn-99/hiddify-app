@@ -4,11 +4,10 @@ import 'package:flutter/services.dart';
 
 /// 手机上是不是开着别家 VPN（OneRay 2026-10-09）。
 ///
-/// 只给还没登录的新用户用：开着别家 VPN 时，我们 App 的请求都从别家出去，服务端看到的是
-/// 国外 IP，领免费试用会被拒。与其等服务端拒，不如打开 App 就说「先关掉它」。
-/// 老用户不提醒 —— 他们的请求不会被拒，点连接时系统也会自动把别家顶掉。
+/// 开着别家 VPN 不拦（10-17 起，开号前那道拦截已删）：系统只留一个 VPN，我们连上就把它顶掉。
+/// 只在系统没让我们连（别家设了「始终开启的 VPN」）时，用这里的说法请他关掉。
 ///
-/// 调用方要保证我们自己的 VPN 没连着（新用户本来就连不上），否则这里会把自己算进去。
+/// 调用方要保证我们自己的 VPN 没连着，否则这里会把自己算进去。
 abstract final class OtherVpn {
   static const _channel = MethodChannel('com.hiddify.app/platform');
 

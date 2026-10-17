@@ -211,10 +211,6 @@ class AccountStatusBar extends HookConsumerWidget {
       if (mask != null) {
         return (mask.isEmpty ? '这台手机上有账号' : '这台手机上是 $mask', '登录', _Tone.warn, 'login');
       }
-      // 别家 VPN 开着：顶部 OtherVpnBanner 已经在说，这里不重复，也不给按钮。
-      if (boot.reason == GuestBlockReason.otherVpn) {
-        return ('关掉别的 VPN 后就能开始用', '', _Tone.plain, '');
-      }
       if (boot.reason == GuestBlockReason.fixable) {
         return (boot.message ?? '免费试用暂时开不了，请稍后重试', '重试', _Tone.plain, 'retry');
       }

@@ -1,6 +1,5 @@
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/utils/device_id.dart';
-import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
@@ -20,13 +19,8 @@ enum GuestBlockReason {
   /// 网络不通 / 超时 / 拉开关失败 / 开号抛其它错等。只能重试。
   offline,
 
-  /// 服务端拒绝，但用户自己能解决（比如开着别的 VPN：关掉再试）。主按钮「重试」，弹窗里也给「去注册」。
-  /// 新版 App 开号前会先查 [otherVpn]，正常碰不到这条；留着兜底（检测漏了 / 路由器上的代理）。
+  /// 服务端拒绝，但用户自己能解决。主按钮「重试」，弹窗里也给「去注册」。
   fixable,
-
-  /// 手机上开着别家 VPN（开号前本机查到的）。先不去开号 —— 请求会从别家出去被服务端拒。
-  /// 首页顶部 OtherVpnBanner 提示「先关掉」，关掉回到 App 时它会 reset + ensure 再开号。
-  otherVpn,
 }
 
 class GuestBootstrapState {
@@ -161,11 +155,9 @@ class GuestBootstrapNotifier extends Notifier<GuestBootstrapState> {
       }
     }
 
-    if (await OtherVpn.isActive()) {
-      state = const GuestBootstrapState(reason: GuestBlockReason.otherVpn, message: OtherVpn.message);
-      return;
-    }
-
+    // 开着别家 VPN 也照常开号（10-17 起）：以前先拦下请他关掉，因为请求从别家出去、服务端看到国外 IP
+    // 会拒。GslGuest 1.8.4 起国外 IP 不拒了，只多一道自动人机验证（下面 onVerify），这道拦截就只剩
+    // 挡人：7 天 11 台被拦，8 台再也没连上。连接时系统会自动把别家顶掉，顶不掉才在第 4 步说清楚。
     state = const GuestBootstrapState(working: true);
     try {
       late final GuestOptions opts;

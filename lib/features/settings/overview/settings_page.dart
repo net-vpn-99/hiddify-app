@@ -8,12 +8,10 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/common/soft_card.dart';
-import 'package:hiddify/features/connection/data/system_settings.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/local_repair.dart';
 import 'package:hiddify/features/diagnostic/diag_tile.dart';
-import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
 import 'package:hiddify/features/panel_auth/widget/account_card.dart';
 import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
 import 'package:hiddify/features/purchase/widget/purchase_tokens.dart';
@@ -227,20 +225,14 @@ class _LocalInitRowState extends ConsumerState<_LocalInitRow> {
     final s = ref.read(connectionNotifierProvider).valueOrNull;
     final wasUp = s is Connected || s is Connecting;
     setState(() => _busy = true);
-    final r = await ref.read(localRepairProvider).initialize();
+    final done = await ref.read(localRepairProvider).initialize();
     if (!mounted) return;
     setState(() => _busy = false);
-    if (r.done.isEmpty) return;
+    if (done.isEmpty) return;
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
-      r.otherVpn
-          ? SnackBar(
-              content: const Text('${OtherVpn.message}${OtherVpn.howTo}'),
-              duration: const Duration(seconds: 8),
-              action: SnackBarAction(label: SettingsAction.vpn.label, onPressed: SettingsAction.vpn.open),
-            )
-          : SnackBar(content: Text('已${r.done}${wasUp ? '，正在重新连接' : ''}')),
+      SnackBar(content: Text('已$done${wasUp ? '，正在重新连接' : ''}')),
     );
   }
 

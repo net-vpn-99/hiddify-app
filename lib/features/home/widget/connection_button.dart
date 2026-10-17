@@ -235,13 +235,6 @@ class ConnectionButton extends HookConsumerWidget {
         if (!ref.read(Preferences.panelLoggedIn)) {
           final boot = ref.read(guestBootstrapProvider);
           final why = boot.message ?? '';
-          if (boot.reason == GuestBlockReason.otherVpn) {
-            // 不是账号的事：跟第 4 步被别的 VPN 挡住同一套说法和「打开 VPN 设置」按钮，不弹注册框；
-            // 上报跟 Windows「其他软件占用网络」同记 tunnel（10-15 查：6 个人看到「账号没开通」，
-            // 后台也被算成开号失败）。
-            failAt(1, otherVpnProgress.title, otherVpnProgress.message, reportStage: 'tunnel', action: otherVpnProgress.action);
-            return;
-          }
           failAt(1, '账号没开通', why.isEmpty ? '检查网络后再点一次' : why);
           await ref.read(dialogNotifierProvider.notifier).showNeedAccount(message: why);
           return;
@@ -302,12 +295,13 @@ class ConnectionButton extends HookConsumerWidget {
 
       // ④ 启动连接。之后的进度由连接状态推（上面的 ref.listen）。
       stepTo(4);
-      // 被系统拒了要知道是不是别的 VPN 占着（我们自己的这时还没连，不会把自己算进去）。
+      // 开着别家 VPN 照常连：系统只留一个 VPN，我们连上就把它顶掉。这里只记下来，万一被系统拒了
+      // （别家设了「始终开启」）好说清楚是它挡着（我们自己的这时还没连，不会把自己算进去）。
       VpnPermission.otherVpnBeforeConnect = await OtherVpn.isActive();
       if (stopped()) return;
       // 这台手机还没允许过光速雷达建 VPN：系统马上要弹「网络连接请求」，先说清楚点哪个
       // （10-14 客户 ID 1725 看到系统那段「监控网络流量…请勿接受」不敢点，一直连不上）。
-      if (!VpnPermission.otherVpnBeforeConnect && !await VpnPermission.granted()) {
+      if (!await VpnPermission.granted()) {
         if (stopped() || !context.mounted) return;
         // 10-16 运营：改成底部面板（按钮在拇指够得到的地方）；示意图画成一看就是插图的样子，
         // 不跟真窗口一模一样（以前有人去点图里的「确定」；各品牌手机的窗口也长得不一样）。
