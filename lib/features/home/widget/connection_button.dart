@@ -237,7 +237,8 @@ class ConnectionButton extends HookConsumerWidget {
       stepTo(2);
       // 首次打开时自动开号还在导入线路：等它导完再看有没有订阅，别自己再拉一遍导一遍
       // （体检修复 A1：首次打开马上点连接的 19% 导入了两遍，线路列表闪一下、多等 1～2 秒）。
-      final opening = ref.read(guestBootstrapProvider.notifier).inflight;
+      // 只等「正在开号」那种（working）；已登录的人启动时那次读账号不用等，订阅本来就在。
+      final opening = ref.read(guestBootstrapProvider).working ? ref.read(guestBootstrapProvider.notifier).inflight : null;
       if (opening != null) {
         await opening;
         if (stopped()) return;

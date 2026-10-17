@@ -187,6 +187,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     if (!_running || gen != _gen) return;
     // 不等上一轮：每一轮都是自己的新连接、到点自己断（_readExit），第一轮卡住不会把后面几轮堵住
     // （体检修复 R1：以前「上一个没回来就不发」，10 秒里常常只回来 1 个结果，能通的线被判成不通）。
+    final started = DateTime.now();
     _Exit? exit;
     try {
       exit = await _readExit();
@@ -199,6 +200,10 @@ class StabilityNotifier extends Notifier<StabilityState> {
     }
     final line = ref.read(Preferences.lastNodeName);
     final proved = exit != null && _proves(exit, line);
+    // 确认网通之前发出、确认之后才超时回来的那几轮：不算「用着时没回音」（不然第一轮卡住、第三轮通了，
+    // 前两轮晚到的超时会把刚连上的连接判成断了）。
+    final confirmedAt = _confirmedAt;
+    if (!proved && _confirmed && confirmedAt != null && started.isBefore(confirmedAt)) return;
     final audit = _audit(proved, exit, line);
     if (exit == null) {
       _note('timeout');
