@@ -61,6 +61,9 @@ class ConnectReporter {
   static const int _bundleMaxPerDay = 3;
 
   String? _attemptId;
+  // 这次连接点下去那一刻别的 VPN 在不在。只有用户点按钮那条流程查过（ConnectFlowClock 开着）才有值；
+  // 自动重连没查过，不报（以前报的是上一次点按钮时的旧值。code-review 第 5 条）。
+  bool? _otherVpn;
   String _subName = '';
   String _nodeTag = '';
   String? _nodeHost;
@@ -176,6 +179,7 @@ class ConnectReporter {
   /// which host:port) this attempt will actually dial.
   Future<void> beginAttempt(String subName, {String? preferredLine}) async {
     _attemptId = _mintId();
+    _otherVpn = ConnectFlowClock.isOpen ? VpnPermission.otherVpnBeforeConnect : null;
     _subName = _truncateRunes(subName, 64);
     _startedAt = DateTime.now();
     _done = false;
@@ -483,7 +487,8 @@ class ConnectReporter {
       _bootSent = true;
     }
     // 点连接那一刻手机上别的 VPN 在不在（体检修复 R7，以前只在诊断包里）。
-    if (outcome == 'ok' || outcome == 'fail') m['other_vpn'] = VpnPermission.otherVpnBeforeConnect;
+    final otherVpn = _otherVpn;
+    if ((outcome == 'ok' || outcome == 'fail') && otherVpn != null) m['other_vpn'] = otherVpn;
     if (_nodeTag.isNotEmpty) m['node_tag'] = _nodeTag;
     if (_subName.isNotEmpty) m['sub_name'] = _subName;
     final steps = ConnectFlowClock.text();
