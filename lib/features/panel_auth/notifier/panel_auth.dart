@@ -58,6 +58,11 @@ class PanelAuthState {
   /// 游客（GslGuest 插件免注册开的号）：邮箱是占位的 g-xxx@guest.invalid。
   bool get isGuest => email != null && email!.toLowerCase().endsWith(PanelApi.guestEmailSuffix);
 
+  /// 还在免费试用：免注册号、而且还在体验套餐上。付过钱的免注册号是正经会员，不算
+  /// （服务器同步时带 gsl_free_trial（GslGuest 1.9.0）；老插件没给时退回看每日额度的 daily.tier。跟 Windows AccountController::freeTrial 一样）。
+  /// 「免费试用中 / 试用已结束 / 去买套餐 / 看套餐 / 不给邀请」都看这个；「加邮箱防丢 / 登录已有账号」看 isGuest。
+  bool get freeTrial => isGuest && (account?.freeTrialFlag ?? account?.dailyTier != 'paid');
+
   /// 账号编号 —— **免注册的号也有**，给人看、给人念、报给客服用。
   ///
   /// 格式 `A4K7-P92`：面板 uuid 的前 8 位十六进制换算成 7 位 Crockford Base32

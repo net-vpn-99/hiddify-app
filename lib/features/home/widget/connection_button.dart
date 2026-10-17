@@ -11,6 +11,7 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/guide_card.dart';
+import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/system_settings.dart';
@@ -95,38 +96,6 @@ class ConnectionButton extends HookConsumerWidget {
         : "";
     if (quotaEnded || delay <= 0 || delay > 65000 || connectionStatus.value != const Connected()) {
       secureLabel = "";
-    }
-
-    final guest = ref.watch(panelAuthProvider.select((s) => s.isGuest));
-    if (quotaEnded) {
-      final label = account?.stateSlug != 'expired' ? '流量已用完' : (guest ? '试用已结束' : '会员已到期');
-      final expDay = account?.stateSlug == 'expired' ? account!.expiryDay : '';
-      Future<void> renew() async {
-        await ref.read(connectionNotifierProvider.notifier).abortConnection();
-        await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(account!, force: true);
-      }
-
-      // 到期：雷达变暗，主按钮「去续费」，邀请排第二（定死的规矩）。
-      return HomeConnectPanel(
-        radar: (size) => HomeRadar(
-          size: size,
-          state: RadarState.off,
-          isp: account?.isp ?? '',
-          dimmed: true,
-          onPick: (_) => renew(),
-        ),
-        onTap: renew,
-        enabled: true,
-        kicker: expDay.isEmpty ? '' : '$expDay 到期',
-        title: label,
-        sub: '线路、账号都还在。续费以后点「开始连接」就行。',
-        statusExtra: statusExtra,
-        middle: middle,
-        buttonLabel: '去续费',
-        // 免注册的试用号不给邀请（两端一样，Windows Main.qml homeThird）。
-        linkLabel: guest ? '' : '邀请好友，各得 1 天',
-        onLink: () => openInvite(context),
-      );
     }
 
     // OneRay: 点下去到状态变「连接中」之间要跑几步准备工作（开号 / 拉线路 / 切到自家订阅），
@@ -350,9 +319,10 @@ class ConnectionButton extends HookConsumerWidget {
     final lineName = ref.watch(Preferences.lastNodeName);
     final lineDesc = ref.watch(Preferences.lastNodeDesc);
     final connected = status is Connected;
-    // 免注册号或精品体验中：没连接时说「免费试用中」、底下给「看套餐」（跟 Windows homeKicker / homeThird 一样）。
+    // 免费试用中或精品体验中：没连接时说「免费试用中」、底下给「看套餐」（跟 Windows homeKicker / homeThird 一样）。
+    final freeTrial = ref.watch(panelAuthProvider.select((s) => s.freeTrial));
     final tierTrial = ref.watch(lineTierProvider.select((x) => x.trial == 'active'));
-    final trialing = guest || tierTrial;
+    final trialing = freeTrial || tierTrial;
     final failedNow = shownFailed > 0 || connectionStatus is AsyncError ||
         (status is Disconnected && status.connectionFailure != null);
     final radarState = busy || shownStep > 0
@@ -383,6 +353,111 @@ class ConnectionButton extends HookConsumerWidget {
       },
       _ => () async {},
     });
+
+    // ---- 三种「还不能连」的主页（两端同一张表：docs/计划/主页状态表.md）----
+    // 放在所有 hook 之后：以前到期那段在 useState 前面就 return，账号一恢复 hook 个数变了会出错。
+    final loggedIn = ref.watch(Preferences.panelLoggedIn);
+    Widget blocked({
+      required VoidCallback go,
+      required String title,
+      required String sub,
+      required String button,
+      String kicker = '',
+      String link = '',
+      VoidCallback? onLink,
+      bool dimmed = true,
+      bool enabled = true,
+    }) => HomeConnectPanel(
+      radar: (size) => HomeRadar(size: size, state: RadarState.off, isp: account?.isp ?? '', dimmed: dimmed, onPick: (_) => go()),
+      onTap: go,
+      enabled: enabled,
+      kicker: kicker,
+      title: title,
+      sub: sub,
+      statusExtra: statusExtra,
+      middle: middle,
+      buttonLabel: button,
+      linkLabel: link,
+      onLink: onLink,
+    );
+
+    // ① 到期 / 流量用完：雷达变暗，主按钮「去续费」，下面「邀请好友」（免费试用的号不给）。
+    if (quotaEnded) {
+      Future<void> renew() async {
+        await ref.read(connectionNotifierProvider.notifier).abortConnection();
+        await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(account!, force: true);
+      }
+
+      final expDay = account?.stateSlug == 'expired' ? account!.expiryDay : '';
+      return blocked(
+        go: renew,
+        kicker: expDay.isEmpty ? '' : '$expDay 到期',
+        title: account?.stateSlug != 'expired' ? '流量已用完' : (freeTrial ? '试用已结束' : '会员已到期'),
+        sub: '线路、账号都还在。续费以后点「开始连接」就行。',
+        button: '去续费',
+        link: freeTrial ? '' : '邀请好友，各得 1 天',
+        onLink: () => openInvite(context),
+      );
+    }
+
+    if (radarState == RadarState.off) {
+      // ② 有账号、没套餐：直接让他选套餐（以前照常显示线路和「开始连接」，点了才弹窗）。
+      if (loggedIn && account?.stateSlug == 'no_plan') {
+        return blocked(go: () => context.pushNamed('purchase'), title: '尚未开通', sub: '还没有套餐，点下面选一个', button: '选择套餐');
+      }
+      // ③ 没账号：哪一种只看 noAccountState（跟顶上账户胶囊同一份）。
+      if (!loggedIn) {
+        final boot = ref.watch(guestBootstrapProvider);
+        void login() => context.pushNamed('login');
+        final mask = boot.knownAccountMask ?? '';
+        return switch (boot.noAccountState) {
+          NoAccountState.opening => blocked(
+            go: () {},
+            enabled: false,
+            dimmed: false,
+            title: '正在开通…',
+            sub: '正在为你开通免费试用，稍等一下',
+            button: '正在开通…',
+            link: '已经有账号？登录',
+            onLink: login,
+          ),
+          NoAccountState.knownAccount => blocked(
+            go: login,
+            dimmed: false,
+            kicker: '这台手机登录过',
+            title: mask.isEmpty ? '登录你的账号' : mask,
+            sub: '输入密码就能回到这个账号',
+            button: '登录',
+            link: '用别的账号',
+            onLink: login,
+          ),
+          // 服务器不给试用（名额满 / 后台关了）：重试没用，直接去注册。
+          NoAccountState.unavailable => blocked(
+            go: () => context.pushNamed('register'),
+            dimmed: false,
+            kicker: '还没有账号',
+            title: '免费试用',
+            sub: boot.message ?? '免费试用暂时开不了',
+            button: '去注册',
+            link: '已经有账号？登录',
+            onLink: login,
+          ),
+          // 「重试 / 免费开始使用」走一键连接：第 1 步就是开号，开成了接着连。
+          NoAccountState.retryable || NoAccountState.fresh => blocked(
+            go: guard(connectFlow),
+            dimmed: false,
+            kicker: '还没有账号',
+            title: '免费试用',
+            sub: boot.noAccountState == NoAccountState.retryable
+                ? (boot.message ?? '免费试用暂时开不了，请稍后重试')
+                : '不用注册，点下面的按钮就能开始免费试用',
+            button: boot.noAccountState == NoAccountState.retryable ? '重试' : '免费开始使用',
+            link: '已经有账号？登录',
+            onLink: login,
+          ),
+        };
+      }
+    }
 
     return HomeConnectPanel(
       radar: (size) => HomeRadar(
@@ -647,12 +722,7 @@ class HomeConnectPanel extends StatelessWidget {
                   ),
                 ),
               ],
-              if (linkLabel.isNotEmpty)
-                TextButton(
-                  style: TextButton.styleFrom(foregroundColor: tk.sub),
-                  onPressed: onLink ?? onAllLines,
-                  child: Text(linkLabel),
-                ),
+              if (linkLabel.isNotEmpty) TextLink(linkLabel, onTap: onLink ?? onAllLines),
             ],
           ),
         ),
@@ -724,7 +794,7 @@ class VpnPromptSketch extends StatelessWidget {
           const SizedBox(height: 6),
           Align(
             alignment: const Alignment(0.55, 0),
-            child: Text('↑ 点这个', style: TextStyle(fontSize: 11, color: t.fault, fontWeight: FontWeight.w600)),
+            child: Text('↑ 点这个', style: TextStyle(fontSize: 11, color: t.acc, fontWeight: FontWeight.w600)),
           ),
         ],
       ),

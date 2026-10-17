@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/utils/device_id.dart';
+import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/utils/uri_utils.dart';
@@ -225,10 +226,7 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
               Center(child: QrImageView(data: scanText, size: 200, backgroundColor: Colors.white)),
             const SizedBox(height: 12),
             const Text('① iPhone 上装 Shadowrocket（需要非中国区 Apple ID）② 打开它，点左上角扫码 ③ 对准这个二维码'),
-            TextButton(
-              onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.iosPageUrl)),
-              child: const Text('详细步骤'),
-            ),
+            TextLink('详细步骤', onTap: () => UriUtils.tryLaunch(Uri.parse(Constants.iosPageUrl))),
             if (subUrl.isNotEmpty)
               OutlinedButton(
                 onPressed: () async {

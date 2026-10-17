@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
@@ -27,11 +28,7 @@ class SupportFailureLink extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: TextButton.icon(
-        onPressed: () => context.pushNamed('supportChat'),
-        icon: const Icon(Icons.support_agent_outlined, size: 18),
-        label: const Text('连接不上？联系客服'),
-      ),
+      child: TextLink('连接不上？联系客服', icon: Icons.support_agent_outlined, onTap: () => context.pushNamed('supportChat')),
     );
   }
 }

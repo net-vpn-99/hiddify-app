@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
+import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
@@ -86,7 +87,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     // 头一回开通，顶着「续费」两个字会让他以为自己已经买过了。
     final auth = ref.watch(panelAuthProvider);
     final acc = ref.watch(purchaseAccountProvider).asData?.value ?? auth.account;
-    final renewing = auth.loggedIn && !auth.isGuest && (acc?.planName?.trim().isNotEmpty ?? false);
+    final renewing = auth.loggedIn && !auth.freeTrial && (acc?.planName?.trim().isNotEmpty ?? false);
     return Scaffold(
       backgroundColor: t.bg,
       appBar: AppBar(
@@ -559,10 +560,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
             const SizedBox(height: 24),
             // 游客这一屏的主按钮是「绑定邮箱」，「完成」退成次要的，别抢。
             if (ref.watch(panelAuthProvider).isGuest)
-              TextButton(
-                onPressed: () => context.canPop() ? context.pop() : context.goNamed('home'),
-                child: const Text('以后再说'),
-              )
+              TextLink('以后再说', onTap: () => context.canPop() ? context.pop() : context.goNamed('home'))
             else
               FilledButton(
                 onPressed: () => context.canPop() ? context.pop() : context.goNamed('home'),

@@ -203,6 +203,7 @@ class PanelApi {
       dailyThrottled: dailyMap != null && dailyMap['throttled'] == true,
       dailyThrottleMbps: dailyMap == null ? 0 : n(dailyMap['throttle_mbps']).toInt(),
       dailyTier: dailyMap == null || dailyMap['tier'] is! String ? null : dailyMap['tier'] as String,
+      freeTrialFlag: data['gsl_free_trial'] is bool ? data['gsl_free_trial'] as bool : null,
       paidQuota: dailyMap == null ? 0 : n(dailyMap['paid_quota']).toInt(),
       paidThrottleMbps: dailyMap == null ? 0 : n(dailyMap['paid_throttle_mbps']).toInt(),
       proKnown: dailyMap != null && dailyMap.containsKey('pro_quota'),
@@ -922,6 +923,7 @@ class PanelAccount {
     this.dailyThrottled = false,
     this.dailyThrottleMbps = 0,
     this.dailyTier,
+    this.freeTrialFlag,
     this.paidQuota = 0,
     this.paidThrottleMbps = 0,
     this.proKnown = false,
@@ -953,6 +955,9 @@ class PanelAccount {
 
   /// gsl_daily.tier：trial / paid。老服务端没有就是 null。
   final String? dailyTier;
+
+  /// GslGuest 1.9.0 gsl_free_trial：还在免费试用（免注册号 + 体验套餐）。老插件没给 = null。
+  final bool? freeTrialFlag;
   final int paidQuota;
   final int paidThrottleMbps;
   final bool proKnown;

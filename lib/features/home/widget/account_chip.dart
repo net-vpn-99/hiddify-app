@@ -134,31 +134,29 @@ class AccountChip extends HookConsumerWidget {
     int secsLeft,
   ) {
     if (!loggedIn) {
-      if (boot.working) return ('正在开通…', false, '');
-      final mask = boot.knownAccountMask;
-      if (mask != null) return (mask.isEmpty ? '登录' : '登录 $mask', true, 'login');
-      if (boot.reason == GuestBlockReason.fixable ||
-          boot.reason == GuestBlockReason.offline ||
-          boot.reason == GuestBlockReason.unavailable) {
-        return ('免费试用开不了', false, 'retry');
-      }
-      return ('免费试用', false, 'trial');
+      final mask = boot.knownAccountMask ?? '';
+      return switch (boot.noAccountState) {
+        NoAccountState.opening => ('正在开通…', false, ''),
+        NoAccountState.knownAccount => (mask.isEmpty ? '登录' : '登录 $mask', true, 'login'),
+        NoAccountState.unavailable || NoAccountState.retryable => ('免费试用开不了', false, 'retry'),
+        NoAccountState.fresh => ('免费试用', false, 'trial'),
+      };
     }
 
     final acc = auth.account;
     if (acc == null) return ('正在读取账号…', false, '');
 
-    final guest = auth.isGuest;
+    final freeTrial = auth.freeTrial;
     switch (acc.stateSlug) {
       case 'traffic_exhausted':
         return ('流量已用完 · 去续费', true, 'purchase');
       case 'expired':
-        return guest ? ('试用已结束 · 去买', true, 'purchase') : ('已到期 · 去续费', true, 'purchase');
+        return freeTrial ? ('试用已结束 · 去买', true, 'purchase') : ('已到期 · 去续费', true, 'purchase');
       case 'no_plan':
         return ('还没有套餐 · 去看看', false, 'purchase');
       default:
         final left = acc.remainingClock(now);
-        if (guest) return (left == null ? '免费试用' : '免费试用 · 剩 $left', false, 'purchase');
+        if (freeTrial) return (left == null ? '免费试用' : '免费试用 · 剩 $left', false, 'purchase');
         if (acc.lifetime) return ('长期有效', false, 'purchase');
         // 剩 7 天内：胶囊变强调色「去续费」（B 夜航 §四）。
         final days = acc.daysLeft(now) ?? 1 << 30;
@@ -180,7 +178,7 @@ class AccountChip extends HookConsumerWidget {
 /// 跟 Windows Main.qml homeNote 同一套。
 (String, bool) homeAccountNote(WidgetRef ref) {
   final acc = ref.watch(panelAuthProvider.select((s) => s.account));
-  final guest = ref.watch(panelAuthProvider.select((s) => s.isGuest));
+  final freeTrial = ref.watch(panelAuthProvider.select((s) => s.freeTrial));
   final tier = ref.watch(lineTierProvider);
   final connected = ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
   final lineName = ref.watch(Preferences.lastNodeName);
@@ -191,7 +189,7 @@ class AccountChip extends HookConsumerWidget {
   if (tier.trialEnded && !connected) return ('精品线路体验已结束，可以选一条标准线路继续用，或者升级精品版', true);
   if (!acc.dailyThrottled) return ('', false);
   final upgrade = !(acc.planName?.contains('精品') ?? false);
-  if (guest && acc.dailyTier == 'trial' && acc.paidQuota > 0) {
+  if (freeTrial && acc.dailyTier == 'trial' && acc.paidQuota > 0) {
     return ('今日标准高速已用完，限速 ${acc.dailyThrottleMbps}Mbps · 买套餐每天 ${formatDailyAmount(acc.paidQuota)} 高速', upgrade);
   }
   return ('今日标准高速已用完，现在限速 ${acc.dailyThrottleMbps}Mbps，0 点恢复。', upgrade);

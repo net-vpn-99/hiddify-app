@@ -92,7 +92,7 @@ class SettingsPage extends HookConsumerWidget {
           if (devMode) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-              child: Text('高级设置（客服排障用）', style: TextStyle(fontSize: 12, color: tk.fault)),
+              child: Text('高级设置（客服排障用）', style: TextStyle(fontSize: 12, color: tk.sub)),
             ),
             MenuGroup(
               children: [

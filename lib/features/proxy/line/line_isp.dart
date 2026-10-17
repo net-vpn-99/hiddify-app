@@ -142,7 +142,7 @@ class IspHint extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!lines.any((o) => lineFitsIsp(o, isp))) return const SizedBox.shrink();
     final tokens = OneRayTokens.of(context);
-    final style = TextStyle(fontSize: 12, color: tokens.fault);
+    final style = TextStyle(fontSize: 12, color: tokens.acc);
     return Padding(
       padding: margin,
       child: DecoratedBox(

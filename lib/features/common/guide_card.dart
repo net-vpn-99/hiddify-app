@@ -103,7 +103,7 @@ class GuideCard extends StatelessWidget {
           height: 32,
           alignment: Alignment.center,
           decoration: BoxDecoration(color: t.accSoft, shape: BoxShape.circle),
-          child: LineIcon(tipIcon, color: t.fault),
+          child: LineIcon(tipIcon, color: t.acc),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -228,7 +228,7 @@ class GuideCard extends StatelessWidget {
                               children: [
                                 TextSpan(
                                   text: '联系客服',
-                                  style: TextStyle(color: t.fault, decoration: TextDecoration.underline),
+                                  style: TextStyle(color: t.acc, decoration: TextDecoration.underline),
                                 ),
                               ],
                             ),

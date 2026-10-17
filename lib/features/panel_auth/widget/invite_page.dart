@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gal/gal.dart';
 import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -155,10 +156,10 @@ class InvitePage extends HookConsumerWidget {
                       onPressed: () => Share.share(shareText),
                     ),
                     const SizedBox(height: 4),
-                    TextButton.icon(
-                      icon: const Icon(Icons.link, size: 18),
-                      label: const Text('只复制链接'),
-                      onPressed: () {
+                    TextLink(
+                      '只复制链接',
+                      icon: Icons.link,
+                      onTap: () {
                         Clipboard.setData(ClipboardData(text: d.link));
                         _toast(context, '邀请链接已复制');
                       },
@@ -184,11 +185,7 @@ class InvitePage extends HookConsumerWidget {
                               ),
                             ),
                           ),
-                          TextButton.icon(
-                            icon: const Icon(Icons.save_alt, size: 18),
-                            label: const Text('保存二维码图片'),
-                            onPressed: saveQr,
-                          ),
+                          TextLink('保存二维码图片', icon: Icons.save_alt, onTap: saveQr),
                           const SizedBox(height: 12),
                           Center(
                             child: Column(

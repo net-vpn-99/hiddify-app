@@ -470,14 +470,14 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: board.bannerOk ? tokens.accSoft : tokens.fault,
+                  color: board.bannerOk ? tokens.accSoft : tokens.faultSoft,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Text(
                     board.banner,
-                    style: TextStyle(fontSize: 12, color: board.bannerOk ? tokens.acc : tokens.card),
+                    style: TextStyle(fontSize: 12, color: board.bannerOk ? tokens.acc : tokens.fault),
                   ),
                 ),
               ),
@@ -719,7 +719,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                 ? Wrap(
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Text('已经有${board.resultName}线路了 · ', style: TextStyle(fontSize: 12, color: tokens.fault)),
+                      Text('已经有${board.resultName}线路了 · ', style: TextStyle(fontSize: 12, color: tokens.sub)),
                       GestureDetector(
                         // 线路列表按地区名定位：「香港（精品）」去掉后缀才对得上。
                         onTap: () => Navigator.of(context).pop(board.resultName.replaceAll('（精品）', '')),

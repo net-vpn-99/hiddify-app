@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -177,10 +178,7 @@ class AccountPage extends HookConsumerWidget {
             const SizedBox(height: 8),
             // 推荐码不放首页。首页是连接，这行只在账号页，填过就消失。
             if (auth.isGuest && !ref.watch(Preferences.inviteAttached))
-              TextButton(
-                onPressed: () => _askInviteCode(context, ref),
-                child: const Text('有朋友的推荐码？填一下'),
-              ),
+              TextLink('有朋友的推荐码？填一下', onTap: () => _askInviteCode(context, ref)),
             if (!auth.isGuest)
             OutlinedButton.icon(
               icon: const Icon(Icons.password_outlined),
@@ -194,11 +192,8 @@ class AccountPage extends HookConsumerWidget {
               },
             ),
             const SizedBox(height: 24),
-            TextButton(
-              onPressed: () => context.pushNamed('login'),
-              // 有邮箱的号也只是去登录页，不退出。关掉登录页就还是现在这个号。
-              child: Text(auth.isGuest ? '已有账号？去登录' : '换个账号登录'),
-            ),
+            // 有邮箱的号也只是去登录页，不退出。关掉登录页就还是现在这个号。
+            TextLink(auth.isGuest ? '已有账号？去登录' : '换个账号登录', onTap: () => context.pushNamed('login')),
           ],
         ),
       ),

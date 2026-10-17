@@ -23,6 +23,9 @@ enum GuestBlockReason {
   fixable,
 }
 
+/// 没登录时主页说哪种话（见 [GuestBootstrapState.noAccountState]）。
+enum NoAccountState { opening, knownAccount, unavailable, retryable, fresh }
+
 class GuestBootstrapState {
   const GuestBootstrapState({
     this.working = false,
@@ -63,6 +66,17 @@ class GuestBootstrapState {
       (reason == GuestBlockReason.hasAccount || deviceKind == 'account') ? (emailMask ?? '') : null;
 
   bool get blocked => reason != null;
+
+  /// 没登录时是哪一种（主页大块和顶上账户胶囊都看这一个，别各判各的）。
+  NoAccountState get noAccountState {
+    if (working || (reason == null && knownAccountMask == null)) return NoAccountState.opening; // 自动开号还没跑完也算
+    if (knownAccountMask != null) return NoAccountState.knownAccount;
+    return switch (reason) {
+      GuestBlockReason.unavailable => NoAccountState.unavailable, // 服务器不给试用：去注册，重试没用
+      GuestBlockReason.fixable || GuestBlockReason.offline => NoAccountState.retryable,
+      _ => NoAccountState.fresh, // 自己退出过：点了重新开号
+    };
+  }
 
   GuestBootstrapState copyWith({
     bool? working,

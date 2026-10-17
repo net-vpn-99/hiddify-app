@@ -5,6 +5,7 @@ import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/common/line_icon.dart';
+import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/notice/notice_html.dart';
 import 'package:hiddify/features/notice/notice_store.dart';
 import 'package:hiddify/features/panel_auth/data/tg_gift_link.dart';
@@ -148,7 +149,7 @@ class _Pill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = OneRayTokens.of(context);
-    final fg = alert ? _alert(context) : t.fault;
+    final fg = alert ? _alert(context) : t.acc;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
@@ -233,7 +234,7 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
               height: 30,
               alignment: Alignment.center,
               decoration: BoxDecoration(color: t.accSoft, borderRadius: BorderRadius.circular(8)),
-              child: LineIcon(LineIconName.bell, color: t.fault, size: 17),
+              child: LineIcon(LineIconName.bell, color: t.acc, size: 17),
             ),
             const SizedBox(width: 10),
             Text('公告', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: t.text)),
@@ -241,7 +242,7 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
             const SizedBox(width: 12),
             TextButton(
               style: TextButton.styleFrom(
-                foregroundColor: t.fault,
+                foregroundColor: t.sub,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 minimumSize: const Size(48, 40),
               ),
@@ -287,11 +288,9 @@ class _NoticeSheetState extends ConsumerState<_NoticeSheet> {
                   SizedBox(
                     height: 52,
                     child: Center(
-                      child: TextButton(
-                        style: TextButton.styleFrom(foregroundColor: t.fault),
-                        onPressed: () => UriUtils.tryLaunch(Uri.parse(Constants.panelProfileUrl)),
-                        child: const Text('更早的公告在官网会员中心  →',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      child: TextLink(
+                        '更早的公告在官网会员中心  →',
+                        onTap: () => UriUtils.tryLaunch(Uri.parse(Constants.panelProfileUrl)),
                       ),
                     ),
                   ),
@@ -423,7 +422,7 @@ class _NoticeDetailState extends State<_NoticeDetail> {
       color: h ? t.text : t.text.withValues(alpha: 0.82),
     );
     final text = Text.rich(TextSpan(
-      children: NoticeHtml.spans(b.html, style, t.fault, keep: _recognizers.add, onLink: _open),
+      children: NoticeHtml.spans(b.html, style, t.acc, keep: _recognizers.add, onLink: _open),
     ));
     switch (b.kind) {
       case 'li':

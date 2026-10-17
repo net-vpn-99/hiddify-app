@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
+import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -132,7 +133,7 @@ class AccountCard extends ConsumerWidget {
                 child: Text(
                   !loggedIn || acc == null || acc.stateSlug == 'no_plan'
                       ? '选择套餐'
-                      : auth.isGuest
+                      : auth.freeTrial
                       ? '去买套餐'
                       : active
                       ? '续费 / 升级'
@@ -142,11 +143,7 @@ class AccountCard extends ConsumerWidget {
             ),
             // 游客 / 没账号：登录已有账号 —— 在官网注册过的人装上 App 会被自动开成游客号，首页一个「登录」字样都没有。
             if (!loggedIn || auth.isGuest)
-              TextButton(
-                style: TextButton.styleFrom(foregroundColor: tk.sub),
-                onPressed: () => context.pushNamed('login'),
-                child: const Text('已经有账号？登录'),
-              ),
+              TextLink('已经有账号？登录', onTap: () => context.pushNamed('login')),
           ],
         ),
       ),
@@ -161,11 +158,11 @@ class AccountCard extends ConsumerWidget {
       case 'traffic_exhausted':
         return '流量已用完';
       case 'expired':
-        return auth.isGuest ? '免费试用已结束' : '会员已到期';
+        return auth.freeTrial ? '免费试用已结束' : '会员已到期';
       case 'no_plan':
         return '还没有套餐';
       default:
-        if (auth.isGuest) {
+        if (auth.freeTrial) {
           final left = acc.remainingClock();
           return left == null ? '免费试用中' : '免费试用中 · 剩 $left';
         }

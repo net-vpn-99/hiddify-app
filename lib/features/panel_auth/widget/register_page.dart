@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/custom_text_form_field.dart';
@@ -231,9 +232,9 @@ class RegisterPage extends HookConsumerWidget {
                             : Text(bind ? '保存' : '注册'),
                       ),
                       const SizedBox(height: 8),
-                      TextButton(
-                        onPressed: () => context.canPop() ? context.pop() : context.go(bind ? '/home' : '/login'),
-                        child: Text(bind ? '以后再说' : '已有账号？去登录'),
+                      TextLink(
+                        bind ? '以后再说' : '已有账号？去登录',
+                        onTap: () => context.canPop() ? context.pop() : context.go(bind ? '/home' : '/login'),
                       ),
                     ],
                   ),
@@ -262,10 +263,7 @@ class RegisterPage extends HookConsumerWidget {
           },
         ),
         const SizedBox(height: 8),
-        TextButton(
-          onPressed: () => context.canPop() ? context.pop() : context.go('/login'),
-          child: const Text('返回登录'),
-        ),
+        TextLink('返回登录', onTap: () => context.canPop() ? context.pop() : context.go('/login')),
       ],
     );
   }

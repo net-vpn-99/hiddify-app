@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
@@ -317,13 +318,13 @@ class LoginPage extends HookConsumerWidget {
                   const SizedBox(height: 8),
                   Align(
                     alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () => context.pushNamed(
+                    child: TextLink(
+                      '找回密码',
+                      onTap: () => context.pushNamed(
                         'resetPassword',
                         // 输入框里可能是账号编号，找回密码只认邮箱，编号别带过去。
                         queryParameters: {if (emailCtrl.text.contains('@')) 'email': emailCtrl.text.trim()},
                       ),
-                      child: const Text('找回密码'),
                     ),
                   ),
                 ],
@@ -331,10 +332,7 @@ class LoginPage extends HookConsumerWidget {
                 // 不想登录的人只能杀掉 App 才回得了首页（用户反馈过）。首页本来就不拦人。
                 if (!context.canPop()) ...[
                   const SizedBox(height: 4),
-                  TextButton(
-                    onPressed: () => context.go('/home'),
-                    child: const Text('先回首页看看'),
-                  ),
+                  TextLink('先回首页看看', onTap: () => context.go('/home')),
                 ],
               ],
             ),

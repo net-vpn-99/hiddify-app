@@ -22,10 +22,11 @@ class QuotaEndedDialog extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final slug = account.stateSlug;
     final bonus = ref.watch(inviteTextsProvider).valueOrNull?.bonus;
-    final isGuest = ref.watch(panelAuthProvider).isGuest && slug != 'no_plan';
+    // 没套餐的人说「还没有套餐」，不说「试用已结束」。
+    final freeTrial = slug != 'no_plan' && ref.watch(panelAuthProvider).freeTrial;
 
     // 10-13 换成引导卡样式（两端统一，Windows QuotaPrompt.qml），只讲重点。
-    final (title, body) = isGuest
+    final (title, body) = freeTrial
         ? ('免费试用已结束', '买个套餐就能接着用，不用先注册。')
         : switch (slug) {
             'traffic_exhausted' => ('本期流量已用完', '续费后马上就能接着用。'),
@@ -41,12 +42,12 @@ class QuotaEndedDialog extends ConsumerWidget {
       tipIcon: LineIconName.gift,
       tipBelow: true,
       tipText: (bonus != null && bonus.isNotEmpty) ? '好友用起来后，你们各得 $bonus。' : '好友用起来后，你们都能再获得体验。',
-      actionText: slug == 'no_plan' || isGuest ? '去买套餐' : '去续费',
+      actionText: slug == 'no_plan' || freeTrial ? '去买套餐' : '去续费',
       onAction: () => context.pop(QuotaEndedAction.purchase),
       secondaryText: showInvite ? '邀请好友' : '',
       onSecondary: () => context.pop(QuotaEndedAction.invite),
       links: [
-        if (isGuest) GuideLink('以前买过？登录你的账号', () => context.pop(QuotaEndedAction.login)),
+        if (freeTrial) GuideLink('以前买过？登录你的账号', () => context.pop(QuotaEndedAction.login)),
         GuideLink('稍后再说', () => context.pop()),
       ],
     );
