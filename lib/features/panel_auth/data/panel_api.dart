@@ -7,6 +7,7 @@ import 'package:hiddify/core/logger/logger.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/features/panel_auth/data/altcha.dart';
+import 'package:hiddify/features/panel_auth/data/comm_config.dart';
 import 'package:hiddify/features/panel_auth/data/own_subscribe.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/model/invite_referral.dart';
@@ -324,11 +325,10 @@ class PanelApi {
   /// 走 guest/comm/config，免登录。出错时返回保守默认（要验证码、不强制邀请、无 recaptcha）。
   Future<({bool emailVerify, bool inviteForce, bool recaptcha})> getRegisterOptions() async {
     try {
-      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
-      final data = _dataOf(res.data);
-      bool flag(String k) => data?[k] == true || data?[k] == 1 || data?[k] == '1';
+      final data = await CommConfig.get();
+      bool flag(String k) => data[k] == true || data[k] == 1 || data[k] == '1';
       return (
-        emailVerify: data == null || flag('is_email_verify'),
+        emailVerify: data.isEmpty || flag('is_email_verify'),
         inviteForce: flag('is_invite_force'),
         recaptcha: flag('is_recaptcha'),
       );
@@ -367,23 +367,19 @@ class PanelApi {
   /// 读不到按 false 处理 —— 和老服务端行为一致（购买前先跳绑定页），免得客户端放行
   /// 了服务端却拦着，用户填完支付信息才报错。
   Future<GuestOptions> getGuestOptions() async {
-    Response<dynamic> res;
+    Map<String, dynamic> data;
     try {
-      res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
-    } catch (e) {
-      if (e is DioException) {
-        throw PanelApiException.network(e, _networkMessage(e));
-      }
+      data = await CommConfig.get();
+    } on DioException catch (e) {
+      throw PanelApiException.network(e, _networkMessage(e));
+    } on CommConfigUnavailable {
+      throw PanelApiException('连不上服务器，请检查网络后点重试。如果开着别的 VPN，先关掉它', isNetworkError: true);
+    } catch (_) {
       throw PanelApiException('网络请求失败', isNetworkError: true);
     }
 
-    if (res.statusCode != null && (res.statusCode! < 200 || res.statusCode! >= 300)) {
-      throw PanelApiException('连不上服务器，请检查网络后点重试。如果开着别的 VPN，先关掉它', isNetworkError: true);
-    }
-    
     try {
-      final data = _dataOf(res.data);
-      final g = data?['gsl_guest'];
+      final g = data['gsl_guest'];
       if (g is! Map) return _guestOptionsOff;
       final enabled = g['enabled'] == true || g['enabled'] == 1 || g['enabled'] == '1';
       final suffix = g['email_suffix'] is String && (g['email_suffix'] as String).isNotEmpty
@@ -780,9 +776,7 @@ class PanelApi {
   /// 模板（含 {bonus} / {link} 占位符）。拿不到对应项为 null。
   Future<({String? bonus, String? share, String? linkTemplate})> getInviteTexts() async {
     try {
-      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
-      final data = _dataOf(res.data);
-      if (data == null) return (bonus: null, share: null, linkTemplate: null);
+      final data = await CommConfig.get();
       final gsl = data['gsl_invite'];
       final Map<String, dynamic>? obj = gsl is Map ? gsl.cast<String, dynamic>() : null;
       String? pick(String k) {

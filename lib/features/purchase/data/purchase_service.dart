@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:hiddify/features/panel_auth/data/comm_config.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/purchase/model/plan_offer.dart';
 
@@ -78,10 +79,7 @@ class PurchaseService {
   /// 顺带拿 7 天档是哪些套餐（GslShop 1.8.2 `short_term_plan_ids` / `short_term_days`），拿不到只认套餐 1。
   Future<(String, String, Set<int>, int)> _recommended() async {
     try {
-      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
-      final body = res.data;
-      final data = body is Map ? body['data'] : null;
-      final shop = data is Map ? data['gsl_shop'] : null;
+      final shop = (await CommConfig.get())['gsl_shop'];
       if (shop is Map) {
         final period = (shop['recommended_period'] as String?)?.trim() ?? '';
         final badge = (shop['badge'] as String?)?.trim() ?? '';
@@ -107,10 +105,7 @@ class PurchaseService {
   Future<(List<ShopTier>, ShopMe?)> fetchShop(String? token) async {
     var tiers = const <ShopTier>[];
     try {
-      final res = await _dio.get<dynamic>('/api/v1/guest/comm/config');
-      final body = res.data;
-      final data = body is Map ? body['data'] : null;
-      final shop = data is Map ? data['gsl_shop'] : null;
+      final shop = (await CommConfig.get())['gsl_shop'];
       if (shop is Map) tiers = ShopTier.listFrom(shop['tiers']);
     } catch (_) {}
     ShopMe? me;

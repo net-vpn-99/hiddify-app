@@ -197,6 +197,18 @@ class ConnectReporter {
     _reached = subStage > 0 ? subStage : stageNodesParsed;
 
     unawaited(_flushQueue());
+    unawaited(_sendPending());
+  }
+
+  /// 一开始连就先报一条「进行中」（GslStats 1.31.0）。以前只在出结果时报：点了连接就切走、App 被系统停掉、
+  /// 一直没等到确认的那些连接一条都不记（10-17 体检：近 7 天至少 25 台有几十 MB～8.5 GB 流量却没有连接记录）。
+  /// 出了结果按 attempt_id 覆盖这一条；服务器不会让「进行中」盖回已有的结果。发不出去就算了（不排队、不改诊断页状态）。
+  Future<void> _sendPending() async {
+    if (_attemptId == null) return;
+    final payload = _basePayload('pending')..['reached_stage'] = _reached;
+    try {
+      await _post(_primaryApiBase(), payload, await _panelToken());
+    } catch (_) {}
   }
 
   void markStage(int stage) {

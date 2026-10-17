@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
+import 'package:hiddify/features/panel_auth/data/comm_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// `comm/config` 里 `gsl_invite` 下发的几个「可被后台覆盖、不用发版」的地址：
@@ -113,11 +113,9 @@ class RemoteSiteConfig {
       // 读本地缓存失败不影响去问服务器
     }
     try {
-      final res = await PanelApiBase.dio().get<dynamic>('/api/v1/guest/comm/config');
-      final body = res.data;
-      final data = (body is Map && body['data'] is Map) ? body['data'] as Map : null;
-      final gsl = data != null ? data['gsl_invite'] : null;
-      final shop = data != null ? data['gsl_shop'] : null;
+      final data = await CommConfig.get();
+      final gsl = data['gsl_invite'];
+      final shop = data['gsl_shop'];
       if (shop is Map && shop['custom_enabled'] is bool) {
         _customEnabled = shop['custom_enabled'] as bool;
       }

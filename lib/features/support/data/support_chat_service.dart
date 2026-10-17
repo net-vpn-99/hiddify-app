@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:hiddify/core/model/constants.dart';
-import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
+import 'package:hiddify/features/panel_auth/data/comm_config.dart';
 import 'package:hiddify/features/support/model/support_message.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -86,10 +86,7 @@ class SupportChatService {
 
   static Future<String> _refreshFromServer() async {
     try {
-      final res = await PanelApiBase.dio().get<dynamic>('/api/v1/guest/comm/config');
-      final body = res.data;
-      final data = (body is Map && body['data'] is Map) ? body['data'] as Map : null;
-      final gsl = data != null ? data['gsl_invite'] : null;
+      final gsl = (await CommConfig.get())['gsl_invite'];
       final raw = gsl is Map ? gsl['kf'] : null;
       if (raw is String && raw.trim().isNotEmpty) {
         final base = raw.trim();
