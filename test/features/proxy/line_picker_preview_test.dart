@@ -58,11 +58,12 @@ class _Conn extends ConnectionNotifier {
 }
 
 const newStd = [
-  '香港 01 | 电信 联通 | 低延迟',
+  '香港 01 | 电信 联通',
   '香港 03 | 电信 联通 移动 | 低延迟',
-  '日本 大阪 01 | 电信 联通 移动 | 能用 AI',
+  '日本 大阪 01 | 电信 联通 移动',
+  '日本 东京 01',
   '美国 洛杉矶 01 | 电信 联通 | 大带宽',
-  '新加坡 01 | 移动 | 能用 AI',
+  '新加坡 01 | 移动',
   '韩国 首尔 01 | 暂不推荐 | 能用 AI',
 ];
 const newPro = [
@@ -173,6 +174,8 @@ void main() {
     // 1. 移动、标准版：香港 03 排到香港 01 前面，移动 LOGO 有橙圈，顶上提示。
     await _shot(tester, '1-移动-标准版.png', isp: '移动', std: newStd, pro: newPro, trial: '', current: '香港 01');
     await _shot(tester, '1b-移动-韩国.png', isp: '移动', std: newStd, pro: newPro, trial: '', current: '韩国 首尔 01');
+    // 日本：「大阪 01」两段名字有 LOGO 排前面，「东京 01」只有一段什么都不放。
+    await _shot(tester, '1c-移动-日本.png', isp: '移动', std: newStd, pro: newPro, trial: '', current: '日本 东京 01');
     // 2. 电信、精品版：精品标签 + 电信橙圈。
     await _shot(tester, '2-电信-精品版.png', isp: '电信', std: newStd, pro: newPro, trial: 'pro', current: '日本 东京 03');
     await _shot(tester, '2b-电信-美国.png', isp: '电信', std: newStd, pro: newPro, trial: 'pro', current: '美国 洛杉矶 05');

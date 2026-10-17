@@ -76,25 +76,20 @@ class IspLogo extends StatelessWidget {
 }
 
 /// 线路行右边那一组：写着适合的几家各一个 LOGO，用户那家加橙圈；
-/// 「暂不推荐」→ 灰字「三家都不推荐」；老名字（没有宽带段）→ 什么都不放。
+/// 没有宽带段 /「暂不推荐」→ 什么都不放，不写任何负面字眼（10-17 运营定，两端一样）。
 class LineIspMarks extends StatelessWidget {
   const LineIspMarks({super.key, required this.option, required this.isp});
 
   final LineOption option;
   final String isp;
 
+  /// 这条线有没有 LOGO 可放（调用方据此决定留不留间距）。
+  static bool hasMarks(LineOption o) => o.isps?.isNotEmpty ?? false;
+
   @override
   Widget build(BuildContext context) {
     final isps = option.isps;
-    if (isps == null) return const SizedBox.shrink();
-    final tokens = PurchaseTokens.of(context);
-    if (isps.isEmpty) {
-      return Text(
-        '三家都不推荐',
-        maxLines: 1,
-        style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)),
-      );
-    }
+    if (isps == null || isps.isEmpty) return const SizedBox.shrink();
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

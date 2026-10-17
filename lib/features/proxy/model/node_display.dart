@@ -78,8 +78,8 @@ bool isAutoGroupTag(String tag) => kAutoGroupTags.contains(tag.trim().toLowerCas
 /// 拆好的线路名。
 ///  - name：第一段去掉「⭐精品」，全 App 拿它当线路的名字（偏好、维修中、测速都按它对）；
 ///  - desc：说明（新格式是第三段；老名字是第二段以后）；
-///  - isps：第二段写的适合哪几家宽带（顺序固定电信→联通→移动）。空列表 = 「暂不推荐」，
-///    null = 老名字没有这一段（不放 LOGO）；
+///  - isps：第二段写的适合哪几家宽带（顺序固定电信→联通→移动）。空列表 = 「暂不推荐」/ 空段，
+///    null = 没有这一段（只有一段的名字、老名字）。两种都不放 LOGO、不写任何字（10-17 运营定）；
 ///  - pro：名字里有「⭐精品」。
 typedef NodeName = ({String name, String desc, List<String>? isps, bool pro});
 
@@ -89,7 +89,8 @@ const kIspWords = ['电信', '联通', '移动'];
 final _proMark = RegExp(r'⭐️?\s*精品');
 
 /// 线路名格式（10-17 定，`docs/计划/按地区运营商调整推荐线路.md` 第九节，跟 Windows 同一套）：
-/// 「地区 城市 编号[ ⭐精品] | 宽带 | 特点」，例「日本 东京 03 ⭐精品 | 电信 联通 移动 | 晚高峰稳」。
+/// 「地区 城市 编号[ ⭐精品] | 宽带 | 特点」，后两段可以没有：「日本 东京 01」「新加坡 01 | 移动」
+/// 「日本 东京 03 ⭐精品 | 电信 联通 移动 | 晚高峰稳」。只有一段时它就是名字。
 /// 老名字「地区 | 线路说明 | 场景」照旧：第二段不是宽带词就当说明。
 /// hiddify-core 还会加个 " § N" 组序号，先去掉。
 NodeName splitNodeName(String raw) {

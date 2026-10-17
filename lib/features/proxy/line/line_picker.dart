@@ -411,7 +411,7 @@ class _LineTile extends StatelessWidget {
         ],
       ),
       subtitle: _lineSubtitle(theme, option),
-      trailing: option.isps == null && !locked
+      trailing: !LineIspMarks.hasMarks(option) && !locked
           ? null
           : Row(
               mainAxisSize: MainAxisSize.min,
@@ -890,7 +890,7 @@ class _TieredLinesState extends State<_TieredLines> {
                     style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)),
                   ),
                 ),
-                if (o.isps != null) ...[
+                if (LineIspMarks.hasMarks(o)) ...[
                   const SizedBox(width: 6),
                   LineIspMarks(option: o, isp: widget.isp),
                   if (grade != null || down || best || current || recommended) const SizedBox(width: 8),
