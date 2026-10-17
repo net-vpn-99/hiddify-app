@@ -5,7 +5,7 @@ import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-typedef LineOption = ({String name, String desc});
+typedef LineOption = NodeName;
 
 /// 首页线路条和线路页要显示的线路。
 ///

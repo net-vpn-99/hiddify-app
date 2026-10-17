@@ -13,10 +13,10 @@ const _nonNodeOutboundTypes = {
 /// hiddify-core 会把订阅（我们是 base64 vless:// 列表）转成一份 sing-box JSON 存到
 /// 本地 profile 文件里，所以这里拿到的一般是 JSON —— 从 `outbounds` 里挑真实协议的出站。
 /// 兜底也能处理 base64 / 纯文本的 vless 列表（`#` 后是名字）。
-/// 返回 splitNodeName 拆好的 (name, desc)，按顺序、按 name 去重。
-List<({String name, String desc})> parseSubscriptionLines(String raw) {
+/// 返回 splitNodeName 拆好的线路名，按顺序、按 name 去重。
+List<NodeName> parseSubscriptionLines(String raw) {
   final text = raw.trim();
-  final result = <({String name, String desc})>[];
+  final result = <NodeName>[];
   final seen = <String>{};
   void add(String tag) {
     final s = splitNodeName(tag);
@@ -75,16 +75,53 @@ const kAutoGroupTags = {'select', 'balance', 'lowest', 'auto', 'url-test', 'urlt
 
 bool isAutoGroupTag(String tag) => kAutoGroupTags.contains(tag.trim().toLowerCase());
 
-/// Xboard 节点名格式：「地区 | 线路说明 | 场景」，hiddify-core 还会加个 " § N" 组序号。
-/// 拆成 (name, desc) 给 UI 分两行显示，客户更好选。
-({String name, String desc}) splitNodeName(String raw) {
+/// 拆好的线路名。
+///  - name：第一段去掉「⭐精品」，全 App 拿它当线路的名字（偏好、维修中、测速都按它对）；
+///  - desc：说明（新格式是第三段；老名字是第二段以后）；
+///  - isps：第二段写的适合哪几家宽带（顺序固定电信→联通→移动）。空列表 = 「暂不推荐」，
+///    null = 老名字没有这一段（不放 LOGO）；
+///  - pro：名字里有「⭐精品」。
+typedef NodeName = ({String name, String desc, List<String>? isps, bool pro});
+
+/// 线路名第二段能写的宽带词，也是 LOGO 的排列顺序。
+const kIspWords = ['电信', '联通', '移动'];
+
+final _proMark = RegExp(r'⭐️?\s*精品');
+
+/// 线路名格式（10-17 定，`docs/计划/按地区运营商调整推荐线路.md` 第九节，跟 Windows 同一套）：
+/// 「地区 城市 编号[ ⭐精品] | 宽带 | 特点」，例「日本 东京 03 ⭐精品 | 电信 联通 移动 | 晚高峰稳」。
+/// 老名字「地区 | 线路说明 | 场景」照旧：第二段不是宽带词就当说明。
+/// hiddify-core 还会加个 " § N" 组序号，先去掉。
+NodeName splitNodeName(String raw) {
   var s = raw.trim();
   final marker = s.lastIndexOf('§');
   if (marker > 0 && RegExp(r'§\s*\d+\s*$').hasMatch(s.substring(marker))) {
     s = s.substring(0, marker).trim();
   }
-  final parts = s.split('|').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-  if (parts.isEmpty) return (name: s, desc: '');
-  if (parts.length == 1) return (name: parts.first, desc: '');
-  return (name: parts.first, desc: parts.sublist(1).join(' · '));
+  final parts = s.split('|').map((e) => e.trim()).toList();
+  final isps = parts.length >= 2 && parts.first.isNotEmpty ? _ispsOf(parts[1], blankOk: parts.length >= 3) : null;
+  final kept = [
+    for (final (i, p) in parts.indexed)
+      if (p.isNotEmpty && !(isps != null && i == 1)) p,
+  ];
+  if (kept.isEmpty) return (name: s, desc: '', isps: null, pro: false);
+  final head = kept.first;
+  final pro = _proMark.hasMatch(head);
+  final name = pro ? head.replaceAll(_proMark, ' ').replaceAll(RegExp(r'\s+'), ' ').trim() : head;
+  return (name: name.isEmpty ? head : name, desc: kept.skip(1).join(' · '), isps: isps, pro: pro);
+}
+
+/// 第二段 → 宽带列表。「暂不推荐」/ 空（后面还有第三段时）→ 空列表；不是宽带词 → null（老名字）。
+List<String>? _ispsOf(String seg, {required bool blankOk}) {
+  if (seg == '暂不推荐') return const [];
+  if (seg.isEmpty) return blankOk ? const [] : null;
+  final words = seg.split(RegExp(r'\s+')).toSet();
+  if (!words.every(kIspWords.contains)) return null;
+  return [for (final w in kIspWords) if (words.contains(w)) w];
+}
+
+/// 线路名第一个词 = 国家 / 地区（「日本 东京 03」→「日本」），线路页按它分组。
+String lineCountry(String name) {
+  final head = name.trim().split(RegExp(r'\s+')).first.trim();
+  return head.isEmpty ? '其它' : head;
 }

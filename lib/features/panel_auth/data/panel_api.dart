@@ -214,6 +214,7 @@ class PanelApi {
         for (final d in (data['gsl_down'] is List ? data['gsl_down'] as List : const []))
           if (d is Map && '${d['name'] ?? ''}'.trim().isNotEmpty) splitNodeName('${d['name']}').name,
       },
+      isp: kIspWords.contains(data['gsl_isp']) ? data['gsl_isp'] as String : '',
     );
   }
 
@@ -929,6 +930,7 @@ class PanelAccount {
     this.proThrottled = false,
     this.proThrottleMbps = 0,
     this.downLines = const {},
+    this.isp = '',
   });
 
   final String? email;
@@ -964,6 +966,10 @@ class PanelAccount {
   final Set<String> downLines;
 
   bool isLineDown(String name) => name.isNotEmpty && downLines.contains(name);
+
+  /// getSubscribe 的 gsl_isp：这个号是哪家宽带，「电信」「联通」「移动」或空（认不出 / 老服务端）。
+  /// 线路页给这家的 LOGO 加橙圈、顶上提示一句、同国家里适合的排前面（计划书第九节，两端统一）。
+  final String isp;
 
   bool get lifetime => expiredAt == null || expiredAt == 0;
 

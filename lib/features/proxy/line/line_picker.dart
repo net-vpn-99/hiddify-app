@@ -10,6 +10,7 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/home/widget/connect_progress.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/proxy/line/line_isp.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/proxy/line/line_speed.dart';
 import 'package:hiddify/features/proxy/line/line_tier.dart';
@@ -63,11 +64,6 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
   /// 一条 ListTile 的大致高度（名字 + 一行说明）。只用来估初始滚动位置，
   /// 估歪了后面的 ensureVisible 会兜住。
   static const _tileHeight = 76.0;
-
-  String _lineHead(String name) {
-    final head = name.split(RegExp(r'\s+')).first.trim();
-    return head.isEmpty ? '其它' : head;
-  }
 
   /// 挂在「使用中 / 上次用的」那条上，用来精确滚到它。
   final _currentKey = GlobalKey();
@@ -137,7 +133,11 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
       });
     }
     final value = set.valueOrNull;
-    final options = value?.lines ?? const <LineOption>[];
+    // 用户是哪家宽带：同国家里适合他的排前面。「推荐」仍是订阅第一条，按名字认，不按位置。
+    final isp = ref.watch(panelAuthProvider.select((s) => s.account?.isp ?? ''));
+    final subOptions = value?.lines ?? const <LineOption>[];
+    final firstName = subOptions.isEmpty ? '' : subOptions.first.name;
+    final options = ispFitFirst(subOptions, isp);
     final locked = value?.locked ?? false;
     final tiers = ref.watch(lineTierProvider);
     final downLines = ref.watch(panelAuthProvider.select((s) => s.account?.downLines ?? const <String>{}));
@@ -172,6 +172,8 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
           locateCountry: _locate,
           locateKey: _locateKey,
           downLines: downLines,
+          isp: isp,
+          recommended: pickedName.isEmpty ? firstName : '',
           onWantRegion: () async {
             final name = await showRegionSheet(context, ref);
             if (!context.mounted || name == null || name.isEmpty) return;
@@ -201,12 +203,13 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
           children: [
             for (final (i, o) in options.indexed)
               _LineTile(
-                key: _lineHead(o.name) == _locate ? _locateKey : (i == currentIndex ? _currentKey : null),
+                key: lineCountry(o.name) == _locate ? _locateKey : (i == currentIndex ? _currentKey : null),
                 option: o,
+                isp: isp,
                 locked: locked,
                 current: i == currentIndex,
                 // 没自己选过线路才标「推荐」；正在用的那条只标「使用中」，不叠两个牌子。
-                recommended: i == 0 && !locked && pickedName.isEmpty && i != currentIndex,
+                recommended: o.name == firstName && !locked && pickedName.isEmpty && i != currentIndex,
                 connected: connected,
                 down: !locked && downLines.contains(o.name),
                 onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
@@ -263,6 +266,8 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
           ),
+        // 钉在标题下面，不跟着列表滚走（打开时列表会自动滚到自己那条）。
+        if (options.isNotEmpty) IspHint(isp: isp, margin: const EdgeInsets.fromLTRB(12, 0, 12, 8)),
         body,
         const Gap(8),
       ],
@@ -345,9 +350,13 @@ class _LineTile extends StatelessWidget {
     required this.connected,
     required this.onTap,
     this.down = false,
+    this.isp = '',
   });
 
   final LineOption option;
+
+  /// 用户是哪家宽带（gsl_isp），那家的 LOGO 加橙圈。
+  final String isp;
   final bool locked;
   final bool current;
   final bool recommended;
@@ -373,6 +382,10 @@ class _LineTile extends StatelessWidget {
       title: Row(
         children: [
           Flexible(child: Text(option.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+          if (option.pro) ...[
+            const Gap(6),
+            const ProBadge(),
+          ],
           if (tag != null) ...[
             const Gap(8),
             Container(
@@ -392,7 +405,18 @@ class _LineTile extends StatelessWidget {
         ],
       ),
       subtitle: _lineSubtitle(theme, option),
-      trailing: locked ? Icon(Icons.lock_outline_rounded, size: 18, color: theme.colorScheme.outline) : null,
+      trailing: option.isps == null && !locked
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                LineIspMarks(option: option, isp: isp),
+                if (locked) ...[
+                  const Gap(8),
+                  Icon(Icons.lock_outline_rounded, size: 18, color: theme.colorScheme.outline),
+                ],
+              ],
+            ),
       selected: current,
       onTap: onTap,
     );
@@ -421,8 +445,11 @@ class _TieredLines extends StatefulWidget {
     required this.locateKey,
     required this.onWantRegion,
     this.downLines = const {},
+    this.isp = '',
+    this.recommended = '',
   });
 
+  /// 已按 ispFitFirst 排好（同国家里适合用户宽带的在前）。
   final List<LineOption> options;
   final bool locked;
   final String currentName;
@@ -444,6 +471,12 @@ class _TieredLines extends StatefulWidget {
 
   /// 维修中的线路名（PanelAccount.downLines）。
   final Set<String> downLines;
+
+  /// 用户是哪家宽带（gsl_isp），空 = 不知道。
+  final String isp;
+
+  /// 标「推荐」的那条（订阅第一条；用户自己选过线路就是空）。
+  final String recommended;
 
   @override
   State<_TieredLines> createState() => _TieredLinesState();
@@ -471,16 +504,12 @@ class _TieredLinesState extends State<_TieredLines> {
     Scrollable.ensureVisible(ctx, alignment: 0.4, duration: const Duration(milliseconds: 220));
   }
 
-  String _country(LineOption o) {
-    final head = o.name.split(RegExp(r'\s+')).first.trim();
-    return head.isEmpty ? '其它' : head;
-  }
-
   String _shortName(String country, String name) {
     final trimmed = name.trim();
     if (!trimmed.startsWith(country)) return trimmed;
     final rest = trimmed.substring(country.length).trim();
-    return rest.isEmpty ? trimmed : rest;
+    // 「日本 东京 03」→「东京 03」；「香港 03」去掉地区只剩编号，看不出是哪，留全名（样稿 v2）。
+    return rest.isEmpty || RegExp(r'^\d+$').hasMatch(rest) ? trimmed : rest;
   }
 
   @override
@@ -498,7 +527,7 @@ class _TieredLinesState extends State<_TieredLines> {
       final isPro = widget.tiers.isProName(o.name);
       final bucket = isPro ? pro : std;
       final order = isPro ? proOrder : stdOrder;
-      final country = _country(o);
+      final country = lineCountry(o.name);
       if (!bucket.containsKey(country)) {
         bucket[country] = [];
         order.add(country);
@@ -520,7 +549,11 @@ class _TieredLinesState extends State<_TieredLines> {
         proOrder.add(key);
         return [];
       });
-      pro[key]!.add((name: split.name, desc: split.desc));
+      pro[key]!.add(split);
+    }
+    // 订阅外补进来的精品线路也要按宽带排（订阅里的已经排过，再排一遍结果不变）。
+    for (final k in pro.keys) {
+      pro[k] = ispFitFirst(pro[k]!, widget.isp);
     }
     if (!_ready) {
       _ready = true;
@@ -543,7 +576,7 @@ class _TieredLinesState extends State<_TieredLines> {
       if (stdOrder.contains(locate)) _stdOpen = true;
     }
     final proLocked = widget.tiers.trial != 'pro' && widget.tiers.trial != 'active';
-    final recommended = widget.pickedName.isEmpty && widget.options.isNotEmpty ? widget.options.first.name : '';
+    final recommended = widget.recommended;
     final children = <Widget>[];
 
     void addSeg(String seg, List<String> order, Map<String, List<LineOption>> bucket) {
@@ -838,6 +871,10 @@ class _TieredLinesState extends State<_TieredLines> {
             child: Row(
               children: [
                 Text(short, maxLines: 1, style: TextStyle(fontSize: 12, color: tokens.text)),
+                if (o.pro) ...[
+                  const SizedBox(width: 6),
+                  const ProBadge(),
+                ],
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -847,6 +884,11 @@ class _TieredLinesState extends State<_TieredLines> {
                     style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)),
                   ),
                 ),
+                if (o.isps != null) ...[
+                  const SizedBox(width: 6),
+                  LineIspMarks(option: o, isp: widget.isp),
+                  if (grade != null || down || best || current || recommended) const SizedBox(width: 8),
+                ],
                 if (grade != null) ...[
                   const SizedBox(width: 8),
                   _SpeedDot(level: grade.level, tokens: tokens),

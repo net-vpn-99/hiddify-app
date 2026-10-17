@@ -173,6 +173,8 @@ flutter:
     - assets/images/tray_icon_disconnected.ico
     - assets/images/tray_icon_disconnected.png
     - assets/images/world_map.png
+    # 线路页运营商 LOGO（电信 / 联通 / 移动官网图案，只取左边图形）
+    - assets/images/isp/
     - assets/images/source/ic_launcher_border.png
 
   fonts:
