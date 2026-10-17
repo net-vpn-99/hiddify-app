@@ -270,11 +270,6 @@ class AccountPage extends HookConsumerWidget {
     if (a.lifetime) return '长期有效';
     final secs = a.expiredAt! - now.millisecondsSinceEpoch ~/ 1000;
     if (secs > 0 && secs < 86400) return '剩 ${a.remainingClock(now)}';
-    return _fmtDate(a.expiredAt!);
-  }
-
-  static String _fmtDate(int unixSec) {
-    final d = DateTime.fromMillisecondsSinceEpoch(unixSec * 1000);
-    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    return a.expiryDay;
   }
 }

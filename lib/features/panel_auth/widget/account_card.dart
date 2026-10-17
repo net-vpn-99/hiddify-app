@@ -128,9 +128,12 @@ class AccountCard extends ConsumerWidget {
               height: 48,
               child: FilledButton(
                 onPressed: () => context.pushNamed('purchase'),
+                // 跟 Windows「我的」侧栏同一套：没套餐「选择套餐」、免注册号「去买套餐」、过期「去续费」。
                 child: Text(
-                  !loggedIn || auth.isGuest
-                      ? '买套餐'
+                  !loggedIn || acc == null || acc.stateSlug == 'no_plan'
+                      ? '选择套餐'
+                      : auth.isGuest
+                      ? '去买套餐'
                       : active
                       ? '续费 / 升级'
                       : '去续费',

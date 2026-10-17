@@ -1174,19 +1174,10 @@ class _FooterLinks extends StatelessWidget {
     if (region == null && custom == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
-      child: LayoutBuilder(
-        builder: (context, box) {
-          if (region != null && custom != null && box.maxWidth < 340) {
-            return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [region, custom]);
-          }
-          return Row(
-            children: [
-              if (region != null) Flexible(child: region),
-              const Spacer(),
-              if (custom != null) custom,
-            ],
-          );
-        },
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        runSpacing: 4,
+        children: [?region, ?custom],
       ),
     );
   }

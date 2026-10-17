@@ -32,9 +32,7 @@ class AccountChip extends HookConsumerWidget {
     final loggedIn = ref.watch(Preferences.panelLoggedIn);
     final tick = useState(0);
     final acc = auth.account;
-    final secsLeft = (acc == null || acc.lifetime || acc.expiredAt == null)
-        ? 1 << 30
-        : acc.expiredAt! - DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final secsLeft = acc?.secsLeft() ?? (1 << 30);
     final short = secsLeft > 0 && secsLeft < 86400;
     useEffect(() {
       if (!short) return null;
@@ -46,42 +44,36 @@ class AccountChip extends HookConsumerWidget {
     final (text, hot, route) = _describe(auth, boot, loggedIn, now, secsLeft);
     final tk = OneRayTokens.of(context);
 
-    final canShowDialog = !loggedIn &&
-        (boot.reason == GuestBlockReason.unavailable ||
-            boot.reason == GuestBlockReason.offline ||
-            boot.reason == GuestBlockReason.fixable);
-
     Future<void> handle() async {
-      if (canShowDialog) {
-        await showDialog<void>(
-          context: context,
-          barrierColor: guideCanvasColor(context),
-          builder: (dctx) => GuideCard(
-            title: '为什么领不了免费试用',
-            body: boot.message ?? '免费试用暂时开不了，请稍后重试',
-            actionText: boot.reason == GuestBlockReason.unavailable ? '去注册' : '重试',
-            onAction: () async {
-              Navigator.of(dctx).pop();
-              if (boot.reason == GuestBlockReason.unavailable) {
-                if (context.mounted) unawaited(context.pushNamed('register'));
-              } else {
-                ref.read(guestBootstrapProvider.notifier).reset();
-                await ref.read(guestBootstrapProvider.notifier).ensure();
-              }
-            },
-            secondaryText: boot.reason == GuestBlockReason.fixable ? '去注册' : '',
-            onSecondary: () {
-              Navigator.of(dctx).pop();
-              context.pushNamed('register');
-            },
-            links: [GuideLink('知道了', () => Navigator.of(dctx).pop())],
-          ),
-        );
-        return;
-      }
       switch (route) {
         case '':
           return;
+        // 开不了免费试用：说为什么 + 能做的那一步（_describe 已经按 boot.reason 判好了）。
+        case 'retry':
+          await showDialog<void>(
+            context: context,
+            barrierColor: guideCanvasColor(context),
+            builder: (dctx) => GuideCard(
+              title: '为什么领不了免费试用',
+              body: boot.message ?? '免费试用暂时开不了，请稍后重试',
+              actionText: boot.reason == GuestBlockReason.unavailable ? '去注册' : '重试',
+              onAction: () async {
+                Navigator.of(dctx).pop();
+                if (boot.reason == GuestBlockReason.unavailable) {
+                  if (context.mounted) unawaited(context.pushNamed('register'));
+                } else {
+                  ref.read(guestBootstrapProvider.notifier).reset();
+                  await ref.read(guestBootstrapProvider.notifier).ensure();
+                }
+              },
+              secondaryText: boot.reason == GuestBlockReason.fixable ? '去注册' : '',
+              onSecondary: () {
+                Navigator.of(dctx).pop();
+                context.pushNamed('register');
+              },
+              links: [GuideLink('知道了', () => Navigator.of(dctx).pop())],
+            ),
+          );
         case 'login':
           unawaited(context.pushNamed('login'));
         case 'trial':
@@ -169,8 +161,8 @@ class AccountChip extends HookConsumerWidget {
         if (guest) return (left == null ? '免费试用' : '免费试用 · 剩 $left', false, 'purchase');
         if (acc.lifetime) return ('长期有效', false, 'purchase');
         // 剩 7 天内：胶囊变强调色「去续费」（B 夜航 §四）。
-        final days = secsLeft ~/ 86400;
-        if (secsLeft > 0 && days <= 7) return ('还剩 ${days < 1 ? 1 : days} 天 · 去续费', true, 'purchase');
+        final days = acc.daysLeft(now) ?? 1 << 30;
+        if (secsLeft > 0 && days <= 7) return ('还剩 $days 天 · 去续费', true, 'purchase');
         final name = _tierWord(acc.planName);
         return (left == null ? name : '$name · 剩 $left', false, 'purchase');
     }

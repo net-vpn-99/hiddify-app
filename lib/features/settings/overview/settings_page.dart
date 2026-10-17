@@ -163,20 +163,31 @@ class MenuRow extends StatelessWidget {
     return ListTile(
       minTileHeight: 52,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      // 名字不折行；地方不够时让右边的灰色小字省略（以前「初始化本地网络」被挤成两行）。
       title: Row(
         children: [
-          Flexible(child: Text(title, style: TextStyle(fontSize: 15, color: tk.text))),
+          Text(title, maxLines: 1, softWrap: false, style: TextStyle(fontSize: 15, color: tk.text)),
           if (dot) ...[
             const SizedBox(width: 6),
             Container(width: 7, height: 7, decoration: BoxDecoration(color: tk.acc, shape: BoxShape.circle)),
+          ],
+          if (hint != null) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                hint!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: TextStyle(fontSize: 12, color: tk.sub),
+              ),
+            ),
           ],
         ],
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (hint != null) Text(hint!, style: TextStyle(fontSize: 12, color: tk.sub)),
-          const SizedBox(width: 4),
           if (busy)
             const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
           else

@@ -973,13 +973,30 @@ class PanelAccount {
 
   bool get lifetime => expiredAt == null || expiredAt == 0;
 
+  /// 离到期还有几秒（长期有效 = null，已过期是负数）。
+  int? secsLeft([DateTime? now]) =>
+      lifetime ? null : expiredAt! - (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
+
+  /// 还剩几天：往上取整，跟服务器（GslShop Tiers.php days_left）和 Windows 同一个算法。
+  /// 长期有效 = null，已过期 = 0。所有「还剩 N 天」都用它。
+  int? daysLeft([DateTime? now]) {
+    final secs = secsLeft(now);
+    return secs == null ? null : (secs <= 0 ? 0 : (secs + 86399) ~/ 86400);
+  }
+
+  /// 到期那天「2026-11-09」（长期有效 = 空）。
+  String get expiryDay {
+    if (lifetime || expiredAt == null || expiredAt! <= 0) return '';
+    final d = DateTime.fromMillisecondsSinceEpoch(expiredAt! * 1000);
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  }
+
   /// ≥1 天「N 天」；不足 1 天「X 小时 Y 分」；不足 1 小时「N 分钟」（最少 1）。
   /// 长期或已经到期返回 null。
   String? remainingClock([DateTime? now]) {
-    if (lifetime) return null;
-    final secs = expiredAt! - (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
-    if (secs <= 0) return null;
-    if (secs >= 86400) return '${secs ~/ 86400} 天';
+    final secs = secsLeft(now);
+    if (secs == null || secs <= 0) return null;
+    if (secs >= 86400) return '${daysLeft(now)} 天';
     if (secs >= 3600) {
       final hours = secs ~/ 3600;
       final minutes = (secs % 3600) ~/ 60;

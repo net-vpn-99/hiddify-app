@@ -283,10 +283,9 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
       return on.isEmpty ? '● $plan · 还能用 ${me.daysLeft} 天' : '● $plan · 还能用 ${me.daysLeft} 天（$on 到期）';
     }
     if (acc?.lifetime == true) return '● $plan · 长期有效';
-    final exp = acc?.expiredAt;
-    if (exp == null) return '● $plan';
-    final days = DateTime.fromMillisecondsSinceEpoch(exp * 1000).difference(DateTime.now()).inDays;
-    return days < 0 ? '● $plan · 已到期' : '● $plan · 还能用 $days 天';
+    final days = acc?.expiredAt == null ? null : acc!.daysLeft();
+    if (days == null) return '● $plan';
+    return days <= 0 ? '● $plan · 已到期' : '● $plan · 还能用 $days 天';
   }
 
   static String _payLabel(String? knownMask, PlanOffer? offer, ShopMe? me) {
@@ -687,7 +686,7 @@ class _AccountCard extends StatelessWidget {
           if (a != null) ...[
             const SizedBox(height: 2),
             Text(
-              a.lifetime ? '长期有效' : _expiryText(a.expiredAt!),
+              a.lifetime ? '长期有效' : _expiryText(a),
               style: TextStyle(color: t.sub, fontSize: 11),
             ),
           ],
@@ -742,12 +741,11 @@ class _AccountCard extends StatelessWidget {
     return '${formatAccountBytes(left)} / ${formatAccountBytes(a.transferEnable)}';
   }
 
-  String _expiryText(int epochSeconds) {
-    final left = DateTime.fromMillisecondsSinceEpoch(epochSeconds * 1000).difference(DateTime.now());
-    if (left.isNegative) return '已到期';
-    final days = left.inDays;
-    if (days >= 1) return '还有 $days 天到期';
-    return '不到 1 天到期';
+  String _expiryText(PanelAccount a) {
+    final secs = a.secsLeft() ?? 0;
+    if (secs <= 0) return '已到期';
+    if (secs < 86400) return '不到 1 天到期';
+    return '还有 ${a.daysLeft()} 天到期';
   }
 }
 

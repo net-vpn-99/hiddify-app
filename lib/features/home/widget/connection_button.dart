@@ -24,11 +24,13 @@ import 'package:hiddify/features/home/widget/home_radar.dart';
 import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
+import 'package:hiddify/features/proxy/line/line_tier.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
 import 'package:hiddify/singbox/model/singbox_config_enum.dart';
@@ -95,10 +97,10 @@ class ConnectionButton extends HookConsumerWidget {
       secureLabel = "";
     }
 
+    final guest = ref.watch(panelAuthProvider.select((s) => s.isGuest));
     if (quotaEnded) {
-      final label = account?.stateSlug != 'expired'
-          ? '流量已用完'
-          : (ref.watch(panelAuthProvider.select((s) => s.isGuest)) ? '试用已结束' : '会员已到期');
+      final label = account?.stateSlug != 'expired' ? '流量已用完' : (guest ? '试用已结束' : '会员已到期');
+      final expDay = account?.stateSlug == 'expired' ? account!.expiryDay : '';
       Future<void> renew() async {
         await ref.read(connectionNotifierProvider.notifier).abortConnection();
         await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(account!, force: true);
@@ -115,12 +117,15 @@ class ConnectionButton extends HookConsumerWidget {
         ),
         onTap: renew,
         enabled: true,
-        kicker: '',
+        kicker: expDay.isEmpty ? '' : '$expDay 到期',
         title: label,
         sub: '线路、账号都还在。续费以后点「开始连接」就行。',
         statusExtra: statusExtra,
         middle: middle,
         buttonLabel: '去续费',
+        // 免注册的试用号不给邀请（两端一样，Windows Main.qml homeThird）。
+        linkLabel: guest ? '' : '邀请好友，各得 1 天',
+        onLink: () => openInvite(context),
       );
     }
 
@@ -345,6 +350,9 @@ class ConnectionButton extends HookConsumerWidget {
     final lineName = ref.watch(Preferences.lastNodeName);
     final lineDesc = ref.watch(Preferences.lastNodeDesc);
     final connected = status is Connected;
+    // 免注册号或精品体验中：没连接时说「免费试用中」、底下给「看套餐」（跟 Windows homeKicker / homeThird 一样）。
+    final tierTrial = ref.watch(lineTierProvider.select((x) => x.trial == 'active'));
+    final trialing = guest || tierTrial;
     final failedNow = shownFailed > 0 || connectionStatus is AsyncError ||
         (status is Disconnected && status.connectionFailure != null);
     final radarState = busy || shownStep > 0
@@ -408,6 +416,8 @@ class ConnectionButton extends HookConsumerWidget {
           ? t.connection.connecting
           : failedNow
           ? ''
+          : trialing
+          ? '未连接 · 免费试用中'
           : '未连接 · 上次用的线路',
       connectedDot: connected && confirmed,
       faultTag: radarState == RadarState.failed ? '连接失败' : '',
@@ -440,7 +450,13 @@ class ConnectionButton extends HookConsumerWidget {
       buttonOutlined: busy || (connected && requiresReconnect != true) || status is Connecting || status is Disconnecting,
       showAllLines: connected,
       secondLabel: radarState == RadarState.failed ? '换一条线路' : '',
-      linkLabel: radarState == RadarState.off ? '换一条线路' : '',
+      // 没连接时最下面那行：试用中给「看套餐」，付过钱的给「换一条线路」（跟 Windows homeThird 一样）。
+      linkLabel: radarState != RadarState.off
+          ? ''
+          : trialing
+          ? '看套餐'
+          : '换一条线路',
+      onLink: trialing ? () => context.pushNamed('purchase') : null,
       onAllLines: () => showLinePicker(context, ref),
       // 失败时能直接去的设置页（授权 / 通知 / 后台运行），没有就不显示。
       hintAction: shownFailed == 4 ? progress.action : SettingsAction.none,
@@ -473,6 +489,7 @@ class HomeConnectPanel extends StatelessWidget {
     this.showAllLines = false,
     this.secondLabel = '',
     this.linkLabel = '',
+    this.onLink,
     this.onAllLines,
     this.hintAction = SettingsAction.none,
     this.onRepair,
@@ -496,6 +513,9 @@ class HomeConnectPanel extends StatelessWidget {
   final bool showAllLines;
   final String secondLabel;
   final String linkLabel;
+
+  /// 最下面那行文字链接点了做什么；不给就跟「全部线路」一样打开线路列表。
+  final VoidCallback? onLink;
   final VoidCallback? onAllLines;
   final SettingsAction hintAction;
   final VoidCallback? onRepair;
@@ -630,7 +650,7 @@ class HomeConnectPanel extends StatelessWidget {
               if (linkLabel.isNotEmpty)
                 TextButton(
                   style: TextButton.styleFrom(foregroundColor: tk.sub),
-                  onPressed: onAllLines,
+                  onPressed: onLink ?? onAllLines,
                   child: Text(linkLabel),
                 ),
             ],

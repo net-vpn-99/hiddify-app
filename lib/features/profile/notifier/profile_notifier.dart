@@ -31,6 +31,9 @@ part 'profile_notifier.g.dart';
 
 @riverpod
 class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
+  /// 这次是自动加的账号订阅（不弹「保存成功」）。
+  bool _quiet = false;
+
   @override
   AsyncValue<Unit?> build() {
     ref.disposeDelay(const Duration(minutes: 1));
@@ -43,7 +46,8 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
       final notification = ref.read(inAppNotificationControllerProvider);
       switch (next) {
         case AsyncData(value: final _?):
-          notification.showSuccessToast(t.pages.profiles.msg.save.success);
+          // 登录 / 开号 / 买完自动加的订阅（addAccountSubscription）不弹：用户没做「保存配置文件」这件事。
+          if (!_quiet) notification.showSuccessToast(t.pages.profiles.msg.save.success);
         case AsyncError(:final error):
           if (error case ProfileInvalidUrlFailure()) {
             notification.showErrorToast(t.pages.profiles.msg.invalidUrl);
@@ -91,6 +95,7 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
   }
 
   Future<void> addClipboard(String rawInput) async {
+    _quiet = false;
     if (state.isLoading) return;
     final rs = LinkParser.parse(rawInput);
     state = const AsyncLoading();
@@ -122,6 +127,7 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
   }
 
   Future<void> addManual({required String url, required UserOverride userOverride}) async {
+    _quiet = false;
     if (state.isLoading) return;
     state = const AsyncLoading();
     final ownUrl = await _ownUrlOrReject(url);
@@ -148,6 +154,7 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
 
   /// 登录 / 注册 / 账号补订阅。不看显示名称，先确认 URL 来源再按绑定 ID 更新。
   Future<void> addAccountSubscription(String url) async {
+    _quiet = true;
     if (state.isLoading) return;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
