@@ -86,18 +86,24 @@ class LineIspMarks extends StatelessWidget {
   /// 这条线有没有 LOGO 可放（调用方据此决定留不留间距）。
   static bool hasMarks(LineOption o) => o.isps?.isNotEmpty ?? false;
 
+  /// LOGO 区固定宽度 = 三个 LOGO 的宽度，一个 / 两个时靠右，各行 LOGO 右边对齐、左边文字不跟着跳。
+  static const width = 18.0 * 3 + 5 * 2;
+
   @override
   Widget build(BuildContext context) {
     final isps = option.isps;
     if (isps == null || isps.isEmpty) return const SizedBox.shrink();
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final (i, w) in isps.indexed) ...[
-          if (i > 0) const SizedBox(width: 5),
-          IspLogo(w, ring: w == isp),
+    return SizedBox(
+      width: width,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          for (final (i, w) in isps.indexed) ...[
+            if (i > 0) const SizedBox(width: 5),
+            IspLogo(w, ring: w == isp),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

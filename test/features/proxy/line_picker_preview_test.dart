@@ -51,9 +51,11 @@ class _Region extends RegionVoteNotifier {
 }
 
 class _Conn extends ConnectionNotifier {
+  _Conn(this.up);
+  final bool up;
   @override
   Stream<ConnectionStatus> build() async* {
-    yield const ConnectionStatus.disconnected();
+    yield up ? const ConnectionStatus.connected() : const ConnectionStatus.disconnected();
   }
 }
 
@@ -98,12 +100,20 @@ Future<void> _shot(
   required String trial,
   required String current,
   List<String> tapAfter = const [],
+  double width = 360,
+  bool connected = false,
 }) async {
-  SharedPreferences.setMockInitialValues({'flutter.last_node_name': current, 'flutter.preferred_line_name': current});
+  SharedPreferences.setMockInitialValues({
+    'flutter.last_node_name': current,
+    'flutter.preferred_line_name': current,
+    // 香港线路下面那行「不支持 ChatGPT 等 AI」（后台下发，RemoteSiteConfig 先读本地缓存）。
+    'flutter.oneray_site_ai_regions': 'hk',
+    'flutter.oneray_site_ai_tag': '不支持 ChatGPT 等 AI',
+  });
   final prefs = await SharedPreferences.getInstance();
   final names = [...std, if (trial == 'pro') ...pro];
   final key = GlobalKey();
-  tester.view.physicalSize = const Size(1080, 2340);
+  tester.view.physicalSize = Size(width * 3, 2340);
   tester.view.devicePixelRatio = 3;
   await tester.pumpWidget(
     ProviderScope(
@@ -115,7 +125,7 @@ Future<void> _shot(
         ),
         lineSpeedProvider.overrideWith(_Speed.new),
         regionVoteProvider.overrideWith(_Region.new),
-        connectionNotifierProvider.overrideWith(_Conn.new),
+        connectionNotifierProvider.overrideWith(() => _Conn(connected)),
         lineSetProvider.overrideWith(
           (ref) => LineSet(lines: [for (final n in names) splitNodeName(n)], locked: false),
         ),
@@ -169,6 +179,7 @@ Future<void> _shot(
 }
 
 void main() {
+  layoutMain();
   testWidgets('线路页四种情况截图', (tester) async {
     await tester.runAsync(_fonts);
     // 1. 移动、标准版：香港 03 排到香港 01 前面，移动 LOGO 有橙圈，顶上提示。
@@ -188,5 +199,35 @@ void main() {
     // 6. 新名字但没有一条适合移动：不显示提示条。
     await _shot(tester, '6-没有适合的-移动.png', isp: '移动', std: newStd.where((s) => !s.contains('移动')).toList(),
         pro: const [], trial: '', current: '香港 01');
+  }, skip: shotDir.isEmpty);
+}
+
+/// 10-17 运营真机：最挤的那行（正在用的精品线路 + 三个 LOGO）名字被挤成三行。360dp / 411dp 两种手机宽度看排版。
+const layoutStd = [
+  '香港 01 | 电信 联通',
+  '日本 东京 01',
+  '美国 洛杉矶 01 | 电信 联通 | 大带宽',
+  '韩国 首尔 03 | 电信',
+];
+const layoutPro = ['美国 洛杉矶 05 ⭐精品 | 电信 联通 移动 | 晚高峰稳'];
+
+void layoutMain() {
+  testWidgets('线路行排版 360 / 411', (tester) async {
+    await tester.runAsync(_fonts);
+    for (final w in [360.0, 411.0]) {
+      final d = w.toInt();
+      // 平铺列表（没有精品名单时）：四种行都在一屏里，正在用的是精品三 LOGO 那条。
+      await _shot(tester, 'L$d-平铺.png', isp: '移动', std: [...layoutPro, ...layoutStd], pro: const [], trial: '',
+          current: '美国 洛杉矶 05', connected: true, width: w);
+      // 分段列表：精品卡里正在用的那条；标准卡里美国（大带宽两 LOGO）、日本（只有名字）、香港。
+      await _shot(tester, 'L$d-分段-精品在用.png', isp: '移动', std: layoutStd, pro: layoutPro, trial: 'pro',
+          current: '美国 洛杉矶 05', connected: true, width: w);
+      await _shot(tester, 'L$d-分段-美国.png', isp: '移动', std: layoutStd, pro: layoutPro, trial: '',
+          current: '美国 洛杉矶 01', connected: true, width: w);
+      await _shot(tester, 'L$d-分段-日本.png', isp: '移动', std: layoutStd, pro: layoutPro, trial: '',
+          current: '日本 东京 01', width: w);
+      await _shot(tester, 'L$d-分段-香港.png', isp: '电信', std: layoutStd, pro: layoutPro, trial: '',
+          current: '香港 01', width: w);
+    }
   }, skip: shotDir.isEmpty);
 }

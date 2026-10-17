@@ -328,20 +328,29 @@ String? _customLineUrl() {
   return url;
 }
 
-Widget? _lineSubtitle(ThemeData theme, LineOption option) {
+/// 平铺列表的第二行：说明 + 状态牌子（「使用中」等，不跟「精品」挤在名字那行），下面再是 AI 提示。
+Widget? _lineSubtitle(ThemeData theme, LineOption option, Widget? status) {
   final code = countryCodeFromLineName(option.name);
   final tag = RemoteSiteConfig.aiTipTag;
   final showTag = tag != null && code != null && RemoteSiteConfig.aiTipRegions.contains(code);
-  if (option.desc.isEmpty && !showTag) return null;
-  if (!showTag) return Text(option.desc);
+  if (option.desc.isEmpty && status == null && !showTag) return null;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      if (option.desc.isNotEmpty) Text(option.desc),
-      Text(
-        tag,
-        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-      ),
+      if (option.desc.isNotEmpty || status != null)
+        Row(
+          children: [
+            if (option.desc.isNotEmpty)
+              Flexible(child: Text(option.desc, maxLines: 1, softWrap: false, overflow: TextOverflow.ellipsis)),
+            if (option.desc.isNotEmpty && status != null) const Gap(8),
+            if (status != null) status,
+          ],
+        ),
+      if (showTag)
+        Text(
+          tag,
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
     ],
   );
 }
@@ -383,34 +392,44 @@ class _LineTile extends StatelessWidget {
             ? (connected ? '使用中' : '上次用的', true)
             : (recommended ? const ('推荐', false) : null);
 
+    final status = tag == null
+        ? null
+        : Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: tag.$2 ? theme.colorScheme.primaryContainer : theme.colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              tag.$1,
+              maxLines: 1,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: tag.$2 ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          );
+
     final tile = ListTile(
       leading: LineFlag(option.name, size: 26),
+      // 名字永远单行（放不下才省略号），「精品」紧跟名字；状态牌子在第二行。
       title: Row(
         children: [
-          Flexible(child: Text(option.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+          Flexible(
+            child: Text(
+              option.name,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
           if (option.pro) ...[
             const Gap(6),
             const ProBadge(),
           ],
-          if (tag != null) ...[
-            const Gap(8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: tag.$2 ? theme.colorScheme.primaryContainer : theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                tag.$1,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: tag.$2 ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-          ],
         ],
       ),
-      subtitle: _lineSubtitle(theme, option),
+      subtitle: _lineSubtitle(theme, option, status),
       trailing: !LineIspMarks.hasMarks(option) && !locked
           ? null
           : Row(
@@ -861,6 +880,20 @@ class _TieredLinesState extends State<_TieredLines> {
     final short = _shortName(country, o.name);
     final grade = down ? null : widget.speed.grades[o.name];
     final best = !down && widget.speed.bestName == o.name && grade != null && grade.level <= 2;
+    Text label(String text, Color color) =>
+        Text(text, maxLines: 1, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color));
+    final Widget? status = down
+        ? label('维修中', tokens.secondary)
+        : best && current
+            ? label('使用中 · 最快', tokens.remaining)
+            : best
+                ? label('你这里最快', tokens.primary)
+                : current
+                    ? label(widget.connected ? '使用中' : '上次用的', widget.connected ? tokens.remaining : tokens.secondary)
+                    : recommended
+                        ? label('推荐', tokens.primary)
+                        : null;
+    final dot = Text(' · ', style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)));
     final row = Material(
       key: current ? _currentLineKey : null,
       color: current ? tokens.selected : Colors.transparent,
@@ -870,57 +903,69 @@ class _TieredLinesState extends State<_TieredLines> {
         hoverColor: tokens.fill,
         highlightColor: tokens.fill,
         onTap: () => widget.onPick(o),
-        child: SizedBox(
-          height: 40,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              children: [
-                Text(short, maxLines: 1, style: TextStyle(fontSize: 12, color: tokens.text)),
-                if (o.pro) ...[
-                  const SizedBox(width: 6),
-                  const ProBadge(),
-                ],
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    o.desc,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)),
-                  ),
-                ),
-                if (LineIspMarks.hasMarks(o)) ...[
-                  const SizedBox(width: 6),
-                  LineIspMarks(option: o, isp: widget.isp),
-                  if (grade != null || down || best || current || recommended) const SizedBox(width: 8),
-                ],
-                if (grade != null) ...[
-                  const SizedBox(width: 8),
-                  _SpeedDot(level: grade.level, tokens: tokens),
-                  const SizedBox(width: 4),
-                  Text(grade.word, style: TextStyle(fontSize: 10, color: tokens.secondary)),
-                  if (best || current || recommended) const SizedBox(width: 8),
-                ],
-                if (down)
-                  Text('维修中', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.secondary))
-                else if (best && current)
-                  Text('使用中 · 最快', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.remaining))
-                else if (best)
-                  Text('你这里最快', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.primary))
-                else if (current)
-                  Text(
-                    widget.connected ? '使用中' : '上次用的',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: widget.connected ? tokens.remaining : tokens.secondary,
+        // 两行：第一行名字（永远单行）+「精品」，第二行说明 · 测速 · 状态；右边 LOGO 区固定宽、靠右。
+        // 以前一行塞下名字、精品、说明、LOGO、状态，最挤的精品线路名字被挤到折行（10-17 运营真机）。
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            short,
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 13, color: tokens.text),
+                          ),
+                        ),
+                        if (o.pro) ...[
+                          const SizedBox(width: 6),
+                          const ProBadge(),
+                        ],
+                      ],
                     ),
-                  )
-                else if (recommended)
-                  Text('推荐', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: tokens.primary)),
+                    if (o.desc.isNotEmpty || grade != null || status != null) ...[
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          if (o.desc.isNotEmpty)
+                            Flexible(
+                              child: Text(
+                                o.desc,
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 10, color: tokens.secondary.withValues(alpha: 0.7)),
+                              ),
+                            ),
+                          if (grade != null) ...[
+                            if (o.desc.isNotEmpty) const SizedBox(width: 8),
+                            _SpeedDot(level: grade.level, tokens: tokens),
+                            const SizedBox(width: 4),
+                            Text(grade.word, style: TextStyle(fontSize: 10, color: tokens.secondary)),
+                          ],
+                          if (status != null) ...[
+                            if (o.desc.isNotEmpty || grade != null) dot,
+                            status,
+                          ],
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (LineIspMarks.hasMarks(o)) ...[
+                const SizedBox(width: 8),
+                LineIspMarks(option: o, isp: widget.isp),
               ],
-            ),
+            ],
           ),
         ),
       ),
