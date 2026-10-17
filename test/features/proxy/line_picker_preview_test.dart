@@ -182,5 +182,8 @@ void main() {
     await _shot(tester, '4-老名字.png', isp: '移动', std: oldStd, pro: oldPro, trial: '', current: '香港 01');
     // 5. 没有精品线路时的平铺列表。
     await _shot(tester, '5-平铺列表-移动.png', isp: '移动', std: newStd, pro: const [], trial: '', current: '');
+    // 6. 新名字但没有一条适合移动：不显示提示条。
+    await _shot(tester, '6-没有适合的-移动.png', isp: '移动', std: newStd.where((s) => !s.contains('移动')).toList(),
+        pro: const [], trial: '', current: '香港 01');
   }, skip: shotDir.isEmpty);
 }

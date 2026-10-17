@@ -267,7 +267,13 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
             ),
           ),
         // 钉在标题下面，不跟着列表滚走（打开时列表会自动滚到自己那条）。
-        if (options.isNotEmpty) IspHint(isp: isp, margin: const EdgeInsets.fromLTRB(12, 0, 12, 8)),
+        // 按整个列表判断（收起的精品线路也算），所以把订阅外补进来的精品线路也带上。
+        if (options.isNotEmpty)
+          IspHint(
+            isp: isp,
+            lines: [...options, if (tiered) for (final p in tiers.proLines) splitNodeName(p.name)],
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          ),
         body,
         const Gap(8),
       ],

@@ -125,16 +125,21 @@ class ProBadge extends StatelessWidget {
   }
 }
 
-/// 列表顶上那条浅橙提示：「你用的是 [LOGO] 中国X宽带，带橙圈的线路更适合你」。[isp] 为空不显示。
+/// 列表顶上那条浅橙提示：「你用的是中国X宽带。线路后面有 [LOGO] 的，适合你用。」
+/// 列表里至少有一条线路适合 [isp] 才显示（[isp] 为空自然也不显示）。
 class IspHint extends StatelessWidget {
-  const IspHint({super.key, required this.isp, this.margin = EdgeInsets.zero});
+  const IspHint({super.key, required this.isp, required this.lines, this.margin = EdgeInsets.zero});
 
   final String isp;
+
+  /// 整个线路列表（含收起的分组）。一条都不适合 [isp] = 列表里根本没有这家的 LOGO，
+  /// 提示了用户也找不到，不显示（10-17 运营真机）。
+  final List<LineOption> lines;
   final EdgeInsetsGeometry margin;
 
   @override
   Widget build(BuildContext context) {
-    if (!kIspWords.contains(isp)) return const SizedBox.shrink();
+    if (!lines.any((o) => lineFitsIsp(o, isp))) return const SizedBox.shrink();
     final tokens = PurchaseTokens.of(context);
     final style = TextStyle(fontSize: 12, color: tokens.warning);
     return Padding(
@@ -147,9 +152,13 @@ class IspHint extends StatelessWidget {
             TextSpan(
               style: style,
               children: [
-                const TextSpan(text: '你用的是 '),
-                WidgetSpan(alignment: PlaceholderAlignment.middle, child: IspLogo(isp, ring: true)),
-                TextSpan(text: ' 中国$isp宽带，带橙圈的线路更适合你'),
+                // 两端一字不差（Windows RoutePalette 同一句）。
+                TextSpan(text: '你用的是中国$isp宽带。线路后面有'),
+                WidgetSpan(
+                  alignment: PlaceholderAlignment.middle,
+                  child: Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: IspLogo(isp)),
+                ),
+                const TextSpan(text: '的，适合你用。'),
               ],
             ),
           ),
