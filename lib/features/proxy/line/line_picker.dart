@@ -289,37 +289,46 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     );
   }
 
-  /// 选线路：记偏好 + 立即更新首页显示；已连接时由 autoLineFixer 立刻切过去。
-  /// 没连接时选了线路 = 要用这条：直接走一键连接（跟点连接按钮同一套，有进度条）。
-  /// 以前只记下来什么都不发生，选完没反馈（10-14 运营真机）。
+  /// 选线路：记偏好 + 立即更新首页显示（跟主页雷达共用 chooseLine）。
   Future<void> _pick(BuildContext context, WidgetRef ref, LineOption o) async {
-    // 维修中：不切换，告诉他换一条（列表就在眼前；Windows 同一句）。
-    if (ref.read(panelAuthProvider).account?.isLineDown(o.name) ?? false) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('「${o.name}」正在维修，暂时连不上。请换一条线路。')),
-      );
-      return;
-    }
-    await ref.read(Preferences.preferredLineName.notifier).update(o.name);
-    await ref.read(Preferences.lastNodeName.notifier).update(o.name);
-    await ref.read(Preferences.lastNodeDesc.notifier).update(o.desc);
-    if (context.mounted) Navigator.of(context).pop();
-    final now = ref.read(connectionNotifierProvider);
-    if (now is AsyncError || now.valueOrNull is Disconnected) {
-      ref.read(connectRequestProvider.notifier).state++;
-    }
+    if (await chooseLine(context, ref, o) && context.mounted) Navigator.of(context).pop();
   }
 
   /// 点了连不上的线路：按他缺什么给什么（有账号但到期 → 买套餐；没账号 → 登录 / 试用）。
   Future<void> _promptUnlock(BuildContext context, WidgetRef ref) async {
     Navigator.of(context).pop();
-    final account = ref.read(panelAuthProvider).account;
-    if (account != null) {
-      await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(account, force: true);
-      return;
-    }
-    await ref.read(dialogNotifierProvider.notifier).showNeedAccount();
+    await promptUnlockLines(ref);
   }
+}
+
+/// 选线路（线路列表、主页雷达共用）：记偏好 + 立即更新首页显示；已连接时由 autoLineFixer 立刻切过去。
+/// 没连接时选了线路 = 要用这条：直接走一键连接（跟点连接按钮同一套，有进度条）。
+/// 维修中的不切换，告诉他换一条（Windows 同一句）。返回 false = 没选上。
+Future<bool> chooseLine(BuildContext context, WidgetRef ref, LineOption o) async {
+  if (ref.read(panelAuthProvider).account?.isLineDown(o.name) ?? false) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('「${o.name}」正在维修，暂时连不上。请换一条线路。')),
+    );
+    return false;
+  }
+  await ref.read(Preferences.preferredLineName.notifier).update(o.name);
+  await ref.read(Preferences.lastNodeName.notifier).update(o.name);
+  await ref.read(Preferences.lastNodeDesc.notifier).update(o.desc);
+  final now = ref.read(connectionNotifierProvider);
+  if (now is AsyncError || now.valueOrNull is Disconnected) {
+    ref.read(connectRequestProvider.notifier).state++;
+  }
+  return true;
+}
+
+/// 点了现在连不上的线路（没账号 / 到期 / 流量用完）：按他缺什么给什么。
+Future<void> promptUnlockLines(WidgetRef ref) async {
+  final account = ref.read(panelAuthProvider).account;
+  if (account != null) {
+    await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(account, force: true);
+    return;
+  }
+  await ref.read(dialogNotifierProvider.notifier).showNeedAccount();
 }
 
 String? _customLineUrl() {

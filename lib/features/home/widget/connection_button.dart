@@ -1,17 +1,15 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
-import 'package:hiddify/core/widget/animated_text.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
@@ -22,21 +20,29 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/local_repair.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/home/widget/connect_progress.dart';
+import 'package:hiddify/features/home/widget/home_radar.dart';
 import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
+import 'package:hiddify/features/proxy/line/line_picker.dart';
+import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/config_option/config_option_notifier.dart';
-import 'package:hiddify/gen/assets.gen.dart';
 import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 // TODO: rewrite
 class ConnectionButton extends HookConsumerWidget {
-  const ConnectionButton({super.key});
+  const ConnectionButton({super.key, this.statusExtra = const [], this.middle = const []});
+
+  /// 状态下面紧跟的几行（速率、稳定度、提示）。
+  final List<Widget> statusExtra;
+
+  /// 状态和按钮之间的卡片（失败卡、活动卡、常用网站）。
+  final List<Widget> middle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -78,7 +84,6 @@ class ConnectionButton extends HookConsumerWidget {
     //   //   },
     //   // );
 
-    final tk = OneRayTokens.of(context);
     final account = ref.watch(panelAuthProvider.select((s) => s.account));
     final quotaEnded = account?.exhausted == true;
 
@@ -91,20 +96,31 @@ class ConnectionButton extends HookConsumerWidget {
     }
 
     if (quotaEnded) {
-      return _ConnectionButton(
-        onTap: () async {
-          await ref.read(connectionNotifierProvider.notifier).abortConnection();
-          await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(account!, force: true);
-        },
+      final label = account?.stateSlug != 'expired'
+          ? '流量已用完'
+          : (ref.watch(panelAuthProvider.select((s) => s.isGuest)) ? '试用已结束' : '会员已到期');
+      Future<void> renew() async {
+        await ref.read(connectionNotifierProvider.notifier).abortConnection();
+        await ref.read(dialogNotifierProvider.notifier).showQuotaExhausted(account!, force: true);
+      }
+
+      // 到期：雷达变暗，主按钮「去续费」，邀请排第二（定死的规矩）。
+      return HomeConnectPanel(
+        radar: (size) => HomeRadar(
+          size: size,
+          state: RadarState.off,
+          isp: account?.isp ?? '',
+          dimmed: true,
+          onPick: (_) => renew(),
+        ),
+        onTap: renew,
         enabled: true,
-        label: account?.stateSlug != 'expired'
-            ? '流量已用完'
-            : (ref.watch(panelAuthProvider.select((s) => s.isGuest)) ? '试用已结束' : '会员已到期'),
-        hint: '点一下买套餐继续用',
-        buttonColor: tk.acc,
-        newButtonColor: tk.acc,
-        animated: false,
-        secureLabel: '',
+        kicker: '',
+        title: label,
+        sub: '线路、账号都还在。续费以后点「开始连接」就行。',
+        statusExtra: statusExtra,
+        middle: middle,
+        buttonLabel: '去续费',
       );
     }
 
@@ -326,27 +342,57 @@ class ConnectionButton extends HookConsumerWidget {
       if (now is AsyncError || now.valueOrNull is Disconnected) guard(connectFlow)();
     });
 
-    return _ConnectionButton(
-      onTap: guard(switch (connectionStatus) {
-        AsyncData(value: Connected()) when requiresReconnect == true => () async {
-          final activeProfile = await ref.read(activeProfileProvider.future);
-          return await ref.read(connectionNotifierProvider.notifier).reconnect(activeProfile);
-        },
-        // OneRay：一键连接 = 多米诺。每一步做完立刻接着下一步，任何一步失败就停在那一步
-        // 说原因；点一下按钮随时取消（guard 里作废这张票）。以前这里开号 / 导入线路之后
-        // 直接 return，用户得再点一次才真的连（10-12 查出来的断链）。
-        AsyncData(value: Disconnected()) || AsyncError() => connectFlow,
-        AsyncData(value: Connected()) => () async {
-          if (requiresReconnect == true &&
-              await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
-            return await ref
-                .read(connectionNotifierProvider.notifier)
-                .reconnect(await ref.read(activeProfileProvider.future));
+    final lineName = ref.watch(Preferences.lastNodeName);
+    final lineDesc = ref.watch(Preferences.lastNodeDesc);
+    final connected = status is Connected;
+    final failedNow = shownFailed > 0 || connectionStatus is AsyncError ||
+        (status is Disconnected && status.connectionFailure != null);
+    final radarState = busy || shownStep > 0
+        ? RadarState.connecting
+        : connected
+        ? RadarState.connected
+        : failedNow
+        ? RadarState.failed
+        : RadarState.off;
+
+    final onTap = guard(switch (connectionStatus) {
+      AsyncData(value: Connected()) when requiresReconnect == true => () async {
+        final activeProfile = await ref.read(activeProfileProvider.future);
+        return await ref.read(connectionNotifierProvider.notifier).reconnect(activeProfile);
+      },
+      // OneRay：一键连接 = 多米诺。每一步做完立刻接着下一步，任何一步失败就停在那一步
+      // 说原因；点一下按钮随时取消（guard 里作废这张票）。以前这里开号 / 导入线路之后
+      // 直接 return，用户得再点一次才真的连（10-12 查出来的断链）。
+      AsyncData(value: Disconnected()) || AsyncError() => connectFlow,
+      AsyncData(value: Connected()) => () async {
+        if (requiresReconnect == true &&
+            await ref.read(dialogNotifierProvider.notifier).showExperimentalFeatureNotice()) {
+          return await ref
+              .read(connectionNotifierProvider.notifier)
+              .reconnect(await ref.read(activeProfileProvider.future));
+        }
+        return await ref.read(connectionNotifierProvider.notifier).toggleConnection();
+      },
+      _ => () async {},
+    });
+
+    return HomeConnectPanel(
+      radar: (size) => HomeRadar(
+        size: size,
+        state: radarState,
+        step: shownStep,
+        isp: account?.isp ?? '',
+        onPick: (line) async {
+          final set = await ref.read(lineSetProvider.future);
+          if (!context.mounted) return;
+          if (set.locked) {
+            await promptUnlockLines(ref);
+          } else if (!(connected && line.name == lineName)) {
+            await chooseLine(context, ref, line);
           }
-          return await ref.read(connectionNotifierProvider.notifier).toggleConnection();
         },
-        _ => () async {},
-      }),
+      ),
+      onTap: onTap,
       // 准备那几步里按钮可以点（= 取消）；引擎在起的那一下（Connecting）不能点。
       enabled:
           busy ||
@@ -354,169 +400,239 @@ class ConnectionButton extends HookConsumerWidget {
             AsyncData(value: Connected()) || AsyncData(value: Disconnected()) || AsyncError() => true,
             _ => false,
           },
-      label: stepTitle.isNotEmpty
-          ? stepTitle
-          : shownFailed > 0 && shownFailed < 5 && progress.title.isNotEmpty
+      kicker: shownStep > 0
+          ? '第 $shownStep/5 步 · $stepTitle'
+          : connected && confirmed
+          ? ''
+          : connected
+          ? t.connection.connecting
+          : failedNow
+          ? ''
+          : '未连接 · 上次用的线路',
+      connectedDot: connected && confirmed,
+      faultTag: radarState == RadarState.failed ? '连接失败' : '',
+      title: shownStep > 0
+          ? (lineName.isEmpty ? '正在连接…' : '正在连接 $lineName…')
+          : radarState == RadarState.failed && progress.title.isNotEmpty
           ? progress.title
+          : lineName.isEmpty
+          ? '自动选择线路'
+          : lineName,
+      sub: shownStep > 0
+          ? '一般 5 秒内连好。10 秒还没好会停下来告诉你原因，不会自己换线路。'
+          : radarState == RadarState.failed && progress.message.isNotEmpty
+          ? progress.message
+          : lineDesc,
+      steps: stepsBar,
+      statusExtra: statusExtra,
+      middle: middle,
+      // 一屏只有一颗主按钮：连接中 / 已连上是描边的「取消 / 断开连接」。
+      buttonLabel: busy && shownStep > 0 && shownStep <= 3
+          ? '取消'
           : switch (connectionStatus) {
               AsyncData(value: Connected()) when requiresReconnect == true => t.connection.reconnect,
-              AsyncData(value: Connected()) when !confirmed => t.connection.connecting,
-              AsyncData(value: final status) => status.present(t),
-              _ => "",
+              AsyncData(value: Connected()) => '断开连接',
+              AsyncData(value: Connecting()) => '正在连接…',
+              AsyncData(value: Disconnecting()) => '正在断开…',
+              _ when radarState == RadarState.failed => '重新连接',
+              _ => '开始连接',
             },
-      hint: shownStep > 0 && shownStep <= 3
-          ? '第 $shownStep/5 步 · 点一下取消'
-          : shownStep > 0
-          ? '第 $shownStep/5 步'
-          : shownFailed > 0 && shownFailed < 5
-          ? progress.message
-          : null,
-      steps: stepsBar,
+      buttonOutlined: busy || (connected && requiresReconnect != true) || status is Connecting || status is Disconnecting,
+      showAllLines: connected,
+      secondLabel: radarState == RadarState.failed ? '换一条线路' : '',
+      linkLabel: radarState == RadarState.off ? '换一条线路' : '',
+      onAllLines: () => showLinePicker(context, ref),
       // 失败时能直接去的设置页（授权 / 通知 / 后台运行），没有就不显示。
       hintAction: shownFailed == 4 ? progress.action : SettingsAction.none,
       onRepair: shownFailed == 4 && progress.repair
           ? () => ref.read(localRepairProvider).repairAndReconnect('start')
           : null,
-      buttonColor: switch (connectionStatus) {
-        AsyncData(value: Connected()) when requiresReconnect == true => tk.acc,
-        AsyncData(value: Connected()) when !confirmed => tk.blip,
-        AsyncData(value: Connected()) => tk.acc,
-        AsyncData(value: _) => tk.acc,
-        _ => tk.fault,
-      },
-      newButtonColor: switch (connectionStatus) {
-        AsyncData(value: Connected()) when requiresReconnect == true => tk.acc,
-        AsyncData(value: Connected()) when !confirmed => tk.blip,
-        AsyncData(value: Connected()) => tk.acc,
-        AsyncData(value: _) => tk.acc,
-        _ => tk.fault,
-      },
-      animated:
-          busy ||
-          switch (connectionStatus) {
-            AsyncData(value: Connected()) when requiresReconnect == true => false,
-            AsyncData(value: Connected()) when !confirmed => false,
-            AsyncData(value: Connected()) => true,
-            AsyncData(value: _) => true,
-            _ => false,
-          },
       secureLabel: secureLabel,
     );
   }
 }
 
-class _ConnectionButton extends StatelessWidget {
-  const _ConnectionButton({
+/// 主页（B 夜航 §3.3 / §3.5）：雷达占住多出来的高度（在剩余空间里居中，屏幕矮先缩雷达、最小 220），
+/// 下面一组「状态 / 提示 / 活动卡 / 常用网站 / 按钮」挨在一起，大拇指够得着。
+class HomeConnectPanel extends StatelessWidget {
+  const HomeConnectPanel({
+    super.key,
+    required this.radar,
     required this.onTap,
     required this.enabled,
-    required this.label,
-    required this.buttonColor,
-    required this.newButtonColor,
-    required this.animated,
-    required this.secureLabel,
-    this.hint,
+    required this.kicker,
+    required this.title,
+    required this.sub,
+    required this.buttonLabel,
+    this.connectedDot = false,
+    this.faultTag = '',
     this.steps,
+    this.statusExtra = const [],
+    this.middle = const [],
+    this.buttonOutlined = false,
+    this.showAllLines = false,
+    this.secondLabel = '',
+    this.linkLabel = '',
+    this.onAllLines,
     this.hintAction = SettingsAction.none,
     this.onRepair,
+    this.secureLabel = '',
   });
 
-  final SettingsAction hintAction;
-
-  /// 失败时的「修复并重新连接」，不给就是 null。
-  final VoidCallback? onRepair;
-
+  final Widget Function(double size) radar;
   final VoidCallback onTap;
   final bool enabled;
-  final String label;
-  final String? hint;
-  // 一键连接的 5 段进度条（connect_progress.dart），只在连接途中 / 失败时有。
+  final String kicker;
+  final bool connectedDot;
+  final String faultTag;
+  final String title;
+  final String sub;
+  /// 一键连接的 5 段进度条（connect_progress.dart），只在连接途中 / 失败时有。
   final Widget? steps;
-  final Color buttonColor;
+  final List<Widget> statusExtra;
+  final List<Widget> middle;
+  final String buttonLabel;
+  final bool buttonOutlined;
+  final bool showAllLines;
+  final String secondLabel;
+  final String linkLabel;
+  final VoidCallback? onAllLines;
+  final SettingsAction hintAction;
+  final VoidCallback? onRepair;
   final String secureLabel;
-
-  final Color newButtonColor;
-
-  final bool animated;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // CircleDesignWidget(newButtonColor: newButtonColor, onTap: onTap, animated: animated),
-        Semantics(
-          button: true,
-          enabled: enabled,
-          label: label,
-          child: Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [BoxShadow(blurRadius: 16, color: buttonColor.withValues(alpha: .5))],
+    final tk = OneRayTokens.of(context);
+    final mainButton = SizedBox(
+      height: 52,
+      child: buttonOutlined
+          ? OutlinedButton(
+              key: const ValueKey('home_connection_button'),
+              onPressed: enabled ? onTap : null,
+              child: Text(buttonLabel, style: const TextStyle(fontSize: 15)),
+            )
+          : FilledButton(
+              key: const ValueKey('home_connection_button'),
+              onPressed: enabled ? onTap : null,
+              child: Text(buttonLabel),
             ),
-            width: 148,
-            height: 148,
-            child: Material(
-              key: const ValueKey("home_connection_button"),
-              shape: const CircleBorder(),
-              color: Colors.white,
-              child: InkWell(
-                focusColor: Colors.grey,
-                onTap: onTap,
-                child: Padding(
-                  padding: const EdgeInsets.all(36),
-                  child: TweenAnimationBuilder(
-                    tween: ColorTween(end: buttonColor),
-                    duration: const Duration(milliseconds: 250),
-                    builder: (context, value, child) {
-                      return Assets.images.logo.svg(colorFilter: ColorFilter.mode(value!, BlendMode.srcIn));
-                    },
-                  ),
-                ),
-              ),
-            ).animate(target: enabled ? 0 : 1).blurXY(end: 1),
-          ).animate(target: enabled ? 0 : 1).scaleXY(end: .88, curve: Curves.easeIn),
+    );
+    return Column(
+      children: [
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final size = math.max(220.0, math.min(320.0, math.min(c.maxWidth - 40, c.maxHeight - 8)));
+              return Center(child: radar(size));
+            },
+          ),
         ),
-        const Gap(16),
-        ExcludeSemantics(
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AnimatedText(label, style: Theme.of(context).textTheme.titleMedium),
-              if (steps != null) ...[const Gap(8), steps!],
-              if (hint != null && hint!.isNotEmpty) ...[
-                const Gap(4),
-                Text(
-                  hint!,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              if (faultTag.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  decoration: BoxDecoration(color: tk.faultSoft, borderRadius: BorderRadius.circular(10)),
+                  child: Text(faultTag, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tk.fault)),
                 ),
-              ],
-              if (hintAction != SettingsAction.none) ...[
-                const Gap(4),
-                TextButton(onPressed: hintAction.open, child: Text(hintAction.label)),
-              ],
-              if (onRepair != null) ...[
-                const Gap(4),
-                TextButton(onPressed: onRepair, child: const Text('修复并重新连接')),
-              ],
-              if (secureLabel.isNotEmpty) ...[
+              if (kicker.isNotEmpty || connectedDot)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // const Gap(8),
-                    Icon(FontAwesomeIcons.shieldHalved, size: 16, color: Theme.of(context).colorScheme.secondary),
-                    const Gap(4),
+                    if (connectedDot) ...[
+                      Container(width: 8, height: 8, decoration: BoxDecoration(color: tk.acc, shape: BoxShape.circle)),
+                      const SizedBox(width: 6),
+                    ],
                     Text(
-                      secureLabel,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleSmall?.copyWith(color: Theme.of(context).colorScheme.secondary),
+                      connectedDot ? '已连接' : kicker,
+                      style: TextStyle(fontSize: 13, color: connectedDot ? tk.acc : tk.sub),
                     ),
                   ],
                 ),
+              const SizedBox(height: 2),
+              Semantics(
+                button: true,
+                label: '全部线路',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: onAllLines,
+                  child: Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: title.length > 10 ? 20 : 26, fontWeight: FontWeight.w700, color: tk.text),
+                  ),
+                ),
+              ),
+              if (sub.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(
+                    sub,
+                    textAlign: TextAlign.center,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, height: 1.5, color: tk.sub),
+                  ),
+                ),
+              if (steps != null) Padding(padding: const EdgeInsets.only(top: 8), child: steps),
+              ...statusExtra,
+              if (hintAction != SettingsAction.none)
+                TextButton(onPressed: hintAction.open, child: Text(hintAction.label)),
+              if (onRepair != null) TextButton(onPressed: onRepair, child: const Text('修复并重新连接')),
+              if (secureLabel.isNotEmpty)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(FontAwesomeIcons.shieldHalved, size: 14, color: tk.sub),
+                    const SizedBox(width: 4),
+                    Text(secureLabel, style: TextStyle(fontSize: 12, color: tk.sub)),
+                  ],
+                ),
+              ...middle,
+              const SizedBox(height: 14),
+              if (showAllLines)
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: tk.card),
+                          onPressed: onAllLines,
+                          child: const Text('全部线路'),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: mainButton),
+                  ],
+                )
+              else
+                SizedBox(width: double.infinity, child: mainButton),
+              if (secondLabel.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: tk.card),
+                    onPressed: onAllLines,
+                    child: Text(secondLabel),
+                  ),
+                ),
               ],
+              if (linkLabel.isNotEmpty)
+                TextButton(
+                  style: TextButton.styleFrom(foregroundColor: tk.sub),
+                  onPressed: onAllLines,
+                  child: Text(linkLabel),
+                ),
             ],
           ),
         ),

@@ -38,7 +38,7 @@ class NoticeBell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final unread = ref.watch(noticeProvider.select((s) => s.hasUnread));
     final theme = Theme.of(context);
-    final color = theme.colorScheme.primary;
+    final color = theme.colorScheme.onSurface; // 铃铛用正文色，未读才有强调色小圆点
     final ring = theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface;
     final dot = theme.colorScheme.primary; // 未读圆点用强调色（B 夜航 §二.2）
     return TextButton(

@@ -1,7 +1,7 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 
-import 'package:dartx/dartx.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
@@ -14,6 +14,7 @@ import 'package:hiddify/core/model/sites_catalog.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
+import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/app_update/data/apk_installer.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_notifier.dart';
 import 'package:hiddify/features/app_update/notifier/app_update_state.dart';
@@ -22,20 +23,20 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/route_check_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/connection/widget/stability_indicator.dart';
-import 'package:hiddify/features/home/widget/account_status_bar.dart';
+import 'package:hiddify/features/home/widget/account_chip.dart';
 import 'package:hiddify/features/home/widget/connect_issue_card.dart';
 import 'package:hiddify/features/home/widget/connection_button.dart';
-import 'package:hiddify/features/home/widget/line_bar.dart';
 import 'package:hiddify/features/notice/notice_sheet.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
-import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/data/tg_gift_link.dart';
+import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/active/auto_line_fixer.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/features/proxy/model/node_flag.dart';
+import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
 import 'package:hiddify/features/stats/notifier/stats_notifier.dart';
 import 'package:hiddify/features/support/widget/support_failure_link.dart';
 import 'package:hiddify/gen/assets.gen.dart';
@@ -44,9 +45,6 @@ import 'package:hiddify/utils/number_formatters.dart';
 import 'package:hiddify/utils/uri_utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-/// 常用网站快捷一排是否正在显示。测试谷歌和这一排共用，避免各算一遍。
-final homeQuickSitesVisibleProvider = StateProvider<bool>((ref) => false);
 
 /// 首页（1.1.28 重做）。
 ///
@@ -164,65 +162,86 @@ class HomePage extends HookConsumerWidget {
       }
     });
 
+    final tk = OneRayTokens.of(context);
+    // 活动卡：× 只是这次收起；领到了停 8 秒自己收起（B 夜航 §3.7）。
+    final activityHidden = useState(false);
+    final giftPending = useState(false);
+    final giftClaimed = useState(false);
+    ref.listen<bool>(Preferences.panelLoggedIn, (_, _) => activityHidden.value = false);
+    useEffect(() {
+      final state = gift.value?['state'];
+      if (giftPending.value && state == 'claimed') {
+        giftPending.value = false;
+        giftClaimed.value = true;
+        final timer = Timer(const Duration(seconds: 8), () {
+          if (context.mounted) activityHidden.value = true;
+        });
+        return timer.cancel;
+      }
+      return null;
+    }, [gift.value]);
+    final giftOpen = gift.value?['state'] == 'open';
+
     return Scaffold(
+      backgroundColor: tk.bg,
       appBar: AppBar(
-        // 品牌组合：官网同一个金底雷达标 + 「光速雷达」。别换成 logo.svg —— 那份是
-        // 无底色的纯图形，连接按钮把它整体染色用（`ColorFilter.srcIn`），加了底色方块
-        // 会被染成一个实心圆角方块。
+        backgroundColor: tk.bg,
+        titleSpacing: 20,
+        // 标志：深色是薄荷底 + 深色图案，浅色是深色底 + 白图案（跟 Windows 同一个）。
         title: Row(
           children: [
-            Assets.images.brandMark.svg(height: 26, width: 26),
+            Container(
+              width: 28,
+              height: 28,
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: theme.brightness == Brightness.dark ? tk.acc : tk.text,
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: Assets.images.logo.svg(
+                colorFilter: ColorFilter.mode(theme.brightness == Brightness.dark ? tk.bg : OneRayTokens.paper, BlendMode.srcIn),
+              ),
+            ),
             const Gap(10),
-            Text(t.common.appTitle, style: const TextStyle(letterSpacing: .5)),
+            Text(t.common.appTitle, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
           ],
         ),
         actions: [
-          // 有交流群链接时这里是「交流群 ↗」；没有就仍是「官网 ↗」。官网入口在「我的」。
-          // 定制线路不放顶栏，跟「查看分流规则」同一排。
-          _HomeLink(group: telegramGroup.value, gift: gift.value?['state'] == 'open' ? gift.value : null),
-          if (ref.watch(panelAuthProvider).loggedIn) const NoticeBell(),
+          const AccountChip(),
+          if (loggedIn) const NoticeBell(),
           const Gap(8),
         ],
       ),
-      body: Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: const AssetImage('assets/images/world_map.png'),
-            fit: BoxFit.cover,
-            opacity: 0.09,
-            colorFilter: theme.brightness == Brightness.dark
-                ? ColorFilter.mode(Colors.white.withValues(alpha: .15), BlendMode.srcIn)
-                : ColorFilter.mode(Colors.grey.withValues(alpha: 1), BlendMode.srcATop),
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 600),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  NoticeStrip(),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ConnectionButton(),
-                        _SpeedLine(),
-                        StabilityIndicator(),
-                        _SitesBlock(),
-                        _GoogleTestButton(),
-                        ConnectIssueCard(),
-                        SupportFailureLink(),
-                      ],
-                    ),
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const NoticeStrip(),
+                Expanded(
+                  child: ConnectionButton(
+                    statusExtra: const [_SpeedLine(), StabilityIndicator(), _HomeNote()],
+                    middle: [
+                      const ConnectIssueCard(),
+                      const SupportFailureLink(),
+                      if (loggedIn && !activityHidden.value && (giftOpen || giftClaimed.value))
+                        _ActivityCard(
+                          phase: giftClaimed.value ? 'claimed' : (giftPending.value ? 'pending' : 'open'),
+                          onClaim: () async {
+                            giftPending.value = true;
+                            await openTgGift(gift.value!);
+                          },
+                          onDismiss: () => activityHidden.value = true,
+                        ),
+                      const _SitesBlock(),
+                    ],
                   ),
-                  _RouteRulesEntry(),
-                  LineBar(),
-                  AccountStatusBar(),
-                ],
-              ),
+                ),
+                _HomeLinks(group: telegramGroup.value, gift: giftOpen ? gift.value : null),
+              ],
             ),
           ),
         ),
@@ -231,7 +250,7 @@ class HomePage extends HookConsumerWidget {
   }
 }
 
-/// 连上之后按钮下面那行实时速率。
+/// 连上之后状态下面那行实时速率。
 ///
 /// 故意**不显示延迟毫秒数**：用户会拿它跟别家比，而别家标的常常是到中转入口、不是到
 /// 落地节点的，真数字比不过假数字。速率是正向的 —— 数字大就是快，看着高兴。
@@ -240,92 +259,147 @@ class _SpeedLine extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final tk = OneRayTokens.of(context);
     final connected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
-    if (!connected) return const SizedBox(height: 18);
+    if (!connected) return const SizedBox.shrink();
 
     final stats = ref.watch(statsNotifierProvider).valueOrNull ?? SystemInfo.create();
+    final num = TextStyle(fontFamily: OneRayTokens.numberFont, fontSize: 13, color: tk.text);
+    final sub = TextStyle(fontSize: 13, color: tk.sub);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
-      child: Text(
-        '↓ ${stats.downlink.toInt().speed()}    ↑ ${stats.uplink.toInt().speed()}',
-        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-      ),
-    );
-  }
-}
-
-/// 顶栏右边那个链接。没群时是官网；有群时是 TG 频道，始终是文字。
-/// TG 频道没点过时右上角亮个小红点（跟 Windows 一致），点过一次就不再亮。
-class _HomeLink extends StatefulWidget {
-  const _HomeLink({required this.group, this.gift});
-
-  final Uri? group;
-
-  /// 关注频道送时长还能领时不为空（服务端 gsl_tg/gift 的 data）：这时入口用服务端给的 label（试用号「关注TG频道再领一天试用」）。
-  final Map<String, dynamic>? gift;
-
-  @override
-  State<_HomeLink> createState() => _HomeLinkState();
-}
-
-class _HomeLinkState extends State<_HomeLink> {
-  static const _visitedKey = 'oneray.tg.visited';
-  bool _visited = true;
-
-  @override
-  void initState() {
-    super.initState();
-    SharedPreferences.getInstance().then((prefs) {
-      if (mounted) setState(() => _visited = prefs.getBool(_visitedKey) ?? false);
-    });
-  }
-
-  Future<void> _open() async {
-    final gift = widget.gift;
-    if (gift != null) {
-      await openTgGift(gift);
-      return;
-    }
-    final group = widget.group;
-    await UriUtils.tryLaunch(group ?? Uri.parse(Constants.websiteUrl));
-    if (group == null || _visited) return;
-    setState(() => _visited = true);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_visitedKey, true);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final group = widget.group;
-    return TextButton(
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        visualDensity: VisualDensity.compact,
-      ),
-      onPressed: _open,
-      child: Badge(
-        smallSize: 6,
-        isLabelVisible: widget.gift != null || (group != null && !_visited),
-        offset: const Offset(6, -2),
-        child: Text(
-          widget.gift != null
-              ? (widget.gift!['label'] as String? ?? '关注TG频道再领一天')
-              : (group != null ? 'TG 频道 ↗' : '官网 ↗'),
-          style: widget.gift != null ? const TextStyle(fontSize: 13) : null,
-          overflow: TextOverflow.ellipsis,
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: '↓ ', style: sub),
+            TextSpan(text: stats.downlink.toInt().speed(), style: num),
+            TextSpan(text: '  ·  ↑ ', style: sub),
+            TextSpan(text: stats.uplink.toInt().speed(), style: num),
+          ],
         ),
       ),
     );
   }
 }
 
-/// 连上并且网通了才出现：香港等地区一行提示，下面是常用网站。服务器没给就不占高度。
-class _SitesBlock extends HookConsumerWidget {
-  const _SitesBlock();
+/// 状态下面一小块提示（限速、精品体验结束），浅底不抢主位。
+class _HomeNote extends ConsumerWidget {
+  const _HomeNote();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final text = homeAccountNote(ref);
+    if (text.isEmpty) return const SizedBox.shrink();
+    final tk = OneRayTokens.of(context);
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(color: tk.card, borderRadius: BorderRadius.circular(12)),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: text),
+            TextSpan(
+              text: '  升级 ›',
+              style: TextStyle(color: tk.acc),
+              recognizer: TapGestureRecognizer()
+                ..onTap = () {
+                  ref.read(purchasePreferTierProvider.notifier).state = 'pro';
+                  context.pushNamed('purchase');
+                },
+            ),
+          ],
+        ),
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 12, height: 1.5, color: tk.sub),
+      ),
+    );
+  }
+}
+
+/// 活动卡（B 夜航 §3.7）：活动是「让用户做一件事拿好处」，跟公告分开放，做完或过期才消失。
+/// phase：open 能领 / pending 点过领取、等确认 / claimed 刚领到。× 只是这次收起。
+class _ActivityCard extends StatelessWidget {
+  const _ActivityCard({required this.phase, required this.onClaim, required this.onDismiss});
+
+  final String phase;
+  final VoidCallback onClaim;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final tk = OneRayTokens.of(context);
+    final claimed = phase == 'claimed';
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.fromLTRB(14, 12, 4, 12),
+      decoration: BoxDecoration(color: tk.accSoft, borderRadius: BorderRadius.circular(16)),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(color: tk.acc, shape: BoxShape.circle),
+            child: Icon(claimed ? Icons.check_rounded : Icons.card_giftcard_rounded, size: 20, color: tk.accInk),
+          ),
+          const Gap(12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  claimed ? '领到了，多送你 1 天' : '关注 TG 频道送 1 天',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tk.text),
+                ),
+                Text(
+                  claimed
+                      ? '到期时间已经往后顺延'
+                      : phase == 'pending'
+                      ? '在 Telegram 点「加入」后回来，会自动确认'
+                      : '关注后点「领取」，1 天自动到账',
+                  style: TextStyle(fontSize: 12, color: tk.sub),
+                ),
+              ],
+            ),
+          ),
+          if (!claimed)
+            SizedBox(
+              height: 36,
+              child: phase == 'open'
+                  ? FilledButton(
+                      style: FilledButton.styleFrom(minimumSize: const Size(64, 36)),
+                      onPressed: onClaim,
+                      child: const Text('领取', style: TextStyle(fontSize: 13)),
+                    )
+                  : ElevatedButton(
+                      style: ElevatedButton.styleFrom(minimumSize: const Size(64, 36)),
+                      onPressed: null,
+                      child: const Text('确认中…', style: TextStyle(fontSize: 13)),
+                    ),
+            ),
+          IconButton(
+            tooltip: '收起这个活动',
+            iconSize: 16,
+            color: tk.sub,
+            onPressed: onDismiss,
+            icon: const Icon(Icons.close_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 连上并且网通了才出现：香港等地区一行提示，下面是常用网站（Google 排第一、带描边：
+/// 点一下打得开就说明通了）。服务器没给名单时至少放一个 Google。
+class _SitesBlock extends HookConsumerWidget {
+  const _SitesBlock();
+
+  static const _google = 'https://www.google.com/search?q=%E4%BB%8A%E5%A4%A9%E5%A4%A9%E6%B0%94';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tk = OneRayTokens.of(context);
     final connected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
     final health = ref.watch(stabilityProvider);
     final active = ref.watch(activeProxyNotifierProvider).valueOrNull?.tagDisplay ?? '';
@@ -335,18 +409,12 @@ class _SitesBlock extends HookConsumerWidget {
     final configTick = useState(0);
 
     useEffect(() {
-      if (!show) {
-        Future(() {
-          if (context.mounted) ref.read(homeQuickSitesVisibleProvider.notifier).state = false;
-        });
-        return null;
-      }
+      if (!show) return null;
       () async {
         await RemoteSiteConfig.ensureLoaded();
         await SitesCatalog.ensureLoaded();
         if (!context.mounted) return;
         links.value = List<SiteLink>.of(SitesCatalog.quick);
-        ref.read(homeQuickSitesVisibleProvider.notifier).state = links.value.isNotEmpty;
         configTick.value++;
       }();
       return null;
@@ -360,27 +428,57 @@ class _SitesBlock extends HookConsumerWidget {
     configTick.value;
     final tip = RemoteSiteConfig.aiTipText;
     final showTip = tip != null && code != null && RemoteSiteConfig.aiTipRegions.contains(code);
+    final sites = links.value.isEmpty
+        ? const [SiteLink(id: '', name: 'Google', url: _google)]
+        : links.value.take(4).toList();
+    final moreUrl = RemoteSiteConfig.sitesUrl;
 
-    if (!showTip && links.value.isEmpty) return const SizedBox.shrink();
+    Widget chip({required String name, required Widget icon, required VoidCallback? onTap, bool test = false}) {
+      return Expanded(
+        child: Material(
+          color: tk.card,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: test ? BorderSide(color: tk.acc, width: 1.5) : BorderSide.none,
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onTap,
+            child: SizedBox(
+              height: 60,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  icon,
+                  const SizedBox(height: 4),
+                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: tk.text)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget letter(String name) => Container(
+      width: 24,
+      height: 24,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: tk.panel, shape: BoxShape.circle),
+      child: Text(name.isEmpty ? '?' : name.characters.first, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: tk.text)),
+    );
 
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (showTip)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 4, 4),
+              padding: const EdgeInsets.only(bottom: 6),
               child: Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      tip,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
+                  Expanded(child: Text(tip, style: TextStyle(fontSize: 12, color: tk.sub))),
                   TextButton(
                     style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                     onPressed: () => showLinePicker(context, ref),
@@ -389,159 +487,33 @@ class _SitesBlock extends HookConsumerWidget {
                 ],
               ),
             ),
-          if (links.value.isNotEmpty) _QuickSites(links: links.value),
-        ],
-      ),
-    );
-  }
-}
-
-class _QuickSites extends StatelessWidget {
-  const _QuickSites({required this.links});
-
-  final List<SiteLink> links;
-
-  double _textWidth(String text, double fontSize) {
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(fontSize: fontSize)),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout();
-    return math.max(36, painter.width);
-  }
-
-  double _rowWidth(int count, double fontSize, double gap) {
-    final n = math.min(count, links.length);
-    var width = _textWidth('更多', fontSize);
-    for (var i = 0; i < n; i++) {
-      width += _textWidth(links[i].name, fontSize);
-    }
-    return width + gap * n;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxWidth = constraints.maxWidth;
-        var count = math.min(5, links.length);
-        var fontSize = 11.0;
-        var gap = 8.0;
-        if (_rowWidth(count, fontSize, gap) > maxWidth) fontSize = 10;
-        if (_rowWidth(count, fontSize, gap) > maxWidth && count > 4) count = math.min(4, links.length);
-        if (_rowWidth(count, fontSize, gap) > maxWidth) gap = 4;
-        final shown = links.take(count).toList();
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (var i = 0; i < shown.length; i++) ...[
-                  if (i > 0) SizedBox(width: gap),
-                  _SiteButton(link: shown[i], fontSize: fontSize),
-                ],
-                SizedBox(width: gap),
-                _MoreSitesButton(fontSize: fontSize),
+          Text('先点 Google，打得开就说明连通了', style: TextStyle(fontSize: 12, color: tk.sub)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              for (var i = 0; i < sites.length; i++) ...[
+                if (i > 0) const SizedBox(width: 6),
+                chip(
+                  name: sites[i].name,
+                  test: i == 0,
+                  icon: sites[i].iconPath != null && File(sites[i].iconPath!).existsSync()
+                      ? ClipOval(child: Image.file(File(sites[i].iconPath!), width: 24, height: 24, fit: BoxFit.cover))
+                      : letter(sites[i].name),
+                  onTap: () {
+                    UriUtils.tryLaunch(Uri.parse(sites[i].url));
+                    if (sites[i].id.isNotEmpty) PanelApi().reportSiteClick(sites[i].id);
+                  },
+                ),
               ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SiteButton extends StatelessWidget {
-  const _SiteButton({required this.link, required this.fontSize});
-
-  final SiteLink link;
-  final double fontSize;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final path = link.iconPath;
-    return InkWell(
-      onTap: () {
-        UriUtils.tryLaunch(Uri.parse(link.url));
-        PanelApi().reportSiteClick(link.id);
-      },
-      customBorder: const CircleBorder(),
-      child: SizedBox(
-        width: math.max(36, _labelWidth(link.name)),
-        child: Column(
-          children: [
-            if (path != null && File(path).existsSync())
-              ClipOval(
-                child: Image.file(File(path), width: 36, height: 36, fit: BoxFit.cover),
-              )
-            else
-              Container(
-                    width: 36,
-                    height: 36,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      link.name.isEmpty ? '?' : link.name.characters.first,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-            const SizedBox(height: 2),
-            Text(
-              link.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: fontSize, color: theme.colorScheme.onSurfaceVariant),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  double _labelWidth(String text) {
-    final painter = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(fontSize: fontSize)),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout();
-    return painter.width;
-  }
-}
-
-class _MoreSitesButton extends StatelessWidget {
-  const _MoreSitesButton({required this.fontSize});
-
-  final double fontSize;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final url = RemoteSiteConfig.sitesUrl;
-    return InkWell(
-      onTap: url == null ? null : () => UriUtils.tryLaunch(Uri.parse(url)),
-      customBorder: const CircleBorder(),
-      child: Column(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest,
-              shape: BoxShape.circle,
-            ),
-            child: const Text('⋯', style: TextStyle(fontSize: 16)),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '更多',
-            style: TextStyle(fontSize: fontSize, color: theme.colorScheme.onSurfaceVariant),
+              if (moreUrl != null) ...[
+                const SizedBox(width: 6),
+                chip(
+                  name: '更多',
+                  icon: Icon(Icons.more_horiz_rounded, size: 22, color: tk.sub),
+                  onTap: () => UriUtils.tryLaunch(Uri.parse(moreUrl)),
+                ),
+              ],
+            ],
           ),
         ],
       ),
@@ -549,76 +521,28 @@ class _MoreSitesButton extends StatelessWidget {
   }
 }
 
-class _GoogleTestButton extends ConsumerWidget {
-  const _GoogleTestButton();
+/// 底部一行链接：智能分流 / TG 频道 / 定制线路（后台下发）。跟 Windows 底栏同一行。
+/// 智能分流实测出异常时带珊瑚红小点；TG 频道没点过（或能领「关注送 1 天」）时带强调色小点。
+class _HomeLinks extends HookConsumerWidget {
+  const _HomeLinks({required this.group, this.gift});
 
-  static const _url = 'https://www.google.com/search?q=%E4%BB%8A%E5%A4%A9%E5%A4%A9%E6%B0%94';
+  final Uri? group;
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final connected = ref.watch(connectionNotifierProvider).valueOrNull is Connected;
-    // 真通了才给（还在「连接中」或中途断了时点了也打不开，只会让人更慌）。
-    // 常用网站一排已经有 Google 时，不再单独放这个按钮。
-    final health = ref.watch(stabilityProvider);
-    final quickSites = ref.watch(homeQuickSitesVisibleProvider);
-    if (!connected || !health.confirmed || health.outage || quickSites) return const SizedBox.shrink();
+  /// 关注频道送时长还能领时不为空（服务端 gsl_tg/gift 的 data）。
+  final Map<String, dynamic>? gift;
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: FilledButton.tonalIcon(
-        onPressed: () => UriUtils.tryLaunch(Uri.parse(_url)),
-        icon: const Icon(Icons.search, size: 18),
-        label: const Text('测试谷歌'),
-        style: FilledButton.styleFrom(
-          shape: const StadiumBorder(),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          foregroundColor: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
-  }
-}
-
-class AppVersionLabel extends HookConsumerWidget {
-  const AppVersionLabel({super.key});
+  static const _visitedKey = 'oneray.tg.visited';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final t = ref.watch(translationsProvider).requireValue;
-    final theme = Theme.of(context);
-
-    final version = ref.watch(appInfoProvider).requireValue.presentVersion;
-    if (version.isBlank) return const SizedBox();
-
-    return Semantics(
-      label: t.common.version,
-      button: false,
-      child: Container(
-        decoration: BoxDecoration(color: theme.colorScheme.secondaryContainer, borderRadius: BorderRadius.circular(4)),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-        child: Text(
-          version,
-          textDirection: TextDirection.ltr,
-          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSecondaryContainer),
-        ),
-      ),
-    );
-  }
-}
-
-/// 首页「查看分流规则」入口：一直都在（用户最常在连接之前犹豫「QQ 会不会变美国登录」）。
-/// 实测出异常时前面亮一个橙点。watch 一下 routeCheckProvider 也让它从首页起就活着，
-/// 连上第一次测通时能自动测。
-class _RouteRulesEntry extends HookConsumerWidget {
-  const _RouteRulesEntry();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final tk = OneRayTokens.of(context);
     final warn = ref.watch(routeCheckProvider.select((s) => s.warning.isNotEmpty));
+    final visited = useState(true);
     final customUrl = useState<String?>(null);
     useEffect(() {
+      SharedPreferences.getInstance().then((prefs) {
+        if (context.mounted) visited.value = prefs.getBool(_visitedKey) ?? false;
+      });
       RemoteSiteConfig.ensureLoaded().then((_) {
         if (!context.mounted) return;
         final url = RemoteSiteConfig.customUrl;
@@ -626,31 +550,54 @@ class _RouteRulesEntry extends HookConsumerWidget {
       });
       return null;
     }, const []);
-    final linkStyle = TextButton.styleFrom(
-      foregroundColor: theme.colorScheme.onSurfaceVariant,
-      minimumSize: const Size(48, 40),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      visualDensity: VisualDensity.compact,
-    );
-    return Center(
+
+    Future<void> openTg() async {
+      final g = gift;
+      if (g != null) {
+        await openTgGift(g);
+        return;
+      }
+      final link = group;
+      await UriUtils.tryLaunch(link ?? Uri.parse(Constants.websiteUrl));
+      if (link == null || visited.value) return;
+      visited.value = true;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_visitedKey, true);
+    }
+
+    Widget link(String text, VoidCallback onTap, {Color? dot}) => TextButton(
+      style: TextButton.styleFrom(
+        foregroundColor: tk.sub,
+        minimumSize: const Size(48, 44),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        visualDensity: VisualDensity.compact,
+        textStyle: const TextStyle(fontSize: 12),
+      ),
+      onPressed: onTap,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextButton.icon(
-            style: linkStyle,
-            onPressed: () => context.pushNamed('routeRules'),
-            icon: warn
-                ? Icon(Icons.circle, size: 8, color: Theme.of(context).colorScheme.error)
-                : const Icon(Icons.help_outline, size: 16),
-            label: const Text('智能分流'),
-          ),
+          Text(text),
+          if (dot != null) ...[
+            const SizedBox(width: 4),
+            Container(width: 6, height: 6, decoration: BoxDecoration(color: dot, shape: BoxShape.circle)),
+          ],
+        ],
+      ),
+    );
+    Widget sep() => Container(width: 1, height: 12, color: tk.ring);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          link('智能分流', () => context.pushNamed('routeRules'), dot: warn ? tk.fault : null),
+          sep(),
+          link(group != null ? 'TG 频道' : '官网', openTg, dot: gift != null || (group != null && !visited.value) ? tk.acc : null),
           if (customUrl.value != null) ...[
-            Container(width: 1, height: 12, color: theme.colorScheme.outlineVariant),
-            TextButton(
-              style: linkStyle,
-              onPressed: () => UriUtils.tryLaunch(Uri.parse(customUrl.value!)),
-              child: const Text('定制线路'),
-            ),
+            sep(),
+            link('定制线路', () => UriUtils.tryLaunch(Uri.parse(customUrl.value!))),
           ],
         ],
       ),
