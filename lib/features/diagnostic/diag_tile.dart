@@ -43,12 +43,12 @@ class _DiagTileState extends ConsumerState<DiagTile> {
             ],
           ),
           actions: [
-            TextButton(
+            FilledButton(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: result.code!));
                 Navigator.of(ctx).pop();
               },
-              child: const Text('复制并关闭'),
+              child: const Text('复制诊断码'),
             ),
           ],
         ),

@@ -503,7 +503,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                             Text('没读到投票，检查网络后重试', style: TextStyle(fontSize: 13, color: tokens.sub)),
                             const SizedBox(height: 8),
                             FilledButton(
-                              style: FilledButton.styleFrom(backgroundColor: tokens.text, foregroundColor: tokens.card),
+                              style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
                               onPressed: () => ref.read(regionVoteProvider.notifier).load(),
                               child: const Text('重试'),
                             ),
@@ -776,7 +776,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
             if (button.isNotEmpty) ...[
               const SizedBox(width: 8),
               FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: tokens.text, foregroundColor: tokens.card),
+                style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
                 onPressed: () => context.pushNamed('purchase'),
                 child: Text(button),
               ),

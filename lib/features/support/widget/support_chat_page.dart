@@ -176,8 +176,9 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
       );
     }
 
-    final bg = m.mine ? theme.colorScheme.primary : theme.colorScheme.surfaceContainerHighest;
-    final fg = m.mine ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface;
+    // 自己的气泡浅强调色、客服的浅底，都不描边（B 夜航，跟 Windows 客服一样）。
+    final bg = m.mine ? theme.colorScheme.primaryContainer : theme.colorScheme.surfaceContainerHighest;
+    final fg = theme.colorScheme.onSurface;
 
     Widget content;
     if (m.hasImage) {
