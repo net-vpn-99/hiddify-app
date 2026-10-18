@@ -301,6 +301,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
           final proAllFit = _allFit(proAll, isp);
           children.add(_ProHeader(
             tokens: tokens,
+            onUpgrade: tiers.trial == 'active' ? () => _upgrade(context, 'pro') : null,
             hint: tiers.trial == 'active'
                 ? '体验中 · 还剩 ${(tiers.seconds / 60).ceil().clamp(1, 9999)} 分钟'
                 : proAllFit
@@ -451,12 +452,13 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
         ),
       ],
     );
-    // 最高 90%，内容少就矮（不留空白）；底部让开手势条，键盘弹出时跟着上抬。
+    // 最高到能看见那部分的 90%（键盘弹出时减掉键盘），内容少就矮（不留空白）；底部让开手势条，键盘弹出时跟着上抬。
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      padding: EdgeInsets.only(bottom: keyboard),
       child: SafeArea(
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.9),
+          constraints: BoxConstraints(maxHeight: (MediaQuery.sizeOf(context).height - keyboard) * 0.9),
           child: sheet,
         ),
       ),
@@ -758,9 +760,18 @@ class _Pill extends StatelessWidget {
 
 /// 精品线路组标题：名字 + 一句 + 今日用量（超额变红）+ 细进度条。
 class _ProHeader extends StatelessWidget {
-  const _ProHeader({required this.tokens, required this.hint, required this.hintAcc, required this.account});
+  const _ProHeader({
+    required this.tokens,
+    required this.hint,
+    required this.hintAcc,
+    required this.account,
+    this.onUpgrade,
+  });
 
   final OneRayTokens tokens;
+
+  /// 体验中：留一个升级入口（以前体验条上有「升级精品版」按钮）。
+  final VoidCallback? onUpgrade;
   final String hint;
   final bool hintAcc;
   final PanelAccount? account;
@@ -790,7 +801,12 @@ class _ProHeader extends StatelessWidget {
                   style: TextStyle(fontSize: 12, color: hintAcc ? tokens.acc : tokens.sub),
                 ),
               ),
-              if (know)
+              if (onUpgrade != null)
+                GestureDetector(
+                  onTap: onUpgrade,
+                  child: Text('升级精品版 ›', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.acc)),
+                )
+              else if (know)
                 Text(
                   throttled
                       ? '今天已超 ${formatDailyAmount(acc.proQuota)}，限速 ${acc.proThrottleMbps}Mbps'
