@@ -100,8 +100,8 @@ class AccountCard extends ConsumerWidget {
                 decoration: BoxDecoration(color: tk.panel, borderRadius: BorderRadius.circular(12)),
                 child: Row(
                   children: [
-                    if (acc.proKnown) stat('精品高速', left(acc.proQuota, acc.proUsed), total(acc.proQuota)),
-                    if (acc.dailyKnown) stat('标准高速', left(acc.dailyQuota, acc.dailyUsed), total(acc.dailyQuota)),
+                    if (acc.proKnown) stat('今日精品剩余', left(acc.proQuota, acc.proUsed), total(acc.proQuota)),
+                    if (acc.dailyKnown) stat('今日标准剩余', left(acc.dailyQuota, acc.dailyUsed), total(acc.dailyQuota)),
                     if (acc.deviceLimit > 0) stat('设备上限', '${acc.deviceLimit}', ' 台'),
                   ],
                 ),
