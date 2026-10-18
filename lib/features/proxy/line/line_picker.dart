@@ -5,7 +5,7 @@ import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
-import 'package:hiddify/features/common/soft_card.dart';
+import 'package:hiddify/features/common/line_icon.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/home/widget/connect_progress.dart';
@@ -24,22 +24,18 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 export 'package:hiddify/features/proxy/line/line_source.dart' show LineOption, activeProfileLinesProvider;
 
-/// 线路页：首页线路条点「换线路」打开。
+/// 线路页（10-18 改版，VPN 仓库 docs/计划/线路列表改版.md；Windows `RoutePalette.qml` 同一套规则）。
+///
+/// 功能不变，只改摆法：
+///  - 正在用的那条固定在最上面（精品、标准都一样），下面的列表里不再重复；
+///  - 一行：国旗 +「国家 · 城市」，第二行说明 + 测速结果；右边最多一个标记
+///    （使用中 > 维修中 > 推荐 > 精品/标准 > 适合 X）；
+///  - 宽带只看他自己那家：一组全适合就都不标，只有一部分适合才给那几条挂「适合 X」；
+///  - 标准线路收成一张卡，点进去单独一页；精品锁着时是一张带锁的卡；最后两张卡（投票 / 定制）。
+///  - 面板高度跟着内容走，最高 90%；底部让开手势条（SafeArea）；宽屏最宽 560。
 ///
 /// 断开也能看、没账号也能看、到期也能看 —— 这三种情况下显示的是公开清单（只有名字），
-/// 点具体某条时才弹引导（去买套餐 / 登录）。就是推广要的「先看得到，点的时候才拦」。
-///
-/// 故意**不做**「自动选最快」和延迟数字：
-///  - 自动选最快 = 内核 urltest，要先连上再逐条发真实请求测，走隧道扣流量；而且所有人都
-///    测出同一条最快就一起涌过去，跟服务端的负载均衡对着干（订阅模板早就关了 urltest）。
-///    推荐哪条由服务端负载均衡决定 —— 订阅第一条就是给这个用户的。
-///  - 延迟数字会被用户拿去跟别家比，而别家显示的经常是到中转入口、不是到落地的。
-///
-/// 标记的口径（1.1.40 改）：
-///  - 「使用中 / 上次用的」标在用户自己那条上 —— 他打开这页最先要找的就是它；
-///  - 「推荐」只给**还没自己选过线路**的人看。老用户有习惯的线路，再对着订阅第一条
-///    喊推荐就是噪音，他又不会照着换；
-///  - 打开时自动滚到自己那条：线路十几条，不滚它经常在屏幕外。
+/// 点具体某条时才弹引导（去买套餐 / 登录）。故意不做「自动选最快」和延迟数字（推荐哪条由服务端负载均衡决定）。
 Future<void> showLinePicker(BuildContext context, WidgetRef ref) async {
   // 灰字用得到配置，但抽屉必须马上弹。300 毫秒内回来就带上，回不来先开抽屉。
   await RemoteSiteConfig.ensureLoaded().timeout(const Duration(milliseconds: 300), onTimeout: () {});
@@ -48,7 +44,8 @@ Future<void> showLinePicker(BuildContext context, WidgetRef ref) async {
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
-    backgroundColor: OneRayTokens.of(context).bg,
+    backgroundColor: OneRayTokens.of(context).sheet,
+    constraints: const BoxConstraints(maxWidth: 560),
     builder: (context) => const _LinePickerSheet(),
   );
 }
@@ -61,22 +58,15 @@ class _LinePickerSheet extends ConsumerStatefulWidget {
 }
 
 class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
-  /// 一条 ListTile 的大致高度（名字 + 一行说明）。只用来估初始滚动位置，
-  /// 估歪了后面的 ensureVisible 会兜住。
-  static const _tileHeight = 76.0;
-
-  /// 挂在「使用中 / 上次用的」那条上，用来精确滚到它。
+  final _search = TextEditingController();
   final _currentKey = GlobalKey();
-  final _locateKey = GlobalKey();
-  String _locate = '';
-  bool _locateQueued = false;
-
-  ScrollController? _controller;
-  bool _scrolled = false;
+  bool _stdPage = false;
+  bool _revealQueued = false;
 
   @override
   void initState() {
     super.initState();
+    _search.addListener(() => setState(() {}));
     Future.microtask(() {
       if (mounted) ref.read(regionVoteProvider.notifier).load();
     });
@@ -84,209 +74,407 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
 
   @override
   void dispose() {
-    _controller?.dispose();
+    _search.dispose();
     super.dispose();
   }
 
-  /// 先按行高粗估跳过去（列表是懒构建的，屏幕外的条目根本没 build，没法直接定位），
-  /// 等目标进了视口再 ensureVisible 精确居中。只做一次，之后用户滚到哪就是哪。
-  void _revealCurrent(int index) {
-    if (_scrolled || index < 0) return;
-    _scrolled = true;
+  void _openStdPage(bool open) {
+    setState(() {
+      _stdPage = open;
+      _revealQueued = false;
+    });
+  }
+
+  /// 标准线路那页里自己那条可能在屏幕外：滚到它（主页那页正在用的固定在最上面，不用滚）。
+  void _revealCurrent() {
+    if (_revealQueued) return;
+    _revealQueued = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
       final ctx = _currentKey.currentContext;
-      if (ctx == null) return;
-      Scrollable.ensureVisible(
-        ctx,
-        alignment: 0.4,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
-      );
+      if (ctx != null) Scrollable.ensureVisible(ctx, alignment: 0.4, duration: const Duration(milliseconds: 220));
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final tokens = OneRayTokens.of(context);
     final set = ref.watch(lineSetProvider);
     // 正在用 / 上次连上的那条（连接成功时首页会写进来）。
     final currentName = ref.watch(Preferences.lastNodeName);
     // 用户自己在这页选过的那条。选过了就不用再给他看「推荐」。
     final pickedName = ref.watch(Preferences.preferredLineName);
     final connected = ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
-
     final region = ref.watch(regionVoteProvider);
-    if (_locate.isNotEmpty && !_locateQueued) {
-      _locateQueued = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final ctx = _locateKey.currentContext;
-        if (ctx != null) {
-          Scrollable.ensureVisible(ctx, alignment: 0.35, duration: const Duration(milliseconds: 220));
-        }
-        if (mounted) {
-          setState(() {
-            _locate = '';
-            _locateQueued = false;
-          });
-        }
-      });
-    }
     final value = set.valueOrNull;
-    // 用户是哪家宽带：同国家里适合他的排前面。「推荐」仍是订阅第一条，按名字认，不按位置。
     final isp = ref.watch(panelAuthProvider.select((s) => s.account?.isp ?? ''));
+    final account = ref.watch(panelAuthProvider).account;
     final subOptions = value?.lines ?? const <LineOption>[];
     final firstName = subOptions.isEmpty ? '' : subOptions.first.name;
-    final options = ispFitFirst(subOptions, isp);
-    final locked = value?.locked ?? false;
+    // 没账号 / 到期：这是只能看的公开清单。
+    final preview = value?.locked ?? false;
     final tiers = ref.watch(lineTierProvider);
-    final downLines = ref.watch(panelAuthProvider.select((s) => s.account?.downLines ?? const <String>{}));
+    final speed = ref.watch(lineSpeedProvider);
+    final downLines = account?.downLines ?? const <String>{};
+    final tiered = subOptions.isNotEmpty && tiers.proLines.isNotEmpty;
+    final proLocked = tiers.trial != 'pro' && tiers.trial != 'active';
 
-    final tiered = options.isNotEmpty && tiers.proLines.isNotEmpty;
-    Widget body;
+    // 全部线路：订阅里的 + 订阅外补进来的精品线路（标准版用户的订阅里没有精品线路，名字从 lineTier 来）。
+    final all = <LineOption>[...subOptions];
     if (tiered) {
-      body = Expanded(
-        child: _TieredLines(
-          options: options,
-          locked: locked,
-          currentName: currentName,
-          pickedName: pickedName,
-          connected: connected,
-          tiers: tiers,
-          speed: ref.watch(lineSpeedProvider),
-          usageLabel: _proUsage(ref, tiers),
-          usageWarn: ref.watch(panelAuthProvider).account?.proThrottled ?? false,
-          onPick: (o) => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
-          onUpgradeStd: () {
-            ref.read(purchasePreferTierProvider.notifier).state = 'std';
-            Navigator.of(context).pop();
-            context.pushNamed('purchase');
-          },
-          onUpgrade: () {
-            ref.read(purchasePreferTierProvider.notifier).state = 'pro';
-            Navigator.of(context).pop();
-            context.pushNamed('purchase');
-          },
-          regionEnabled: region.enabled,
-          regionSubtitle: regionEntrySubtitle(region),
-          locateCountry: _locate,
-          locateKey: _locateKey,
-          downLines: downLines,
-          isp: isp,
-          recommended: pickedName.isEmpty ? firstName : '',
-          onWantRegion: () async {
-            final name = await showRegionSheet(context, ref);
-            if (!context.mounted || name == null || name.isEmpty) return;
-            setState(() => _locate = name);
-          },
-          onClaim: () async {
-            final msg = await ref.read(lineTierProvider.notifier).claim();
-            if (!context.mounted || msg == null) return;
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-          },
-        ),
-      );
-    } else if (options.isNotEmpty) {
-      final currentIndex =
-          (locked || currentName.isEmpty) ? -1 : options.indexWhere((o) => o.name == currentName);
-      // 前两条本来就在视口里，不用滚。
-      final needScroll = currentIndex > 1;
-      _controller ??= ScrollController(
-        initialScrollOffset: needScroll ? (currentIndex * _tileHeight - 120).clamp(0.0, 4000.0) : 0,
-      );
-      if (needScroll) _revealCurrent(currentIndex);
+      final seen = subOptions.map((o) => o.name).toSet();
+      for (final line in tiers.proLines) {
+        final split = splitNodeName(line.name);
+        if (split.name.isEmpty || seen.contains(split.name)) continue;
+        seen.add(split.name);
+        all.add(split);
+      }
+    }
+    bool isPro(LineOption o) => tiered && tiers.isProName(o.name);
+    LineOption? current;
+    if (!preview && currentName.isNotEmpty) {
+      for (final o in all) {
+        if (o.name == currentName) current = o;
+      }
+    }
 
-      body = Flexible(
-        child: ListView(
-          controller: _controller,
-          shrinkWrap: true,
-          children: [
-            for (final (i, o) in options.indexed)
-              _LineTile(
-                key: lineCountry(o.name) == _locate ? _locateKey : (i == currentIndex ? _currentKey : null),
-                option: o,
-                isp: isp,
-                locked: locked,
-                current: i == currentIndex,
-                // 没自己选过线路才标「推荐」；正在用的那条只标「使用中」，不叠两个牌子。
-                recommended: o.name == firstName && !locked && pickedName.isEmpty && i != currentIndex,
-                connected: connected,
-                down: !locked && downLines.contains(o.name),
-                onTap: () => locked ? _promptUnlock(context, ref) : _pick(context, ref, o),
-              ),
-            _FooterLinks(
-              tokens: OneRayTokens.of(context),
-              regionSubtitle: region.enabled ? regionEntrySubtitle(region) : null,
-              onRegion: !region.enabled
-                  ? null
-                  : () async {
-                      final name = await showRegionSheet(context, ref);
-                      if (!context.mounted || name == null || name.isEmpty) return;
-                      setState(() => _locate = name);
-                    },
-              onCustom: _customLineUrl() == null
-                  ? null
-                  : () {
-                      final url = _customLineUrl()!;
-                      Navigator.of(context).pop();
-                      UriUtils.tryLaunch(Uri.parse(url));
-                    },
-            ),
-          ],
-        ),
-      );
-    } else if (set.isLoading) {
-      body = const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()));
-    } else {
-      body = const Padding(
-        padding: EdgeInsets.all(20),
-        child: Text('暂时读不到线路，检查一下网络，或在「我的」页联系客服。'),
+    _LineRow row(
+      LineOption o, {
+      bool isCurrent = false,
+      bool showFit = false,
+      bool showKind = false,
+      String tierTag = '',
+      Key? key,
+    }) {
+      final down = !preview && downLines.contains(o.name);
+      final grade = down ? null : speed.grades[o.name];
+      final code = countryCodeFromLineName(o.name);
+      final tag = RemoteSiteConfig.aiTipTag;
+      return _LineRow(
+        key: key,
+        option: o,
+        tokens: tokens,
+        current: isCurrent,
+        connected: connected,
+        pro: isPro(o),
+        showKind: showKind,
+        showFit: showFit,
+        isp: isp,
+        tierTag: tierTag,
+        recommended: !preview && pickedName.isEmpty && o.name == firstName,
+        down: down,
+        grade: grade,
+        best: !down && speed.bestName == o.name && grade != null && grade.level <= 2,
+        aiTip: tag != null && code != null && RemoteSiteConfig.aiTipRegions.contains(code) ? tag : '',
+        onTap: () {
+          if (preview) {
+            _promptUnlock(context, ref);
+          } else if (isPro(o) && proLocked) {
+            _upgrade(context, 'pro');
+          } else {
+            _pick(context, ref, o);
+          }
+        },
       );
     }
 
+    final query = _search.text.trim();
+    final children = <Widget>[];
+    if (set.isLoading && subOptions.isEmpty) {
+      children.add(const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())));
+    } else if (subOptions.isEmpty) {
+      children.add(const Padding(
+        padding: EdgeInsets.all(20),
+        child: Text('暂时读不到线路，检查一下网络，或在「我的」页联系客服。'),
+      ));
+    } else if (query.isNotEmpty) {
+      // ===== 搜索：精品在前，每行右边写「精品 / 标准」=====
+      final hits = all.where((o) => o.name.toLowerCase().contains(query.toLowerCase())).toList();
+      final ordered = [...ispFitFirst(hits.where(isPro).toList(), isp), ...ispFitFirst(hits.where((o) => !isPro(o)).toList(), isp)];
+      for (final o in ordered) {
+        children.add(row(o, isCurrent: current != null && o.name == current.name, tierTag: tiered ? (isPro(o) ? '精品' : '标准') : ''));
+      }
+      if (ordered.isEmpty) {
+        children.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 32),
+          child: Column(
+            children: [
+              Text('没有找到这条方向', style: TextStyle(fontSize: 14, color: tokens.sub)),
+              const Gap(4),
+              Text('换一个城市或国家试试', style: TextStyle(fontSize: 12, color: tokens.sub)),
+            ],
+          ),
+        ));
+      }
+      if (region.enabled && !preview) {
+        children.add(Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Material(
+            color: tokens.panel,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => _wantRegion(context),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text.rich(
+                  TextSpan(
+                    text: '没有你想去的城市？',
+                    style: TextStyle(fontSize: 14, color: tokens.sub),
+                    children: [
+                      TextSpan(text: '投票开通 ›', style: TextStyle(color: tokens.acc, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ));
+      }
+    } else if (_stdPage) {
+      // ===== 标准线路那一页 =====
+      final std = ispFitFirst(all.where((o) => !isPro(o)).toList(), isp);
+      final stdAllFit = _allFit(std, isp);
+      children.add(Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        child: Text(
+          '大部分时间流畅，晚高峰可能变慢。晚上追剧、用 AI 建议用精品线路。'
+          '${!stdAllFit && isp.isNotEmpty && std.any((o) => lineFitsIsp(o, isp)) ? '\n标着「适合$isp」的适合你的宽带，同一个国家里排在前面。' : ''}',
+          style: TextStyle(fontSize: 12, height: 1.4, color: tokens.sub),
+        ),
+      ));
+      for (final o in std) {
+        final cur = current != null && o.name == current.name;
+        children.add(row(o, isCurrent: cur, showFit: !stdAllFit, key: cur ? _currentKey : null));
+      }
+      if (current != null && !isPro(current)) _revealCurrent();
+      final proCount = all.where(isPro).length;
+      if (proCount > 0) {
+        children.add(Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Material(
+            color: tokens.accSoft,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => _openStdPage(false),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('精品线路 · $proCount 条',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.acc)),
+                          const Gap(2),
+                          Text(proLocked ? '晚高峰也不卡 · 精品版才能用' : '晚高峰也不卡',
+                              style: TextStyle(fontSize: 12, color: tokens.sub)),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: tokens.acc),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ));
+      }
+    } else {
+      // ===== 主页：正在用 / 精品 / 标准卡 =====
+      if (current != null) {
+        children.add(_GroupLabel(connected ? '正在用' : '上次用的', tokens));
+        children.add(row(current, isCurrent: true, showKind: tiered));
+        children.add(const Gap(10));
+      }
+      final others = all.where((o) => current == null || o.name != current.name).toList();
+      if (!tiered) {
+        final flatAllFit = _allFit(all, isp);
+        for (final o in ispFitFirst(others, isp)) {
+          children.add(row(o, showFit: !flatAllFit));
+        }
+      } else {
+        final proAll = all.where(isPro).toList();
+        final proOthers = ispFitFirst(others.where(isPro).toList(), isp);
+        if (proAll.isNotEmpty && !proLocked) {
+          final proAllFit = _allFit(proAll, isp);
+          children.add(_ProHeader(
+            tokens: tokens,
+            hint: tiers.trial == 'active'
+                ? '体验中 · 还剩 ${(tiers.seconds / 60).ceil().clamp(1, 9999)} 分钟'
+                : proAllFit
+                    ? '都适合$isp'
+                    : '晚高峰也不卡',
+            hintAcc: tiers.trial == 'active',
+            account: account,
+          ));
+          for (final o in proOthers) {
+            children.add(row(o, showFit: !proAllFit));
+          }
+        } else if (proAll.isNotEmpty) {
+          children.add(_LockedProCard(
+            tokens: tokens,
+            lines: proOthers,
+            countries: _countries(proAll),
+            tiers: tiers,
+            onUpgrade: () => _upgrade(context, 'pro'),
+            onUpgradeStd: () => _upgrade(context, 'std'),
+            onClaim: () async {
+              final msg = await ref.read(lineTierProvider.notifier).claim();
+              if (!context.mounted || msg == null) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+            },
+          ));
+        }
+        final stdAll = all.where((o) => !isPro(o)).toList();
+        if (stdAll.isNotEmpty) {
+          final curRegion = current != null && !isPro(current) ? lineCountry(current.name) : '';
+          children.add(Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: _StdCard(
+              tokens: tokens,
+              count: stdAll.length,
+              regions: _countries(stdAll),
+              currentRegion: curRegion,
+              onTap: () => _openStdPage(true),
+            ),
+          ));
+        }
+      }
+      // 最后两张卡：投票 / 定制。跟着列表走，不钉在屏幕底（面板高度跟内容走，不留空白）。
+      final custom = _customLineUrl();
+      final tiles = <Widget>[
+        if (region.enabled && !preview)
+          _FootTile(
+            tokens: tokens,
+            title: '想要别的地区？',
+            link: _regionLink(regionEntrySubtitle(region)),
+            onTap: () => _wantRegion(context),
+          ),
+        if (custom != null)
+          _FootTile(
+            tokens: tokens,
+            title: '定制专属线路',
+            link: '了解一下 ›',
+            onTap: () {
+              Navigator.of(context).pop();
+              UriUtils.tryLaunch(Uri.parse(custom));
+            },
+          ),
+      ];
+      if (tiles.isNotEmpty) {
+        children.add(Padding(
+          padding: const EdgeInsets.only(top: 14),
+          child: Row(
+            children: [
+              for (final (i, t) in tiles.indexed) ...[
+                if (i > 0) const Gap(10),
+                Expanded(child: t),
+              ],
+            ],
+          ),
+        ));
+      }
+    }
+
+    final hint = preview
+        ? '登录或免费开始后才能连接。'
+        : (isp.isNotEmpty && all.any((o) => lineFitsIsp(o, isp)) ? '你用的是中国$isp宽带，适合你的线路排在前面。' : '');
+
     final sheet = Column(
-      mainAxisSize: tiered ? MainAxisSize.max : MainAxisSize.min,
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
+          padding: EdgeInsets.fromLTRB(_stdPage ? 8 : 20, 0, 16, 10),
           child: Row(
             children: [
-              Text('选择线路', style: theme.textTheme.titleMedium),
+              if (_stdPage)
+                IconButton(
+                  tooltip: '返回',
+                  onPressed: () => _openStdPage(false),
+                  icon: Icon(Icons.chevron_left_rounded, color: tokens.sub),
+                ),
+              Text(_stdPage ? '标准线路' : '全部线路',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: tokens.text)),
               const Spacer(),
-              if (!locked) const _SpeedButton(),
+              if (!preview) _SpeedButton(tokens: tokens),
             ],
           ),
         ),
-        if (locked && options.isNotEmpty)
+        if (!_stdPage) ...[
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-            child: Text(
-              '这些是我们现有的线路，买套餐后就能选着用。',
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            padding: const EdgeInsets.fromLTRB(20, 0, 16, 8),
+            child: TextField(
+              controller: _search,
+              textInputAction: TextInputAction.search,
+              style: TextStyle(fontSize: 15, color: tokens.text),
+              decoration: InputDecoration(
+                hintText: '搜索国家或城市',
+                hintStyle: TextStyle(color: tokens.dim),
+                prefixIcon: Padding(
+                  padding: const EdgeInsets.all(13),
+                  child: LineIcon(LineIconName.search, color: tokens.sub, size: 16),
+                ),
+                suffixIcon: query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: '清空搜索',
+                        onPressed: _search.clear,
+                        icon: Icon(Icons.close_rounded, size: 18, color: tokens.sub),
+                      ),
+                filled: true,
+                fillColor: tokens.panel,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: tokens.acc, width: 1.5),
+                ),
+              ),
             ),
           ),
-        // 钉在标题下面，不跟着列表滚走（打开时列表会自动滚到自己那条）。
-        // 按整个列表判断（收起的精品线路也算），所以把订阅外补进来的精品线路也带上。
-        if (options.isNotEmpty)
-          IspHint(
-            isp: isp,
-            lines: [...options, if (tiered) for (final p in tiers.proLines) splitNodeName(p.name)],
-            margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          if (hint.isNotEmpty && query.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 16, 8),
+              child: Text(hint, style: TextStyle(fontSize: 12, color: tokens.sub)),
+            ),
+        ],
+        Flexible(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+            children: children,
           ),
-        body,
-        const Gap(8),
+        ),
       ],
     );
-    if (!tiered) {
-      return SafeArea(child: sheet);
-    }
-    return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.85,
-        child: sheet,
+    // 最高 90%，内容少就矮（不留空白）；底部让开手势条，键盘弹出时跟着上抬。
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.9),
+          child: sheet,
+        ),
       ),
     );
+  }
+
+  Future<void> _wantRegion(BuildContext context) async {
+    final name = await showRegionSheet(context, ref);
+    if (!mounted || name == null || name.isEmpty) return;
+    // 投票页里点了已经开通的地区：回到这页，按这个国家搜出来（Windows focusCountry 同一做法）。
+    setState(() => _stdPage = false);
+    _search.text = name;
+  }
+
+  void _upgrade(BuildContext context, String tier) {
+    ref.read(purchasePreferTierProvider.notifier).state = tier;
+    Navigator.of(context).pop();
+    context.pushNamed('purchase');
   }
 
   /// 选线路：记偏好 + 立即更新首页显示（跟主页雷达共用 chooseLine）。
@@ -299,6 +487,32 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     Navigator.of(context).pop();
     await promptUnlockLines(ref);
   }
+}
+
+bool _allFit(List<LineOption> lines, String isp) =>
+    isp.isNotEmpty && lines.isNotEmpty && lines.every((o) => lineFitsIsp(o, isp));
+
+List<String> _countries(List<LineOption> lines) {
+  final out = <String>[];
+  for (final o in lines) {
+    final c = lineCountry(o.name);
+    if (!out.contains(c)) out.add(c);
+  }
+  return out;
+}
+
+/// 「日本 东京 03」→「东京 03」；「香港 03」去掉地区只剩编号，看不出是哪，留全名。
+String _shortName(String country, String name) {
+  final trimmed = name.trim();
+  if (!trimmed.startsWith(country)) return trimmed;
+  final rest = trimmed.substring(country.length).trim();
+  return rest.isEmpty || RegExp(r'^\d+$').hasMatch(rest) ? trimmed : rest;
+}
+
+/// 投票卡第二行：没人投过写「投票开通 ›」，有进展写进展。
+String _regionLink(String subtitle) {
+  if (subtitle.isEmpty || subtitle.startsWith('会员投票')) return '投票开通 ›';
+  return '$subtitle ›';
 }
 
 /// 选线路（线路列表、主页雷达共用）：记偏好 + 立即更新首页显示；已连接时由 autoLineFixer 立刻切过去。
@@ -337,642 +551,155 @@ String? _customLineUrl() {
   return url;
 }
 
-/// 平铺列表的第二行：说明 + 状态牌子（「使用中」等，不跟「精品」挤在名字那行），下面再是 AI 提示。
-Widget? _lineSubtitle(ThemeData theme, LineOption option, Widget? status) {
-  final code = countryCodeFromLineName(option.name);
-  final tag = RemoteSiteConfig.aiTipTag;
-  final showTag = tag != null && code != null && RemoteSiteConfig.aiTipRegions.contains(code);
-  if (option.desc.isEmpty && status == null && !showTag) return null;
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      if (option.desc.isNotEmpty || status != null)
-        Row(
-          children: [
-            if (option.desc.isNotEmpty)
-              Flexible(child: Text(option.desc, maxLines: 1, softWrap: false, overflow: TextOverflow.ellipsis)),
-            if (option.desc.isNotEmpty && status != null) const Gap(8),
-            if (status != null) status,
-          ],
-        ),
-      if (showTag)
-        Text(
-          tag,
-          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
-    ],
-  );
+class _GroupLabel extends StatelessWidget {
+  const _GroupLabel(this.text, this.tokens);
+
+  final String text;
+  final OneRayTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.sub)),
+    );
+  }
 }
 
-class _LineTile extends StatelessWidget {
-  const _LineTile({
+/// 一条线路。右边最多一个标记：使用中 > 维修中 > 推荐 > 精品/标准 > 适合 X。
+class _LineRow extends StatelessWidget {
+  const _LineRow({
     super.key,
     required this.option,
-    required this.locked,
+    required this.tokens,
     required this.current,
-    required this.recommended,
     required this.connected,
+    required this.pro,
+    required this.showKind,
+    required this.showFit,
+    required this.isp,
+    required this.tierTag,
+    required this.recommended,
+    required this.down,
+    required this.grade,
+    required this.best,
+    required this.aiTip,
     required this.onTap,
-    this.down = false,
-    this.isp = '',
   });
 
   final LineOption option;
-
-  /// 用户是哪家宽带（gsl_isp），那家的 LOGO 加橙圈。
-  final String isp;
-  final bool locked;
+  final OneRayTokens tokens;
   final bool current;
-  final bool recommended;
   final bool connected;
+  final bool pro;
+
+  /// 「正在用」那块第二行最前面写是精品还是标准。
+  final bool showKind;
+  final bool showFit;
+  final String isp;
+  final String tierTag;
+  final bool recommended;
+  final bool down;
+  final SpeedGrade? grade;
+  final bool best;
+  final String aiTip;
   final VoidCallback onTap;
 
-  /// 维修中：变灰、牌子写「维修中」，点了由 _pick 说清楚。
-  final bool down;
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    // 没连着的时候说「上次用的」才是实话 —— 写「使用中」会让人以为已经连上了。
-    // 第二项 = 要不要高亮：自己那条用主题色牌子，「推荐」只是灰牌子，别抢眼。
-    final (String, bool)? tag = down
-        ? const ('维修中', false)
-        : current
-            ? (connected ? '使用中' : '上次用的', true)
-            : (recommended ? const ('推荐', false) : null);
-
-    final status = tag == null
-        ? null
-        : Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-            decoration: BoxDecoration(
-              color: tag.$2 ? theme.colorScheme.primaryContainer : theme.colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              tag.$1,
-              maxLines: 1,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: tag.$2 ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          );
-
-    final tile = ListTile(
-      leading: LineFlag(option.name, size: 26),
-      // 名字永远单行（放不下才省略号），「精品」紧跟名字；状态牌子在第二行。
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(
-              option.name,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          if (option.pro) ...[
-            const Gap(6),
-            const ProBadge(),
-          ],
-        ],
-      ),
-      subtitle: _lineSubtitle(theme, option, status),
-      trailing: !LineIspMarks.hasMarks(option) && !locked
-          ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                LineIspMarks(option: option, isp: isp),
-                if (locked) ...[
-                  const Gap(8),
-                  Icon(Icons.lock_outline_rounded, size: 18, color: theme.colorScheme.outline),
-                ],
-              ],
-            ),
-      selected: current,
-      onTap: onTap,
-    );
-    return down ? Opacity(opacity: 0.55, child: tile) : tile;
-  }
-}
-
-class _TieredLines extends StatefulWidget {
-  const _TieredLines({
-    required this.options,
-    required this.locked,
-    required this.currentName,
-    required this.pickedName,
-    required this.connected,
-    required this.tiers,
-    required this.speed,
-    this.usageLabel,
-    this.usageWarn = false,
-    required this.onPick,
-    this.onUpgradeStd,
-    required this.onUpgrade,
-    required this.onClaim,
-    required this.regionEnabled,
-    required this.regionSubtitle,
-    required this.locateCountry,
-    required this.locateKey,
-    required this.onWantRegion,
-    this.downLines = const {},
-    this.isp = '',
-    this.recommended = '',
-  });
-
-  /// 已按 ispFitFirst 排好（同国家里适合用户宽带的在前）。
-  final List<LineOption> options;
-  final bool locked;
-  final String currentName;
-  final String pickedName;
-  final bool connected;
-  final LineTierState tiers;
-  final LineSpeedState speed;
-  final String? usageLabel;
-  final bool usageWarn;
-  final void Function(LineOption) onPick;
-  final VoidCallback? onUpgradeStd;
-  final VoidCallback onUpgrade;
-  final VoidCallback onClaim;
-  final bool regionEnabled;
-  final String regionSubtitle;
-  final String locateCountry;
-  final GlobalKey locateKey;
-  final Future<void> Function() onWantRegion;
-
-  /// 维修中的线路名（PanelAccount.downLines）。
-  final Set<String> downLines;
-
-  /// 用户是哪家宽带（gsl_isp），空 = 不知道。
-  final String isp;
-
-  /// 标「推荐」的那条（订阅第一条；用户自己选过线路就是空）。
-  final String recommended;
-
-  @override
-  State<_TieredLines> createState() => _TieredLinesState();
-}
-
-class _TieredLinesState extends State<_TieredLines> {
-  bool _ready = false;
-  bool _proOpen = false;
-  bool _stdOpen = true;
-  String _openKey = '';
-  final _currentLineKey = GlobalKey();
-  bool _revealed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _revealCurrent());
-  }
-
-  void _revealCurrent() {
-    if (_revealed || !mounted) return;
-    final ctx = _currentLineKey.currentContext;
-    if (ctx == null) return;
-    _revealed = true;
-    Scrollable.ensureVisible(ctx, alignment: 0.4, duration: const Duration(milliseconds: 220));
-  }
-
-  String _shortName(String country, String name) {
-    final trimmed = name.trim();
-    if (!trimmed.startsWith(country)) return trimmed;
-    final rest = trimmed.substring(country.length).trim();
-    // 「日本 东京 03」→「东京 03」；「香港 03」去掉地区只剩编号，看不出是哪，留全名（样稿 v2）。
-    return rest.isEmpty || RegExp(r'^\d+$').hasMatch(rest) ? trimmed : rest;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final tokens = OneRayTokens.of(context);
-    final ink3 = tokens.sub.withValues(alpha: 0.7);
-    final okDeep = tokens.acc;
-    final pro = <String, List<LineOption>>{};
-    final std = <String, List<LineOption>>{};
-    final proOrder = <String>[];
-    final stdOrder = <String>[];
-    String? usingSeg;
-    String? usingCountry;
-    for (final o in widget.options) {
-      final isPro = widget.tiers.isProName(o.name);
-      final bucket = isPro ? pro : std;
-      final order = isPro ? proOrder : stdOrder;
-      final country = lineCountry(o.name);
-      if (!bucket.containsKey(country)) {
-        bucket[country] = [];
-        order.add(country);
-      }
-      bucket[country]!.add(o);
-      if (o.name == widget.currentName) {
-        usingSeg = isPro ? 'pro' : 'std';
-        usingCountry = country;
-      }
-    }
-    final seen = widget.options.map((o) => o.name).toSet();
-    for (final line in widget.tiers.proLines) {
-      final split = splitNodeName(line.name);
-      if (split.name.isEmpty || seen.contains(split.name)) continue;
-      seen.add(split.name);
-      final country = split.name.split(RegExp(r'\s+')).first.trim();
-      final key = country.isEmpty ? '其它' : country;
-      pro.putIfAbsent(key, () {
-        proOrder.add(key);
-        return [];
-      });
-      pro[key]!.add(split);
-    }
-    // 订阅外补进来的精品线路也要按宽带排（订阅里的已经排过，再排一遍结果不变）。
-    for (final k in pro.keys) {
-      pro[k] = ispFitFirst(pro[k]!, widget.isp);
-    }
-    if (!_ready) {
-      _ready = true;
-      final preferPro = widget.tiers.trial == 'pro' || widget.tiers.trial == 'active';
-      final usingPro = usingSeg == 'pro';
-      _proOpen = preferPro || usingPro;
-      _stdOpen = !preferPro || (widget.currentName.isNotEmpty && !usingPro);
-      if (usingSeg != null && usingCountry != null) _openKey = '$usingSeg|$usingCountry';
-    }
-    final locate = widget.locateCountry;
-    if (locate.isNotEmpty) {
-      if (stdOrder.contains(locate)) {
-        _stdOpen = true;
-        _openKey = 'std|$locate';
-      } else if (proOrder.contains(locate)) {
-        _proOpen = true;
-        _openKey = 'pro|$locate';
-      }
-      if (proOrder.contains(locate)) _proOpen = true;
-      if (stdOrder.contains(locate)) _stdOpen = true;
-    }
-    final proLocked = widget.tiers.trial != 'pro' && widget.tiers.trial != 'active';
-    final recommended = widget.recommended;
-    final children = <Widget>[];
-
-    void addSeg(String seg, List<String> order, Map<String, List<LineOption>> bucket) {
-      if (order.isEmpty) return;
-      final open = seg == 'pro' ? _proOpen : _stdOpen;
-      final isPro = seg == 'pro';
-      final title = isPro ? '精品线路' : '标准线路';
-      var hint = isPro ? '晚高峰也不卡' : '晚高峰可能变慢';
-      var hintWarn = false;
-      if (isPro && widget.usageLabel != null && widget.usageLabel!.isNotEmpty) {
-        hintWarn = widget.usageWarn;
-        hint = widget.usageLabel!;
-      }
-      final promo = _promo(isPro, open, proLocked, tokens, okDeep);
-      children.add(Padding(
-        padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
-        // 白卡淡阴影（跟首页 / 我的同一种 SoftCard），抽屉底色是浅灰，卡片自己就浮起来，不描边。
-        child: SoftCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                  hoverColor: isPro ? tokens.accSoft : tokens.panel,
-                  highlightColor: isPro ? tokens.accSoft : tokens.panel,
-                  splashColor: isPro ? tokens.accSoft : tokens.panel,
-                  onTap: () => setState(() {
-                    if (isPro) {
-                      _proOpen = !_proOpen;
-                    } else {
-                      _stdOpen = !_stdOpen;
-                    }
-                  }),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                title,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: isPro ? okDeep : tokens.text,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                (isPro && widget.usageLabel != null && widget.usageLabel!.isNotEmpty)
-                                    ? hint
-                                    : '$hint · ${order.join(' · ')}',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 11, color: hintWarn ? tokens.fault : ink3),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (isPro && proLocked) ...[
-                          const SizedBox(width: 8),
-                          _GoldButton(label: '升级精品版', onTap: widget.onUpgrade, tokens: tokens),
-                        ],
-                        const SizedBox(width: 6),
-                        Transform.rotate(
-                          angle: open ? 1.5708 : 0,
-                          child: Text('›', style: TextStyle(fontSize: 16, height: 1, color: ink3)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              if (promo != null) promo,
-              if (open)
-                for (final country in order)
-                  _countryBlock(
-                    seg: seg,
-                    country: country,
-                    lines: bucket[country]!,
-                    blocked: isPro && proLocked,
-                    tokens: tokens,
-                    ink3: ink3,
-                    recommended: recommended,
-                  ),
-            ],
-          ),
-        ),
-      ));
-    }
-
-    addSeg('pro', proOrder, pro);
-    addSeg('std', stdOrder, std);
-    final custom = _customLineUrl();
-    children.add(_FooterLinks(
-      tokens: tokens,
-      regionSubtitle: widget.regionEnabled ? widget.regionSubtitle : null,
-      onRegion: widget.regionEnabled ? widget.onWantRegion : null,
-      onCustom: custom == null
-          ? null
-          : () {
-              Navigator.of(context).pop();
-              UriUtils.tryLaunch(Uri.parse(custom));
-            },
-    ));
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
-      children: children,
-    );
-  }
-
-  Widget? _promo(bool isPro, bool open, bool proLocked, OneRayTokens tokens, Color okDeep) {
-    if (!isPro) return null;
-    if (widget.tiers.trial == 'active') {
-      final mins = (widget.tiers.seconds / 60).ceil().clamp(1, 9999);
-      return _PromoRow(
-        label: '精品线路体验中 · 还剩 $mins 分钟',
-        action: '升级精品版',
-        warm: false,
-        tokens: tokens,
-        okDeep: okDeep,
-        onTap: widget.onUpgrade,
-      );
-    }
-    if (open || !proLocked) return null;
-    final offer = widget.tiers.trial == 'offer';
-    final lockedTrial = widget.tiers.trial == 'locked';
-    final hour = widget.tiers.minutes == 60;
-    final label = offer
-        ? (hour ? '您可领取 1 小时精品线路体验' : '您可领取 ${widget.tiers.minutes} 分钟精品线路体验')
-        : lockedTrial
-            ? (hour ? '标准版会员可领 1 小时精品线路体验' : '标准版会员可领 ${widget.tiers.minutes} 分钟精品线路体验')
-            : '想晚高峰更快？';
-    return _PromoRow(
-      label: label,
-      action: offer ? '领取' : (lockedTrial ? '升级' : '升级精品版'),
-      warm: !offer,
-      tokens: tokens,
-      okDeep: okDeep,
-      onTap: offer ? widget.onClaim : (lockedTrial ? (widget.onUpgradeStd ?? widget.onUpgrade) : widget.onUpgrade),
-    );
-  }
-
-  Widget _countryBlock({
-    required String seg,
-    required String country,
-    required List<LineOption> lines,
-    required bool blocked,
-    required OneRayTokens tokens,
-    required Color ink3,
-    required String recommended,
-  }) {
-    final key = '$seg|$country';
-    final expanded = _openKey == key;
-    final locateHere = widget.locateCountry == country && _openKey == key;
-    final usingHere = lines.any((o) => o.name == widget.currentName);
-    final block = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            hoverColor: tokens.panel,
-            highlightColor: tokens.panel,
-            onTap: blocked ? widget.onUpgrade : () => setState(() => _openKey = expanded ? '' : key),
-            child: SizedBox(
-              height: 52,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  children: [
-                    Opacity(
-                      opacity: blocked ? 0.5 : 1,
-                      child: SizedBox(
-                        width: 32,
-                        height: 32,
-                        child: Stack(
-                          children: [
-                            LineFlag(lines.first.name, size: 32),
-                            Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(color: tokens.ring),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Opacity(
-                        opacity: blocked ? 0.5 : 1,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              country,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text),
-                            ),
-                            Text(
-                              '${lines.length} 条线路${usingHere ? ' · 正在用这里的' : ''}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 11, color: ink3),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // 线路只有名字，没有接入响应测量（不做 urltest、不显示延迟数字）。
-                    // 跟 Windows 一样：没有测量结果就不画响应圆点。
-                    if (!blocked && _bestGrade(lines) != null) ...[
-                      _SpeedDot(level: _bestGrade(lines)!.level, tokens: tokens),
-                      const SizedBox(width: 4),
-                      Text(_bestGrade(lines)!.word, style: TextStyle(fontSize: 11, color: tokens.sub)),
-                      const SizedBox(width: 6),
-                    ],
-                    if (blocked)
-                      Text('升级精品版 ›', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: tokens.acc))
-                    else ...[
-                      Transform.rotate(
-                        angle: expanded ? 1.5708 : 0,
-                        child: Text('›', style: TextStyle(fontSize: 16, height: 1, color: ink3)),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        if (expanded && !blocked)
-          Padding(
-            padding: const EdgeInsets.only(left: 44),
-            child: DecoratedBox(
-              decoration: BoxDecoration(border: Border(left: BorderSide(color: tokens.ring))),
-              child: Padding(
-                padding: const EdgeInsets.only(left: 6),
-                child: Column(
-                  children: [
-                    for (final o in lines)
-                      _lineRow(o, country, tokens, o.name == recommended),
-                  ],
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-    if (locateHere) return KeyedSubtree(key: widget.locateKey, child: block);
-    return block;
-  }
-
-  SpeedGrade? _bestGrade(List<LineOption> lines) {
-    SpeedGrade? best;
-    for (final o in lines) {
-      final grade = widget.speed.grades[o.name];
-      if (grade == null || grade.level <= 0) continue;
-      if (best == null || grade.level < best.level) best = grade;
-    }
-    return best;
-  }
-
-  Widget _lineRow(LineOption o, String country, OneRayTokens tokens, bool recommended) {
-    final current = o.name == widget.currentName;
-    final down = widget.downLines.contains(o.name);
-    final short = _shortName(country, o.name);
-    final grade = down ? null : widget.speed.grades[o.name];
-    final best = !down && widget.speed.bestName == o.name && grade != null && grade.level <= 2;
-    Text label(String text, Color color) =>
-        Text(text, maxLines: 1, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color));
-    final Widget? status = down
-        ? label('维修中', tokens.sub)
-        : best && current
-            ? label('使用中 · 最快', tokens.acc)
-            : best
-                ? label('你这里最快', tokens.acc)
-                : current
-                    ? label(widget.connected ? '使用中' : '上次用的', widget.connected ? tokens.acc : tokens.sub)
-                    : recommended
-                        ? label('推荐', tokens.acc)
+    final country = lineCountry(option.name);
+    final city = _shortName(country, option.name);
+    final (String, int)? marker = current
+        ? (connected ? '使用中' : '上次用的', connected ? 2 : 1)
+        : down
+            ? ('维修中', 0)
+            : recommended
+                ? ('推荐', 0)
+                : tierTag.isNotEmpty
+                    ? (tierTag, tierTag == '精品' ? 2 : 0)
+                    : (showFit && lineFitsIsp(option, isp))
+                        ? ('适合$isp', 1)
                         : null;
-    final dot = Text(' · ', style: TextStyle(fontSize: 11, color: tokens.sub.withValues(alpha: 0.7)));
+    final sub = TextStyle(fontSize: 12, color: tokens.sub);
+    final g = grade;
+    // 第二行几段用「 · 」隔开（哪段没有就不留空隔点）：精品/标准 · 说明 · 测速 · AI 提示；维修中只说一句。
+    final groups = <List<InlineSpan>>[
+      if (showKind)
+        [
+          TextSpan(
+            text: pro ? '精品线路' : '标准线路',
+            style: TextStyle(color: pro ? tokens.acc : tokens.sub, fontWeight: pro ? FontWeight.w600 : FontWeight.w400),
+          ),
+        ],
+      if (down) [const TextSpan(text: '暂时连不上，修好会自动恢复')],
+      if (!down && option.desc.isNotEmpty) [TextSpan(text: option.desc)],
+      if (!down && g != null && g.level > 0)
+        [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Container(
+              width: 7,
+              height: 7,
+              margin: const EdgeInsets.only(right: 5),
+              decoration: BoxDecoration(color: _speedDot(g.level), shape: BoxShape.circle),
+            ),
+          ),
+          TextSpan(text: g.word + (best ? ' · 最稳' : ''), style: TextStyle(color: _speedInk(g.level))),
+        ],
+      if (!down && aiTip.isNotEmpty) [TextSpan(text: aiTip)],
+    ];
+    final second = <InlineSpan>[
+      for (final (i, group) in groups.indexed) ...[
+        if (i > 0) const TextSpan(text: ' · '),
+        ...group,
+      ],
+    ];
     final row = Material(
-      key: current ? _currentLineKey : null,
       color: current ? tokens.accSoft : Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        hoverColor: tokens.panel,
-        highlightColor: tokens.panel,
-        onTap: () => widget.onPick(o),
-        // 两行：第一行名字（永远单行）+「精品」，第二行说明 · 测速 · 状态；右边 LOGO 区固定宽、靠右。
-        // 以前一行塞下名字、精品、说明、LOGO、状态，最挤的精品线路名字被挤到折行（10-17 运营真机）。
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
+              Stack(
+                children: [
+                  LineFlag(option.name, size: 36),
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: tokens.ring)),
+                  ),
+                ],
+              ),
+              const Gap(12),
               Expanded(
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            short,
-                            maxLines: 1,
-                            softWrap: false,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 13, color: tokens.text),
-                          ),
-                        ),
-                        if (o.pro) ...[
-                          const SizedBox(width: 6),
-                          const ProBadge(),
-                        ],
-                      ],
-                    ),
-                    if (o.desc.isNotEmpty || grade != null || status != null) ...[
-                      const SizedBox(height: 2),
-                      Row(
+                    Text.rich(
+                      TextSpan(
                         children: [
-                          if (o.desc.isNotEmpty)
-                            Flexible(
-                              child: Text(
-                                o.desc,
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 11, color: tokens.sub.withValues(alpha: 0.7)),
-                              ),
-                            ),
-                          if (grade != null) ...[
-                            if (o.desc.isNotEmpty) const SizedBox(width: 8),
-                            _SpeedDot(level: grade.level, tokens: tokens),
-                            const SizedBox(width: 4),
-                            Text(grade.word, style: TextStyle(fontSize: 11, color: tokens.sub)),
-                          ],
-                          if (status != null) ...[
-                            if (o.desc.isNotEmpty || grade != null) dot,
-                            status,
-                          ],
+                          TextSpan(text: country, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          TextSpan(text: ' · $city'),
                         ],
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 16, color: down ? tokens.dim : tokens.text),
+                    ),
+                    if (second.isNotEmpty) ...[
+                      const Gap(3),
+                      Text.rich(TextSpan(children: second), maxLines: 1, overflow: TextOverflow.ellipsis, style: sub),
                     ],
                   ],
                 ),
               ),
-              if (LineIspMarks.hasMarks(o)) ...[
-                const SizedBox(width: 8),
-                LineIspMarks(option: o, isp: widget.isp),
+              if (marker != null) ...[
+                const Gap(8),
+                _Pill(text: marker.$1, kind: marker.$2, tokens: tokens),
               ],
             ],
           ),
@@ -981,90 +708,318 @@ class _TieredLinesState extends State<_TieredLines> {
     );
     return down ? Opacity(opacity: 0.55, child: row) : row;
   }
+
+  Color _speedDot(int level) => switch (level) {
+        1 => tokens.acc,
+        2 => tokens.warn,
+        3 => tokens.dim,
+        4 => tokens.fault,
+        _ => tokens.sub,
+      };
+
+  Color _speedInk(int level) => switch (level) {
+        1 => tokens.acc,
+        2 => tokens.warnInk,
+        4 => tokens.fault,
+        _ => tokens.sub,
+      };
 }
 
-class _GoldButton extends StatelessWidget {
-  const _GoldButton({required this.label, required this.onTap, required this.tokens});
+/// 右边的小标记：kind 2 = 实心主题色，1 = 浅主题色，0 = 灰。
+class _Pill extends StatelessWidget {
+  const _Pill({required this.text, required this.kind, required this.tokens});
 
-  final String label;
-  final VoidCallback onTap;
+  final String text;
+  final int kind;
   final OneRayTokens tokens;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: tokens.acc,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          alignment: Alignment.center,
-          child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.accInk)),
+    return Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: kind == 2 ? tokens.acc : (kind == 1 ? tokens.accSoft : tokens.panel),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: kind == 0 ? FontWeight.w400 : FontWeight.w600,
+          color: kind == 2 ? tokens.accInk : (kind == 1 ? tokens.acc : tokens.sub),
         ),
       ),
     );
   }
 }
 
-class _PromoRow extends StatelessWidget {
-  const _PromoRow({
-    required this.label,
-    required this.action,
-    required this.warm,
+/// 精品线路组标题：名字 + 一句 + 今日用量（超额变红）+ 细进度条。
+class _ProHeader extends StatelessWidget {
+  const _ProHeader({required this.tokens, required this.hint, required this.hintAcc, required this.account});
+
+  final OneRayTokens tokens;
+  final String hint;
+  final bool hintAcc;
+  final PanelAccount? account;
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = account;
+    final know = acc != null && acc.proKnown;
+    final throttled = know && acc.proThrottled;
+    final ratio = know && acc.proQuota > 0 ? (acc.proUsed / acc.proQuota).clamp(0.0, 1.0) : 0.0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('精品线路', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.acc)),
+              const Gap(8),
+              Expanded(
+                child: Text(
+                  hint,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: hintAcc ? tokens.acc : tokens.sub),
+                ),
+              ),
+              if (know)
+                Text(
+                  throttled
+                      ? '今天已超 ${formatDailyAmount(acc.proQuota)}，限速 ${acc.proThrottleMbps}Mbps'
+                      : '今日 ${formatDailyAmount(acc.proUsed)} / ${formatDailyAmount(acc.proQuota)}',
+                  style: TextStyle(fontSize: 12, color: throttled ? tokens.fault : tokens.sub),
+                ),
+            ],
+          ),
+          if (know) ...[
+            const Gap(8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: SizedBox(
+                height: 4,
+                child: Stack(
+                  children: [
+                    Container(color: tokens.panel),
+                    FractionallySizedBox(
+                      widthFactor: throttled ? 1 : (ratio < 0.01 ? 0.01 : ratio),
+                      child: Container(color: throttled ? tokens.fault : tokens.acc),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 精品锁着（标准版用户）：带锁的卡，每条精品线一小行，卡底「领取 / 升级」。
+class _LockedProCard extends StatelessWidget {
+  const _LockedProCard({
     required this.tokens,
-    required this.okDeep,
+    required this.lines,
+    required this.countries,
+    required this.tiers,
+    required this.onUpgrade,
+    required this.onUpgradeStd,
+    required this.onClaim,
+  });
+
+  final OneRayTokens tokens;
+  final List<LineOption> lines;
+  final List<String> countries;
+  final LineTierState tiers;
+  final VoidCallback onUpgrade;
+  final VoidCallback onUpgradeStd;
+  final VoidCallback onClaim;
+
+  @override
+  Widget build(BuildContext context) {
+    final offer = tiers.trial == 'offer';
+    final lockedTrial = tiers.trial == 'locked';
+    final hour = tiers.minutes == 60;
+    final label = offer
+        ? (hour ? '您可领取 1 小时精品线路体验' : '您可领取 ${tiers.minutes} 分钟精品线路体验')
+        : lockedTrial
+            ? (hour ? '标准版会员可领 1 小时精品线路体验' : '标准版会员可领 ${tiers.minutes} 分钟精品线路体验')
+            : '想晚高峰更快？';
+    final action = offer ? '领取' : (lockedTrial ? '升级' : '升级精品版');
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: tokens.ring),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      LineIcon(LineIconName.lock, color: tokens.acc, size: 14),
+                      const Gap(8),
+                      Text('精品线路', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.acc)),
+                      const Gap(8),
+                      Text('晚高峰也不卡', style: TextStyle(fontSize: 12, color: tokens.sub)),
+                    ],
+                  ),
+                  const Gap(4),
+                  Text('${countries.join(' · ')}，精品版才能用', style: TextStyle(fontSize: 12, color: tokens.sub)),
+                ],
+              ),
+            ),
+            for (final o in lines)
+              InkWell(
+                onTap: onUpgrade,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                  child: Row(
+                    children: [
+                      Opacity(opacity: 0.7, child: LineFlag(o.name, size: 26)),
+                      const Gap(12),
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: lineCountry(o.name),
+                                style: TextStyle(fontWeight: FontWeight.w700, color: tokens.text),
+                              ),
+                              TextSpan(text: ' · ${_shortName(lineCountry(o.name), o.name)}'),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 14, color: tokens.sub),
+                        ),
+                      ),
+                      LineIcon(LineIconName.lock, color: tokens.dim, size: 14),
+                    ],
+                  ),
+                ),
+              ),
+            const Gap(6),
+            Container(
+              color: tokens.accSoft,
+              padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text)),
+                  ),
+                  const Gap(8),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: tokens.acc,
+                      foregroundColor: tokens.accInk,
+                      minimumSize: const Size(0, 36),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      shape: const StadiumBorder(),
+                    ),
+                    onPressed: offer ? onClaim : (lockedTrial ? onUpgradeStd : onUpgrade),
+                    child: Text(action, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefaultTextStyle.of(context).style.fontFamily)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 标准线路卡：点进去单独一页。正在用的是标准线路时，那个地区的小标签变浅绿 + 绿点。
+class _StdCard extends StatelessWidget {
+  const _StdCard({
+    required this.tokens,
+    required this.count,
+    required this.regions,
+    required this.currentRegion,
     required this.onTap,
   });
 
-  final String label;
-  final String action;
-  final bool warm;
   final OneRayTokens tokens;
-  final Color okDeep;
+  final int count;
+  final List<String> regions;
+  final String currentRegion;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: tokens.accSoft,
-          borderRadius: BorderRadius.circular(10),
-        ),
+    return Material(
+      color: tokens.panel,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(fontSize: 12, color: warm ? tokens.text : okDeep),
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text('标准线路', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.text)),
+                  const Gap(8),
+                  Expanded(
+                    child: Text('晚高峰可能变慢 · $count 条', style: TextStyle(fontSize: 12, color: tokens.sub)),
+                  ),
+                  Icon(Icons.chevron_right_rounded, size: 20, color: tokens.sub),
+                ],
               ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: onTap,
-                child: Container(
-                  height: 28,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: tokens.acc,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    action,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: tokens.accInk,
+              const Gap(10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final r in regions)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: r == currentRegion ? tokens.accSoft : tokens.card,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (r == currentRegion) ...[
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: BoxDecoration(color: tokens.acc, shape: BoxShape.circle),
+                            ),
+                            const Gap(4),
+                          ],
+                          Text(
+                            r,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: r == currentRegion ? tokens.acc : tokens.text,
+                              fontWeight: r == currentRegion ? FontWeight.w600 : FontWeight.w400,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ),
+                ],
               ),
             ],
           ),
@@ -1074,25 +1029,54 @@ class _PromoRow extends StatelessWidget {
   }
 }
 
+/// 最后两张卡里的一张（投票 / 定制）。
+class _FootTile extends StatelessWidget {
+  const _FootTile({required this.tokens, required this.title, required this.link, required this.onTap});
 
-String? _proUsage(WidgetRef ref, LineTierState tiers) {
-  final acc = ref.watch(panelAuthProvider).account;
-  if (acc == null || !acc.proKnown) return null;
-  if (tiers.trial != 'pro' && tiers.trial != 'active') return null;
-  if (acc.proThrottled) {
-    return '今天已超 ${formatDailyAmount(acc.proQuota)}，精品线路限速 ${acc.proThrottleMbps}Mbps，明天恢复';
+  final OneRayTokens tokens;
+  final String title;
+  final String link;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: tokens.ring),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: tokens.text)),
+              const Gap(4),
+              Text(link,
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: tokens.acc)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  return '今天已用 ${formatDailyAmount(acc.proUsed)} / ${formatDailyAmount(acc.proQuota)} · 所有精品线路合计';
 }
 
 class _SpeedButton extends ConsumerWidget {
-  const _SpeedButton();
+  const _SpeedButton({required this.tokens});
+
+  final OneRayTokens tokens;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final speed = ref.watch(lineSpeedProvider);
-    final tokens = OneRayTokens.of(context);
-    final ok = tokens.acc;
     final label = speed.running ? '测速中 ${speed.done}/${speed.total}' : '测速';
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1100,85 +1084,21 @@ class _SpeedButton extends ConsumerWidget {
         if (speed.stamp.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: Text(speed.stamp, style: TextStyle(fontSize: 11, color: tokens.sub.withValues(alpha: 0.7))),
+            child: Text(speed.stamp, style: TextStyle(fontSize: 12, color: tokens.dim)),
           ),
-        TextButton(
-          style: TextButton.styleFrom(
-            minimumSize: const Size(0, 28),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            foregroundColor: ok,
-            backgroundColor: speed.running ? tokens.panel : null,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 36),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            foregroundColor: tokens.text,
+            side: BorderSide(color: tokens.line),
+            shape: const StadiumBorder(),
           ),
           onPressed: speed.running ? null : () => ref.read(lineSpeedProvider.notifier).start(),
-          child: Text(label, style: const TextStyle(fontSize: 12)),
+          icon: LineIcon(LineIconName.gauge, color: speed.running ? tokens.sub : tokens.text, size: 14),
+          label: Text(label, style: const TextStyle(fontSize: 13)),
         ),
       ],
-    );
-  }
-}
-
-class _SpeedDot extends StatelessWidget {
-  const _SpeedDot({required this.level, required this.tokens});
-
-  final int level;
-  final OneRayTokens tokens;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (level) {
-      1 => tokens.acc,
-      2 => tokens.fault,
-      3 => tokens.fault,
-      _ => tokens.sub.withValues(alpha: 0.7),
-    };
-    return Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle));
-  }
-}
-
-/// 线路列表最后那行：投票、定制是次要入口，只用一行小字链接，别跟线路段抢。两端一样（Win `RoutePalette.qml` 的 `ListFooterLinks`）。
-class _FooterLinks extends StatelessWidget {
-  const _FooterLinks({required this.tokens, this.regionSubtitle, this.onRegion, this.onCustom});
-
-  final OneRayTokens tokens;
-  final String? regionSubtitle;
-  final Future<void> Function()? onRegion;
-  final VoidCallback? onCustom;
-
-  String get _regionText {
-    final sub = regionSubtitle ?? '';
-    if (sub.isEmpty || sub.startsWith('会员投票')) return '想要别的地区？投票开通 ›';
-    return '$sub ›';
-  }
-
-  Widget _link(String text, VoidCallback onTap) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(6),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        child: Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 12, color: tokens.sub),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final region = onRegion == null ? null : _link(_regionText, () => onRegion!());
-    final custom = onCustom == null ? null : _link('定制专属线路 ›', onCustom!);
-    if (region == null && custom == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        runSpacing: 4,
-        children: [?region, ?custom],
-      ),
     );
   }
 }

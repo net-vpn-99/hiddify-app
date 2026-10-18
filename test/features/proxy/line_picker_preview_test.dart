@@ -156,7 +156,7 @@ Future<void> _shot(
   }
 
   await settle();
-  final ctx = tester.element(find.text('选择线路'));
+  final ctx = tester.element(find.text('全部线路'));
   await tester.runAsync(() async {
     for (final a in ['assets/images/isp/ct.png', 'assets/images/isp/cu.png']) {
       await precacheImage(AssetImage(a), ctx);
@@ -179,55 +179,21 @@ Future<void> _shot(
 }
 
 void main() {
-  layoutMain();
-  testWidgets('线路页四种情况截图', (tester) async {
+  testWidgets('线路页改版截图（10-18）', (tester) async {
     await tester.runAsync(_fonts);
-    // 1. 移动、标准版：香港 03 排到香港 01 前面，移动 LOGO 有橙圈，顶上提示。
-    await _shot(tester, '1-移动-标准版.png', isp: '移动', std: newStd, pro: newPro, trial: '', current: '香港 01');
-    await _shot(tester, '1b-移动-韩国.png', isp: '移动', std: newStd, pro: newPro, trial: '', current: '韩国 首尔 01');
-    // 日本：「大阪 01」两段名字有 LOGO 排前面，「东京 01」只有一段什么都不放。
-    await _shot(tester, '1c-移动-日本.png', isp: '移动', std: newStd, pro: newPro, trial: '', current: '日本 东京 01');
-    // 2. 电信、精品版：精品标签 + 电信橙圈。
-    await _shot(tester, '2-电信-精品版.png', isp: '电信', std: newStd, pro: newPro, trial: 'pro', current: '日本 东京 03');
-    await _shot(tester, '2b-电信-美国.png', isp: '电信', std: newStd, pro: newPro, trial: 'pro', current: '美国 洛杉矶 05');
-    // 3. gsl_isp 为空：有 LOGO、没橙圈、没提示，顺序不动。
-    await _shot(tester, '3-宽带未知.png', isp: '', std: newStd, pro: newPro, trial: '', current: '香港 01');
-    // 4. 老名字：照旧显示说明，不放 LOGO。
-    await _shot(tester, '4-老名字.png', isp: '移动', std: oldStd, pro: oldPro, trial: '', current: '香港 01');
-    // 5. 没有精品线路时的平铺列表。
-    await _shot(tester, '5-平铺列表-移动.png', isp: '移动', std: newStd, pro: const [], trial: '', current: '');
-    // 6. 新名字但没有一条适合移动：不显示提示条。
-    await _shot(tester, '6-没有适合的-移动.png', isp: '移动', std: newStd.where((s) => !s.contains('移动')).toList(),
-        pro: const [], trial: '', current: '香港 01');
-  }, skip: shotDir.isEmpty);
-}
-
-/// 10-17 运营真机：最挤的那行（正在用的精品线路 + 三个 LOGO）名字被挤成三行。360dp / 411dp 两种手机宽度看排版。
-const layoutStd = [
-  '香港 01 | 电信 联通',
-  '日本 东京 01',
-  '美国 洛杉矶 01 | 电信 联通 | 大带宽',
-  '韩国 首尔 03 | 电信',
-];
-const layoutPro = ['美国 洛杉矶 05 ⭐精品 | 电信 联通 移动 | 晚高峰稳'];
-
-void layoutMain() {
-  testWidgets('线路行排版 360 / 411', (tester) async {
-    await tester.runAsync(_fonts);
-    for (final w in [360.0, 411.0]) {
-      final d = w.toInt();
-      // 平铺列表（没有精品名单时）：四种行都在一屏里，正在用的是精品三 LOGO 那条。
-      await _shot(tester, 'L$d-平铺.png', isp: '移动', std: [...layoutPro, ...layoutStd], pro: const [], trial: '',
-          current: '美国 洛杉矶 05', connected: true, width: w);
-      // 分段列表：精品卡里正在用的那条；标准卡里美国（大带宽两 LOGO）、日本（只有名字）、香港。
-      await _shot(tester, 'L$d-分段-精品在用.png', isp: '移动', std: layoutStd, pro: layoutPro, trial: 'pro',
-          current: '美国 洛杉矶 05', connected: true, width: w);
-      await _shot(tester, 'L$d-分段-美国.png', isp: '移动', std: layoutStd, pro: layoutPro, trial: '',
-          current: '美国 洛杉矶 01', connected: true, width: w);
-      await _shot(tester, 'L$d-分段-日本.png', isp: '移动', std: layoutStd, pro: layoutPro, trial: '',
-          current: '日本 东京 01', width: w);
-      await _shot(tester, 'L$d-分段-香港.png', isp: '电信', std: layoutStd, pro: layoutPro, trial: '',
-          current: '香港 01', width: w);
-    }
+    // 正在用精品线路：固定在最上面，精品组里不再重复；电信全适合 → 精品组不挂标签。
+    await _shot(tester, 'A-精品在用.png', isp: '电信', std: newStd, pro: newPro, trial: 'pro', current: '日本 东京 03', connected: true);
+    // 正在用标准线路：最上面那块写「标准线路」，标准卡上香港小标签变浅绿。
+    await _shot(tester, 'B-标准在用.png', isp: '电信', std: newStd, pro: newPro, trial: 'pro', current: '香港 01', connected: true);
+    // 标准版用户：精品是带锁的卡 + 领取。
+    await _shot(tester, 'C-精品锁着.png', isp: '移动', std: newStd, pro: newPro, trial: 'offer', current: '香港 01', connected: true);
+    // 点进标准线路那一页：只有部分适合移动 → 只给那几条挂「适合移动」。
+    await _shot(tester, 'D-标准线路页.png', isp: '移动', std: newStd, pro: newPro, trial: 'pro', current: '香港 01',
+        connected: true, tapAfter: const ['标准线路']);
+    // 没有精品名单：平铺。
+    await _shot(tester, 'E-平铺.png', isp: '移动', std: newStd, pro: const [], trial: '', current: '香港 01');
+    // 窄手机 360：最长那行不折行。
+    await _shot(tester, 'F-360-精品在用.png', isp: '电信', std: newStd, pro: newPro, trial: 'pro', current: '美国 洛杉矶 05',
+        connected: true, width: 360);
   }, skip: shotDir.isEmpty);
 }

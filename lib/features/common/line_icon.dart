@@ -3,7 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 /// 线条小图标（10-13，给引导卡和公告用；Windows 同一套线条：qml/components/LineIcon.qml，两边一起改）。
 /// 自己画的 24×24 描边图形，不用第三方图标包；每张卡按内容选图标，别再用一个问号什么都表达不了。
-enum LineIconName { info, gift, message, wifi, shield, users, logout, download, search, bell }
+enum LineIconName { info, gift, message, wifi, shield, users, logout, download, search, bell, lock, gauge }
 
 const _paths = <LineIconName, String>{
   LineIconName.info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
@@ -21,6 +21,9 @@ const _paths = <LineIconName, String>{
   LineIconName.download: '<path d="M12 4v11M8 11l4 4 4-4M5 19h14"/>',
   LineIconName.search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
   LineIconName.bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  // 线路列表改版（10-18）：精品锁着、测速按钮
+  LineIconName.lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  LineIconName.gauge: '<path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/>',
 };
 
 class LineIcon extends StatelessWidget {

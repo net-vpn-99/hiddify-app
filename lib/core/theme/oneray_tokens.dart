@@ -25,6 +25,8 @@ class OneRayTokens {
     required this.faultSoft,
     required this.scrim,
     required this.line,
+    required this.warn,
+    required this.warnInk,
   });
 
   /// 窗口 / 页面底
@@ -81,6 +83,10 @@ class OneRayTokens {
   /// 只给「断开 / 取消」按钮描边
   final Color line;
 
+  /// 测速「有波动」的小圆点 / 那个词（浅色底上要够深）。Windows Theme.warn / warnInk。
+  final Color warn;
+  final Color warnInk;
+
   /// 运营商 LOGO、二维码底下垫的白块：深色模式里也是白。
   static const paper = Color(0xFFFFFFFF);
 
@@ -106,6 +112,8 @@ class OneRayTokens {
     faultSoft: Color(0xFFFBE7E2),
     scrim: Color(0x4713202E),
     line: Color(0xFFC3CEDA),
+    warn: Color(0xFFC98A16),
+    warnInk: Color(0xFF8A5D0B),
   );
 
   static const dark = OneRayTokens._(
@@ -127,6 +135,8 @@ class OneRayTokens {
     faultSoft: Color(0x24FF8E7E),
     scrim: Color(0x8C050C14),
     line: Color(0xFF3A5370),
+    warn: Color(0xFFE5B04A),
+    warnInk: Color(0xFFE5B04A),
   );
 
   static OneRayTokens of(BuildContext context) =>
