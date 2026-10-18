@@ -237,29 +237,16 @@ class _ScopePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final c = Offset(size.width / 2, size.height / 2);
-    final ring = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = tk.ring;
-    // 浅色：雷达后面一块若隐若现的圆角淡卡（左上淡蓝 → 右下淡橙），深色不画。
-    if (identical(tk, OneRayTokens.light)) {
-      final card = Offset.zero & size;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(card, Radius.circular(56 * k)),
-        Paint()
-          ..shader = const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: OneRayTokens.radarCard)
-              .createShader(card),
-      );
+    // 雷达后面一块若隐若现的圆角淡卡（左上冷 → 右下暖）。
+    final card = Offset.zero & size;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(card, Radius.circular(56 * k)),
+      Paint()..shader = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: tk.radarCard).createShader(card),
+    );
+    // 快 / 中 / 慢三圈不画线、不画十字：三块越往里越深的极淡强调色（10-18 雷达方案④，线条显廉价）。
+    for (final (r, a) in [(190.0, .025), (130.0, .035), (70.0, .05)]) {
+      canvas.drawCircle(c, r * k, Paint()..color = tk.acc.withValues(alpha: identical(tk, OneRayTokens.dark) ? a * 0.7 : a));
     }
-    canvas.drawCircle(c, 190 * k, Paint()..color = tk.scope);
-    for (final r in [190.0, 130.0, 70.0]) {
-      canvas.drawCircle(c, r * k, ring);
-    }
-    final axis = Paint()
-      ..strokeWidth = 1
-      ..color = tk.ring.withValues(alpha: .6);
-    canvas.drawLine(Offset(c.dx - 190 * k, c.dy), Offset(c.dx + 190 * k, c.dy), axis);
-    canvas.drawLine(Offset(c.dx, c.dy - 190 * k), Offset(c.dx, c.dy + 190 * k), axis);
 
     if (state == RadarState.connecting) {
       // 外圈五段，走到第几步亮到第几段。

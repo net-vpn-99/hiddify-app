@@ -8,7 +8,6 @@ import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 class OneRayTokens {
   const OneRayTokens._({
     required this.bg,
-    required this.scope,
     required this.card,
     required this.panel,
     required this.sheet,
@@ -28,13 +27,11 @@ class OneRayTokens {
     required this.line,
     required this.warn,
     required this.warnInk,
+    required this.radarCard,
   });
 
   /// 窗口 / 页面底
   final Color bg;
-
-  /// 雷达屏底
-  final Color scope;
 
   /// 卡片、底部面板
   final Color card;
@@ -57,7 +54,7 @@ class OneRayTokens {
   /// 占位、不可用
   final Color dim;
 
-  /// 强调色：主按钮、选中、链接、「精品」标签、未读圆点（浅色 10-18 换珊瑚橙，正常 / 成功改用 [ok]）
+  /// 强调色：主按钮、选中、链接、「精品」标签、未读圆点（10-18 深浅都换珊瑚橙，正常 / 成功改用 [ok]）
   final Color acc;
 
   /// 强调色按钮按下 / 悬停
@@ -69,7 +66,7 @@ class OneRayTokens {
   /// 强调色实心上的字
   final Color accInk;
 
-  /// 已连接 / 正常 / 成功（浅色绿；深色沿用薄荷）。Windows Theme.ok。
+  /// 已连接 / 正常 / 成功。Windows Theme.ok。
   final Color ok;
 
   /// 雷达上没选中的光点
@@ -91,8 +88,8 @@ class OneRayTokens {
   final Color warn;
   final Color warnInk;
 
-  /// 浅色雷达后面那块淡卡：左上淡蓝 → 中间白 → 右下淡橙（深色不画）。Windows Theme.radarCard*。
-  static const radarCard = [Color(0xFFEEF2FF), Color(0xFFFFFFFF), Color(0xFFFFF1EC)];
+  /// 雷达后面那块圆角淡卡（左上 → 中 → 右下渐变）。Windows Theme.radarCard*。
+  final List<Color> radarCard;
 
   /// 运营商 LOGO、二维码底下垫的白块：深色模式里也是白。
   static const paper = Color(0xFFFFFFFF);
@@ -102,7 +99,6 @@ class OneRayTokens {
 
   static const light = OneRayTokens._(
     bg: Color(0xFFF5F6FA),
-    scope: Color(0x00000000),
     card: Color(0xFFFFFFFF),
     panel: Color(0xFFF5F6FA),
     sheet: Color(0xFFFFFFFF),
@@ -122,30 +118,32 @@ class OneRayTokens {
     line: Color(0xFFD6D9E6),
     warn: Color(0xFFC98A16),
     warnInk: Color(0xFF8A5D0B),
+    radarCard: [Color(0xFFEEF2FF), Color(0xFFFFFFFF), Color(0xFFFFF1EC)],
   );
 
+  // 深色 10-18 换 D1「藏蓝 + 珊瑚」：跟浅色同一套规矩（橙只管按钮和选中，ok 绿、fault 红）。
   static const dark = OneRayTokens._(
-    bg: Color(0xFF0E1B2B),
-    scope: Color(0xFF112235),
-    card: Color(0xFF142538),
-    panel: Color(0xFF1A2E44),
-    sheet: Color(0xFF132436),
-    ring: Color(0xFF23384F),
-    text: Color(0xFFE9EEF2),
-    sub: Color(0xFF8EA0B3),
-    dim: Color(0xFF5E738A),
-    acc: Color(0xFF74E0C1),
-    accHover: Color(0xFF8FE8CE),
-    accSoft: Color(0x1F74E0C1),
-    accInk: Color(0xFF0E1B2B),
-    ok: Color(0xFF74E0C1),
-    blip: Color(0xFF3E8F82),
-    fault: Color(0xFFFF8E7E),
-    faultSoft: Color(0x24FF8E7E),
-    scrim: Color(0x8C050C14),
-    line: Color(0xFF3A5370),
+    bg: Color(0xFF0F1626),
+    card: Color(0xFF18213A),
+    panel: Color(0xFF1E2843),
+    sheet: Color(0xFF151D33),
+    ring: Color(0xFF263050),
+    text: Color(0xFFF2F3F8),
+    sub: Color(0xFF8B93AB),
+    dim: Color(0xFF5C6480),
+    acc: Color(0xFFFF6B4A),
+    accHover: Color(0xFFFF8264),
+    accSoft: Color(0xFF1E2843),
+    accInk: Color(0xFFFFFFFF),
+    ok: Color(0xFF3DD68C),
+    blip: Color(0xFFB9654F),
+    fault: Color(0xFFFF5D73),
+    faultSoft: Color(0x24FF5D73),
+    scrim: Color(0x8C05080F),
+    line: Color(0xFF2A3452),
     warn: Color(0xFFE5B04A),
     warnInk: Color(0xFFE5B04A),
+    radarCard: [Color(0xFF16203A), Color(0xFF121A2E), Color(0xFF22181C)],
   );
 
   static OneRayTokens of(BuildContext context) =>

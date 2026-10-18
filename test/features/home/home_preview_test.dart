@@ -49,7 +49,13 @@ Future<void> _fonts() async {
   await cjk.load();
 }
 
-Future<void> _shot(WidgetTester tester, String file, {required RadarState state, required HomeConnectPanel Function(Widget Function(double) radar) panel}) async {
+Future<void> _shot(
+  WidgetTester tester,
+  String file, {
+  required RadarState state,
+  required HomeConnectPanel Function(Widget Function(double) radar) panel,
+  bool dark = false,
+}) async {
   SharedPreferences.setMockInitialValues({'flutter.last_node_name': '日本 东京 03'});
   final prefs = await SharedPreferences.getInstance();
   final key = GlobalKey();
@@ -66,7 +72,9 @@ Future<void> _shot(WidgetTester tester, String file, {required RadarState state,
         key: key,
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
-          theme: AppTheme(AppThemeMode.light, 'Deng').lightTheme(null),
+          theme: dark
+              ? AppTheme(AppThemeMode.dark, 'Deng').darkTheme(null)
+              : AppTheme(AppThemeMode.light, 'Deng').lightTheme(null),
           home: Scaffold(
             body: Padding(
               padding: const EdgeInsets.only(bottom: 24),
@@ -100,6 +108,11 @@ void main() {
       buttonLabel: '开始连接', linkLabel: '换一条线路',
     ));
     await _shot(tester, 'H2-已连接.png', state: RadarState.connected, panel: (radar) => HomeConnectPanel(
+      radar: radar, onTap: () {}, enabled: true, connectedDot: true,
+      kicker: '', title: '东京 03', sub: '48 ms · ↓ 2.4 MB/s · 晚高峰稳',
+      buttonLabel: '断开连接', buttonOutlined: true, showAllLines: true, onAllLines: () {},
+    ));
+    await _shot(tester, 'H4-已连接-深色.png', dark: true, state: RadarState.connected, panel: (radar) => HomeConnectPanel(
       radar: radar, onTap: () {}, enabled: true, connectedDot: true,
       kicker: '', title: '东京 03', sub: '48 ms · ↓ 2.4 MB/s · 晚高峰稳',
       buttonLabel: '断开连接', buttonOutlined: true, showAllLines: true, onAllLines: () {},

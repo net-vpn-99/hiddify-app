@@ -720,14 +720,8 @@ class HomeConnectPanel extends StatelessWidget {
                     Expanded(
                       child: SizedBox(
                         height: 52,
-                        // 浅色：已连接时「全部线路」是这一屏的主按钮（实心强调色）；深色照旧白卡。
-                        child: identical(tk, OneRayTokens.light)
-                            ? FilledButton(onPressed: onAllLines, child: const Text('全部线路'))
-                            : ElevatedButton(
-                                style: ElevatedButton.styleFrom(backgroundColor: tk.card),
-                                onPressed: onAllLines,
-                                child: const Text('全部线路'),
-                              ),
+                        // 已连接时「全部线路」是这一屏的主按钮（实心强调色）。
+                        child: FilledButton(onPressed: onAllLines, child: const Text('全部线路')),
                       ),
                     ),
                     const SizedBox(width: 10),

@@ -3,16 +3,11 @@ import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
-import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/soft_card.dart';
-import 'package:hiddify/features/connection/model/connection_status.dart';
-import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
-import 'package:hiddify/features/connection/notifier/local_repair.dart';
-import 'package:hiddify/features/diagnostic/diag_tile.dart';
 import 'package:hiddify/features/panel_auth/widget/account_card.dart';
 import 'package:hiddify/features/panel_auth/widget/invite_gate.dart';
 import 'package:hiddify/features/support/notifier/support_chat_notifier.dart';
@@ -35,7 +30,8 @@ enum ConfigOptionSection {
 /// 「我的」页（B 夜航，画布「我的」；跟 Windows「我的」侧栏同样的内容）。
 ///
 /// 从上到下：**账户卡**（我是谁 + 剩多久，点进账号管理；今日高速、设备；一颗「续费 / 升级」）→
-/// **一列入口**（在另一台设备上用 / 邀请返利 / 联系客服 / 常见问题 / 连接诊断 / 初始化本地网络 / 设置）→
+/// **两组入口**（在另一台设备上用 / 邀请返利 / 联系客服 ｜ 帮助与诊断 / 设置；「帮助与诊断」里是常见问题、连接诊断、
+/// 初始化本地网络）→
 /// **最下面一行小字**（版本号 · 官网 · 备用入口，点版本号进「关于」检查更新）。
 ///
 /// 不在这里的：常用网站、TG 频道在首页。「应用设置」（内存上限 / 日志级别 / 调试模式…）和
@@ -63,10 +59,9 @@ class SettingsPage extends HookConsumerWidget {
           const AccountCard(),
           MenuGroup(
             children: [
-              if (loggedIn) MenuRow(title: '在另一台设备上用', hint: '配对码', onTap: () => context.pushNamed('addDevice')),
+              if (loggedIn) MenuRow(title: '在另一台设备上用', onTap: () => context.pushNamed('addDevice')),
               MenuRow(
                 title: '邀请返利',
-                hint: '好友付款你得返利',
                 // 没账号也照样摆在这儿（首页不拦人那套），点了才说要先有账号。
                 onTap: () => loggedIn
                     ? openInvite(context)
@@ -75,16 +70,13 @@ class SettingsPage extends HookConsumerWidget {
                       ),
               ),
               MenuRow(title: '联系客服', dot: unseen > 0, onTap: () => context.pushNamed('supportChat')),
-              MenuRow(
-                title: '常见问题',
-                onTap: () async {
-                  await RemoteSiteConfig.ensureLoaded();
-                  await UriUtils.tryLaunch(Uri.parse(RemoteSiteConfig.helpUrlOr(Constants.faqUrl)));
-                },
-              ),
-              DiagTile(builder: (context, busy, run) => MenuRow(title: '连接诊断', busy: busy, onTap: run)),
-              const _LocalInitRow(),
-              MenuRow(title: '设置', hint: '外观', onTap: () => context.pushNamed('appSettings')),
+            ],
+          ),
+          // 遇到问题的三样（常见问题 / 连接诊断 / 初始化本地网络）收进「帮助与诊断」一页（10-18 我的页减法，方案 B）。
+          MenuGroup(
+            children: [
+              MenuRow(title: '帮助与诊断', hint: '常见问题 · 诊断 · 修网络', onTap: () => context.pushNamed('helpCenter')),
+              MenuRow(title: '设置', onTap: () => context.pushNamed('appSettings')),
             ],
           ),
           const _FootLinks(),
@@ -132,7 +124,7 @@ class MenuGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final tk = OneRayTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       child: SoftCard(
         child: Column(
           children: [
@@ -228,44 +220,6 @@ class _FootLinks extends ConsumerWidget {
         dot,
         link('备用入口', () => UriUtils.tryLaunch(Uri.parse(Constants.statusPageUrl))),
       ],
-    );
-  }
-}
-
-/// 「初始化本地网络」（两端同名，Windows 在「更多」里）：一直在，他自己找过来点的不会误会。
-/// 做什么见 local_repair.dart；不弹确认框，做完一句话说做了哪几步。
-class _LocalInitRow extends ConsumerStatefulWidget {
-  const _LocalInitRow();
-
-  @override
-  ConsumerState<_LocalInitRow> createState() => _LocalInitRowState();
-}
-
-class _LocalInitRowState extends ConsumerState<_LocalInitRow> {
-  bool _busy = false;
-
-  Future<void> _run() async {
-    final s = ref.read(connectionNotifierProvider).valueOrNull;
-    final wasUp = s is Connected || s is Connecting;
-    setState(() => _busy = true);
-    final done = await ref.read(localRepairProvider).initialize();
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (done.isEmpty) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      SnackBar(content: Text('已$done${wasUp ? '，正在重新连接' : ''}')),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MenuRow(
-      title: '初始化本地网络',
-      hint: '网页打不开时用',
-      busy: _busy,
-      onTap: _run,
     );
   }
 }

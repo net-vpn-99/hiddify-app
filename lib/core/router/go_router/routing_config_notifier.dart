@@ -23,6 +23,7 @@ import 'package:hiddify/features/profile/overview/profiles_page.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_page.dart';
 import 'package:hiddify/features/purchase/widget/purchase_page.dart';
 import 'package:hiddify/features/settings/overview/app_settings_page.dart';
+import 'package:hiddify/features/settings/overview/help_center_page.dart';
 import 'package:hiddify/features/settings/overview/sections/dns_options_page.dart';
 import 'package:hiddify/features/settings/overview/sections/general_page.dart';
 import 'package:hiddify/features/settings/overview/sections/inbound_options_page.dart';
@@ -183,6 +184,12 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                       path: '/general',
                       pageBuilder: (_, state) =>
                           customTransition(TransitionType.slide, state.pageKey, const GeneralPage()),
+                    ),
+                    GoRoute(
+                      name: 'helpCenter',
+                      path: '/help-center',
+                      pageBuilder: (_, state) =>
+                          customTransition(TransitionType.slide, state.pageKey, const HelpCenterPage()),
                     ),
                     GoRoute(
                       name: 'appSettings',
