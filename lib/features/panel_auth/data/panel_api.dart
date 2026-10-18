@@ -16,6 +16,18 @@ import 'package:hiddify/features/proxy/model/node_display.dart';
 /// 游客试用的服务端开关与文案（GslGuest 插件下发，改了不用发版）。
 typedef GuestOptions = ({bool enabled, String suffix, String? bindBonusText, bool canBuy, bool selfPassword});
 
+/// 邀请页要的服务端文案和规则（见 [PanelApi.getInviteTexts]）。
+typedef InviteTexts = ({
+  String? bonus,
+  String? share,
+  String? linkTemplate,
+  String? paidBonus,
+  String? goalText,
+  int? goal,
+  int? paidMinYuan,
+  int? rate,
+});
+
 /// 对接 Xboard 会员系统。接口与桌面版 OneRay 保持一致
 /// （见 VPN 仓库 src/control/XboardControlPlane.cpp）。
 class PanelApi {
@@ -786,9 +798,10 @@ class PanelApi {
   }
 
   /// 拉服务器下发的邀请文案（GslInviteBonus 插件，走 guest/comm/config，免登录）。
-  /// 改文案不用发客户端版本。`bonus` = 奖励额度（如「2 天 2G」），`share` = 分享文案
-  /// 模板（含 {bonus} / {link} 占位符）。拿不到对应项为 null。
-  Future<({String? bonus, String? share, String? linkTemplate})> getInviteTexts() async {
+  /// 改文案不用发客户端版本。`bonus` = 奖励额度（如「3 天会员时长」），`share` = 分享文案
+  /// 模板（含 {bonus} / {link} 占位符）。1.53.0 起还有：好友第一次付款满 `paidMinYuan` 送
+  /// 邀请人 `paidBonus`，每满 `goal` 位再送 `goalText`，返利比例 `rate`。拿不到对应项为 null。
+  Future<InviteTexts> getInviteTexts() async {
     try {
       final data = await CommConfig.get();
       final gsl = data['gsl_invite'];
@@ -798,9 +811,24 @@ class PanelApi {
         return (raw is String && raw.trim().isNotEmpty) ? raw.trim() : null;
       }
 
-      return (bonus: pick('bonus_text'), share: pick('share_text'), linkTemplate: pick('invite_link_template'));
+      int? count(String k) {
+        final raw = obj != null ? obj[k] : null;
+        final v = raw is num ? raw.toInt() : int.tryParse('${raw ?? ''}');
+        return (v != null && v > 0) ? v : null;
+      }
+
+      return (
+        bonus: pick('bonus_text'),
+        share: pick('share_text'),
+        linkTemplate: pick('invite_link_template'),
+        paidBonus: pick('paid_bonus_text'),
+        goalText: pick('goal_text'),
+        goal: count('goal'),
+        paidMinYuan: count('paid_min_yuan'),
+        rate: count('rate'),
+      );
     } catch (_) {
-      return (bonus: null, share: null, linkTemplate: null);
+      return (bonus: null, share: null, linkTemplate: null, paidBonus: null, goalText: null, goal: null, paidMinYuan: null, rate: null);
     }
   }
 
@@ -813,8 +841,8 @@ class PanelApi {
     return '$base/?c=$code';
   }
 
-  /// 「我邀请的人」列表（邮箱打码）。需要登录令牌。
-  Future<({List<InviteReferral> items, int total})> getReferrals(String token, {int page = 1}) async {
+  /// 「我邀请的人」列表（邮箱打码）。需要登录令牌。`paidCount` = 算进「每满 N 位送」的付费好友数。
+  Future<({List<InviteReferral> items, int total, int paidCount})> getReferrals(String token, {int page = 1}) async {
     Response<dynamic> res;
     try {
       res = await _dio.get<dynamic>(
@@ -835,7 +863,8 @@ class PanelApi {
         .map((m) => InviteReferral.fromJson(m.cast<String, dynamic>()))
         .toList();
     final total = (body is Map && body['total'] is num) ? (body['total'] as num).toInt() : items.length;
-    return (items: items, total: total);
+    final paidCount = (body is Map && body['paid_count'] is num) ? (body['paid_count'] as num).toInt() : 0;
+    return (items: items, total: total, paidCount: paidCount);
   }
 
   /// 设备闸：连接前 / 连接中 claim 一次稳定设备 ID（见 VPN 仓库

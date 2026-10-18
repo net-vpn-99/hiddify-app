@@ -6,6 +6,7 @@ class InviteReferral {
     required this.createdAt,
     required this.paid,
     required this.commissionCents,
+    this.status = '',
   });
 
   final String emailMask;
@@ -19,6 +20,10 @@ class InviteReferral {
   /// 你从这个人身上拿到的返利，单位「分」。
   final int commissionCents;
 
+  /// 走到哪一步：registered / connected / connected_capped / paid / expired /
+  /// same_device / old_device / same_network（不算邀请的原因）。老服务端没有 = 空串。
+  final String status;
+
   double get commissionYuan => commissionCents / 100;
 
   factory InviteReferral.fromJson(Map<String, dynamic> j) {
@@ -28,6 +33,7 @@ class InviteReferral {
       createdAt: n(j['created_at']).toInt(),
       paid: j['paid'] == true,
       commissionCents: n(j['commission']).toInt(),
+      status: (j['status'] as String?)?.trim() ?? '',
     );
   }
 }

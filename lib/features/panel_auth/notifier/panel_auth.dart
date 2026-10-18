@@ -134,8 +134,7 @@ final guestOptionsProvider = FutureProvider<GuestOptions>((ref) => PanelApi().ge
 /// （套餐不走这儿：Xboard 自带免登录的 `guest/plan/fetch`，见 PurchaseService。）
 final publicNodesProvider = FutureProvider<List<String>>((ref) => PanelApi().getPublicNodes());
 
-final inviteTextsProvider =
-    FutureProvider.autoDispose<({String? bonus, String? share, String? linkTemplate})>((ref) => PanelApi().getInviteTexts());
+final inviteTextsProvider = FutureProvider.autoDispose<InviteTexts>((ref) => PanelApi().getInviteTexts());
 
 class PanelAuthNotifier extends Notifier<PanelAuthState> {
   final PanelApi _api = PanelApi();
@@ -515,7 +514,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
   }
 
   /// 「我邀请的人」列表。未登录 / 失败返回 null。
-  Future<({List<InviteReferral> items, int total})?> getReferrals({int page = 1}) async {
+  Future<({List<InviteReferral> items, int total, int paidCount})?> getReferrals({int page = 1}) async {
     final token = await currentToken();
     if (token == null || token.isEmpty) return null;
     try {
