@@ -71,9 +71,6 @@ jobs:
       - name: Patch core rule-set URLs (国内名单换成自己的)
         run: python3 tool/patch_core_rules.py android/app/libs/hiddify-core.aar
 
-      - name: Regenerate brand launcher icons (OneRay / 光速)
-        run: node tool/gen_icons.js
-
       - name: Resolve version from pubspec
         id: ver
         run: |

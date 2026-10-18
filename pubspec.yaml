@@ -160,10 +160,13 @@ flutter:
   assets:
     # - assets/core/geoip.db
     # - assets/core/geosite.db
-    - assets/images/logo.svg
-    # 品牌标（金底 + 雷达指针，和官网 favicon 同一份），顶栏和「关于」页用。
-    # logo.svg 是无底色的纯图形，连接按钮要把它整体染色，两份不能混用。
+    # LOGO 原件在 VPN 仓库 brand/dial-coral（10-18 定稿），这里是拷过来的：
+    # brand_mark = 主图标（珊瑚底 + 白图形），32 像素及以下用 _small；
+    # mark_on_dark / light_small = 透明底小标志（深色白图形、浅色黑图形，珊瑚点），顶栏用。
     - assets/images/brand_mark.svg
+    - assets/images/brand_mark_small.svg
+    - assets/images/mark_on_dark_small.svg
+    - assets/images/mark_on_light_small.svg
     - assets/images/tray_icon.ico
     - assets/images/tray_icon.png
     - assets/images/tray_icon_dark.ico
@@ -200,13 +203,8 @@ flutter_gen:
   integrations:
     flutter_svg: true
 
-flutter_native_splash:
-  color: "#242520"
-  image: assets/images/source/ic_launcher_splash.png
-  android_gravity: center
-  android_12:
-    color: "#242520"
-    image: assets/images/source/ic_launcher_foreground.png
+# 启动画面不再用 flutter_native_splash 出：图在 VPN 仓库 tools/brand/dial-coral 出好（android12splash.png，
+# 安卓 12 以下的 launch_background 也用它），底色写在 res/values*-v31/styles.xml 和 drawable/background.png。
 
 ffigen:
   name: "HiddifyCoreNativeLibrary"

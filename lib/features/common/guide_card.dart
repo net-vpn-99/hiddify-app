@@ -20,7 +20,7 @@ class GuideLink {
 /// 引导卡 / 公告后面的浅底：像邮件的底色，盖住首页但不压暗。
 Color guideCanvasColor(BuildContext context) => OneRayTokens.of(context).bg.withValues(alpha: 0.94);
 
-/// 卡片外面左上角「是谁在说话」：金底雷达标 + 光速雷达（首页顶栏同一个标）。
+/// 卡片外面左上角「是谁在说话」：主图标（小尺寸版）+ 光速雷达。
 class GuideBrandRow extends StatelessWidget {
   const GuideBrandRow({super.key});
 
@@ -31,7 +31,7 @@ class GuideBrandRow extends StatelessWidget {
       padding: const EdgeInsets.only(left: 6, bottom: 10),
       child: Row(
         children: [
-          Assets.images.brandMark.svg(width: 18, height: 18),
+          Assets.images.brandMarkSmall.svg(width: 18, height: 18),
           const SizedBox(width: 7),
           Text('光速雷达', style: TextStyle(color: t.text, fontSize: 13, fontWeight: FontWeight.w600)),
         ],

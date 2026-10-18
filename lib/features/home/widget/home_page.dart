@@ -189,25 +189,12 @@ class HomePage extends HookConsumerWidget {
       appBar: AppBar(
         backgroundColor: tk.bg,
         titleSpacing: 20,
-        // 标志：深色是薄荷底 + 深色图案，浅色是深色底 + 白图案（跟 Windows 同一个）。
+        // 标志：透明底小标志，深色白图形、浅色黑图形，光点都是珊瑚色（跟 Windows 同一个）。
         title: Row(
           children: [
-            Container(
-              width: 28,
-              height: 28,
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: theme.brightness == Brightness.dark ? tk.acc : tk.text,
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: Assets.images.logo.svg(
-                colorFilter: ColorFilter.mode(
-                  theme.brightness == Brightness.dark ? tk.bg : OneRayTokens.paper,
-                  BlendMode.srcIn,
-                ),
-              ),
-            ),
-            const Gap(10),
+            (theme.brightness == Brightness.dark ? Assets.images.markOnDarkSmall : Assets.images.markOnLightSmall)
+                .svg(width: 28, height: 28),
+            const Gap(8),
             Text(t.common.appTitle, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
           ],
         ),
