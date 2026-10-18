@@ -140,7 +140,6 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     _LineRow row(
       LineOption o, {
       bool isCurrent = false,
-      bool showFit = false,
       bool showKind = false,
       String tierTag = '',
       Key? key,
@@ -157,7 +156,6 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
         connected: connected,
         pro: isPro(o),
         showKind: showKind,
-        showFit: showFit,
         isp: isp,
         tierTag: tierTag,
         recommended: !preview && pickedName.isEmpty && o.name == firstName,
@@ -233,18 +231,17 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     } else if (_stdPage) {
       // ===== 标准线路那一页 =====
       final std = ispFitFirst(all.where((o) => !isPro(o)).toList(), isp);
-      final stdAllFit = _allFit(std, isp);
       children.add(Padding(
         padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
         child: Text(
           '大部分时间流畅，晚高峰可能变慢。晚上追剧、用 AI 建议用精品线路。'
-          '${!stdAllFit && isp.isNotEmpty && std.any((o) => lineFitsIsp(o, isp)) ? '\n标着「适合$isp」的适合你的宽带，同一个国家里排在前面。' : ''}',
+          '${isp.isNotEmpty && std.any((o) => lineFitsIsp(o, isp)) ? '\n标着「适合$isp」的适合你的宽带，同一个国家里排在前面。' : ''}',
           style: TextStyle(fontSize: 12, height: 1.4, color: tokens.sub),
         ),
       ));
       for (final o in std) {
         final cur = current != null && o.name == current.name;
-        children.add(row(o, isCurrent: cur, showFit: !stdAllFit, key: cur ? _currentKey : null));
+        children.add(row(o, isCurrent: cur, key: cur ? _currentKey : null));
       }
       if (current != null && !isPro(current)) _revealCurrent();
       final proCount = all.where(isPro).length;
@@ -290,28 +287,24 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
       }
       final others = all.where((o) => current == null || o.name != current.name).toList();
       if (!tiered) {
-        final flatAllFit = _allFit(all, isp);
         for (final o in ispFitFirst(others, isp)) {
-          children.add(row(o, showFit: !flatAllFit));
+          children.add(row(o));
         }
       } else {
         final proAll = all.where(isPro).toList();
         final proOthers = ispFitFirst(others.where(isPro).toList(), isp);
         if (proAll.isNotEmpty && !proLocked) {
-          final proAllFit = _allFit(proAll, isp);
           children.add(_ProHeader(
             tokens: tokens,
             onUpgrade: tiers.trial == 'active' ? () => _upgrade(context, 'pro') : null,
             hint: tiers.trial == 'active'
                 ? '体验中 · 还剩 ${(tiers.seconds / 60).ceil().clamp(1, 9999)} 分钟'
-                : proAllFit
-                    ? '都适合$isp'
-                    : '晚高峰也不卡',
+                : '晚高峰也不卡',
             hintAcc: tiers.trial == 'active',
             account: account,
           ));
           for (final o in proOthers) {
-            children.add(row(o, showFit: !proAllFit));
+            children.add(row(o));
           }
         } else if (proAll.isNotEmpty) {
           children.add(_LockedProCard(
@@ -491,9 +484,6 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
   }
 }
 
-bool _allFit(List<LineOption> lines, String isp) =>
-    isp.isNotEmpty && lines.isNotEmpty && lines.every((o) => lineFitsIsp(o, isp));
-
 List<String> _countries(List<LineOption> lines) {
   final out = <String>[];
   for (final o in lines) {
@@ -578,7 +568,6 @@ class _LineRow extends StatelessWidget {
     required this.connected,
     required this.pro,
     required this.showKind,
-    required this.showFit,
     required this.isp,
     required this.tierTag,
     required this.recommended,
@@ -597,7 +586,6 @@ class _LineRow extends StatelessWidget {
 
   /// 「正在用」那块第二行最前面写是精品还是标准。
   final bool showKind;
-  final bool showFit;
   final String isp;
   final String tierTag;
   final bool recommended;
@@ -619,7 +607,8 @@ class _LineRow extends StatelessWidget {
                 ? ('推荐', 0)
                 : tierTag.isNotEmpty
                     ? (tierTag, tierTag == '精品' ? 2 : 0)
-                    : (showFit && lineFitsIsp(option, isp))
+                    // 适合自己宽带的每一条都标，精品、标准一样（10-18 运营定，两端统一：以前一组全适合就只在标题写一次，看着像漏了）。
+                    : lineFitsIsp(option, isp)
                         ? ('适合$isp', 1)
                         : null;
     final sub = TextStyle(fontSize: 12, color: tokens.sub);
