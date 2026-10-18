@@ -712,7 +712,7 @@ class _LineRow extends StatelessWidget {
   }
 
   Color _speedDot(int level) => switch (level) {
-        1 => tokens.acc,
+        1 => tokens.ok,
         2 => tokens.warn,
         3 => tokens.dim,
         4 => tokens.fault,
@@ -720,7 +720,7 @@ class _LineRow extends StatelessWidget {
       };
 
   Color _speedInk(int level) => switch (level) {
-        1 => tokens.acc,
+        1 => tokens.ok,
         2 => tokens.warnInk,
         4 => tokens.fault,
         _ => tokens.sub,

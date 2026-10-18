@@ -20,6 +20,7 @@ class OneRayTokens {
     required this.accHover,
     required this.accSoft,
     required this.accInk,
+    required this.ok,
     required this.blip,
     required this.fault,
     required this.faultSoft,
@@ -56,7 +57,7 @@ class OneRayTokens {
   /// 占位、不可用
   final Color dim;
 
-  /// 唯一强调色：主按钮、选中、链接、「精品」标签、未读圆点
+  /// 强调色：主按钮、选中、链接、「精品」标签、未读圆点（浅色 10-18 换珊瑚橙，正常 / 成功改用 [ok]）
   final Color acc;
 
   /// 强调色按钮按下 / 悬停
@@ -67,6 +68,9 @@ class OneRayTokens {
 
   /// 强调色实心上的字
   final Color accInk;
+
+  /// 已连接 / 正常 / 成功（浅色绿；深色沿用薄荷）。Windows Theme.ok。
+  final Color ok;
 
   /// 雷达上没选中的光点
   final Color blip;
@@ -87,6 +91,9 @@ class OneRayTokens {
   final Color warn;
   final Color warnInk;
 
+  /// 浅色雷达后面那块淡卡：左上淡蓝 → 中间白 → 右下淡橙（深色不画）。Windows Theme.radarCard*。
+  static const radarCard = [Color(0xFFEEF2FF), Color(0xFFFFFFFF), Color(0xFFFFF1EC)];
+
   /// 运营商 LOGO、二维码底下垫的白块：深色模式里也是白。
   static const paper = Color(0xFFFFFFFF);
 
@@ -94,24 +101,25 @@ class OneRayTokens {
   static const numberFont = 'Saira';
 
   static const light = OneRayTokens._(
-    bg: Color(0xFFEEF3F7),
-    scope: Color(0xFFFFFFFF),
+    bg: Color(0xFFF5F6FA),
+    scope: Color(0x00000000),
     card: Color(0xFFFFFFFF),
-    panel: Color(0xFFEEF3F7),
+    panel: Color(0xFFF5F6FA),
     sheet: Color(0xFFFFFFFF),
-    ring: Color(0xFFD3DCE6),
-    text: Color(0xFF13202E),
-    sub: Color(0xFF5A6B7D),
-    dim: Color(0xFF8C9BAB),
-    acc: Color(0xFF0B8F7A),
-    accHover: Color(0xFF097A68),
-    accSoft: Color(0xFFE3F4F0),
+    ring: Color(0xFFE3E5EE),
+    text: Color(0xFF191C2E),
+    sub: Color(0xFF646A84),
+    dim: Color(0xFFA0A5B8),
+    acc: Color(0xFFFF5A36),
+    accHover: Color(0xFFE84A28),
+    accSoft: Color(0xFFEEF0F5),
     accInk: Color(0xFFFFFFFF),
-    blip: Color(0xFF79B8AC),
-    fault: Color(0xFFC2412D),
-    faultSoft: Color(0xFFFBE7E2),
-    scrim: Color(0x4713202E),
-    line: Color(0xFFC3CEDA),
+    ok: Color(0xFF16A86A),
+    blip: Color(0xFFFFB59F),
+    fault: Color(0xFFE0393E),
+    faultSoft: Color(0xFFFDECEC),
+    scrim: Color(0x47191C2E),
+    line: Color(0xFFD6D9E6),
     warn: Color(0xFFC98A16),
     warnInk: Color(0xFF8A5D0B),
   );
@@ -130,6 +138,7 @@ class OneRayTokens {
     accHover: Color(0xFF8FE8CE),
     accSoft: Color(0x1F74E0C1),
     accInk: Color(0xFF0E1B2B),
+    ok: Color(0xFF74E0C1),
     blip: Color(0xFF3E8F82),
     fault: Color(0xFFFF8E7E),
     faultSoft: Color(0x24FF8E7E),

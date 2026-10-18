@@ -373,7 +373,7 @@ Future<void> showUnknownFaultGuide(BuildContext context) {
 Future<void> showNetBlockedGuide(BuildContext context, int tried) {
   final t = OneRayTokens.of(context);
   Widget row(String label, bool ok) {
-    final c = ok ? t.acc : t.fault;
+    final c = ok ? t.ok : t.fault;
     return Row(
       children: [
         Text('你的手机', style: TextStyle(color: t.text, fontSize: 12)),

@@ -241,6 +241,16 @@ class _ScopePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
       ..color = tk.ring;
+    // 浅色：雷达后面一块若隐若现的圆角淡卡（左上淡蓝 → 右下淡橙），深色不画。
+    if (identical(tk, OneRayTokens.light)) {
+      final card = Offset.zero & size;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(card, Radius.circular(56 * k)),
+        Paint()
+          ..shader = const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: OneRayTokens.radarCard)
+              .createShader(card),
+      );
+    }
     canvas.drawCircle(c, 190 * k, Paint()..color = tk.scope);
     for (final r in [190.0, 130.0, 70.0]) {
       canvas.drawCircle(c, r * k, ring);

@@ -656,12 +656,12 @@ class HomeConnectPanel extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     if (connectedDot) ...[
-                      Container(width: 8, height: 8, decoration: BoxDecoration(color: tk.acc, shape: BoxShape.circle)),
+                      Container(width: 8, height: 8, decoration: BoxDecoration(color: tk.ok, shape: BoxShape.circle)),
                       const SizedBox(width: 6),
                     ],
                     Text(
                       connectedDot ? '已连接' : kicker,
-                      style: TextStyle(fontSize: 13, color: connectedDot ? tk.acc : tk.sub),
+                      style: TextStyle(fontSize: 13, color: connectedDot ? tk.ok : tk.sub),
                     ),
                   ],
                 ),
@@ -720,11 +720,14 @@ class HomeConnectPanel extends StatelessWidget {
                     Expanded(
                       child: SizedBox(
                         height: 52,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: tk.card),
-                          onPressed: onAllLines,
-                          child: const Text('全部线路'),
-                        ),
+                        // 浅色：已连接时「全部线路」是这一屏的主按钮（实心强调色）；深色照旧白卡。
+                        child: identical(tk, OneRayTokens.light)
+                            ? FilledButton(onPressed: onAllLines, child: const Text('全部线路'))
+                            : ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: tk.card),
+                                onPressed: onAllLines,
+                                child: const Text('全部线路'),
+                              ),
                       ),
                     ),
                     const SizedBox(width: 10),

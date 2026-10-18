@@ -477,7 +477,7 @@ class _RegionSheetState extends ConsumerState<_RegionSheet> {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   child: Text(
                     board.banner,
-                    style: TextStyle(fontSize: 12, color: board.bannerOk ? tokens.acc : tokens.fault),
+                    style: TextStyle(fontSize: 12, color: board.bannerOk ? tokens.ok : tokens.fault),
                   ),
                 ),
               ),
