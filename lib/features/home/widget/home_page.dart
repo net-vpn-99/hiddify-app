@@ -252,8 +252,8 @@ class _SpeedLine extends ConsumerWidget {
     if (!connected) return const SizedBox.shrink();
 
     final stats = ref.watch(statsNotifierProvider).valueOrNull ?? SystemInfo.create();
-    final num = TextStyle(fontFamily: OneRayTokens.numberFont, fontSize: 13, color: tk.text);
-    final sub = TextStyle(fontSize: 13, color: tk.sub);
+    final num = TextStyle(fontFamily: OneRayTokens.numberFont, fontSize: 15, fontWeight: FontWeight.w600, color: tk.text);
+    final sub = TextStyle(fontSize: 12, color: tk.sub);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Text.rich(
@@ -345,7 +345,7 @@ class _ActivityCard extends StatelessWidget {
                       ? '到期时间已经往后顺延'
                       : phase == 'pending'
                       ? '在 Telegram 点「加入」后回来，会自动确认'
-                      : '关注后点「领取」，1 天自动到账',
+                      : '关注后点「领取」，自动到账',
                   style: TextStyle(fontSize: 12, color: tk.sub),
                 ),
               ],
@@ -355,8 +355,13 @@ class _ActivityCard extends StatelessWidget {
             SizedBox(
               height: 36,
               child: phase == 'open'
+                  // 卡片里的次要动作用淡底强调色，不跟下面的主按钮抢（Windows PrimaryAction tonal 同一套）。
                   ? FilledButton(
-                      style: FilledButton.styleFrom(minimumSize: const Size(64, 36)),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(64, 36),
+                        backgroundColor: tk.acc.withValues(alpha: 0.12),
+                        foregroundColor: tk.acc,
+                      ),
                       onPressed: onClaim,
                       child: const Text('领取', style: TextStyle(fontSize: 13)),
                     )

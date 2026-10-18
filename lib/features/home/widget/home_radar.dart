@@ -58,8 +58,8 @@ class HomeRadar extends HookConsumerWidget {
       return null;
     }, [connecting]);
 
-    final blips = _blips(lines, grades, current);
     final k = size / 400;
+    final blips = _blips(lines, grades, current, k);
     _Blip? cur;
     for (final b in blips) {
       if (b.current) cur = b;
@@ -91,6 +91,14 @@ class HomeRadar extends HookConsumerWidget {
                   ),
                 ),
               ),
+            // 「快 / 中 / 慢」写在三块色块正下方，光点的名字会让开它们（Windows RadarScope 同一套）。
+            for (final (t, y) in _bandLabels)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: y * k - 8,
+                child: Text(t, textAlign: TextAlign.center, style: TextStyle(fontSize: 10, height: 1.3, color: tk.dim.withValues(alpha: 0.7))),
+              ),
             for (final b in blips)
               _blipWidget(context, tk, b, k, hollow, blink),
           ],
@@ -106,7 +114,7 @@ class HomeRadar extends HookConsumerWidget {
         : b.current
         ? (state == RadarState.failed ? tk.fault : tk.acc)
         : tk.blip;
-    final labelLeft = b.x > 285;
+    final labelLeft = b.labelLeft;
     final label = Text(
       b.line.name,
       style: TextStyle(
@@ -158,7 +166,7 @@ class HomeRadar extends HookConsumerWidget {
     );
   }
 
-  List<_Blip> _blips(List<LineOption> lines, Map<String, SpeedGrade> grades, String current) {
+  List<_Blip> _blips(List<LineOption> lines, Map<String, SpeedGrade> grades, String current, double k) {
     int level(LineOption l) => grades[l.name]?.level ?? 0;
     int score(LineOption l) => level(l) > 0 && level(l) < 4 ? level(l) : 9;
     final picked = <LineOption>[];
@@ -170,31 +178,70 @@ class HomeRadar extends HookConsumerWidget {
     (lines.where((l) => lineFitsIsp(l, isp)).toList()..sort((a, b) => score(a) - score(b))).forEach(take);
     (lines.toList()..sort((a, b) => score(a) - score(b))).forEach(take);
 
-    final placed = <List<double>>[[], [], []];
+    // 一条条摆（正在用的先摆）：在自己那一圈上从固定角度起左右各挪 15° 试，名字放右边或左边；
+    // 光点 + 名字这一块不能跟已经摆好的、中心点、「快 / 中 / 慢」叠上，也不能伸出雷达卡。都不行就放回原位。
+    final pad = 3 / k;
+    final taken = <Rect>[
+      const Rect.fromLTWH(190, 190, 20, 20),
+      for (final (_, y) in _bandLabels) Rect.fromCenter(center: Offset(200, y), width: 16 / k, height: 16 / k),
+    ];
     return [
       for (final l in picked)
         () {
           final lv = level(l);
           final ring = lv == 1 ? 0 : (lv == 2 ? 1 : 2);
-          var deg = _angleOf(l.name);
-          for (var i = 0; i < 24; i++) {
-            if (!placed[ring].any((d) => (((deg - d + 540) % 360) - 180).abs() < 28)) break;
-            deg += 15;
+          final cur = l.name == current;
+          final dot = (cur ? 14.0 : 9.0) / k;
+          final w = dot + (5 + _textWidth(l.name, cur ? 12 : 11)) / k;
+          final h = 18 / k;
+          final base = _angleOf(l.name);
+          (double, double, double, bool, Rect)? best;
+          for (var i = 0; i < 24 && best == null; i++) {
+            final deg = base + (i.isOdd ? -1 : 1) * ((i + 1) ~/ 2) * 15.0;
+            final a = deg * math.pi / 180;
+            final x = 200 + math.cos(a) * _ringRadius[ring];
+            final y = 200 + math.sin(a) * _ringRadius[ring];
+            for (final left in x > 285 ? [true, false] : [false, true]) {
+              final box = Rect.fromLTWH(left ? x + dot / 2 - w : x - dot / 2, y - h / 2, w, h);
+              if (box.left >= 4 && box.right <= 396 && !taken.any((t) => t.overlaps(box.inflate(pad)))) {
+                best = (deg, x, y, left, box);
+                break;
+              }
+            }
           }
-          placed[ring].add(deg);
-          final a = deg * math.pi / 180;
+          if (best == null) {
+            final a = base * math.pi / 180;
+            final x = 200 + math.cos(a) * _ringRadius[ring];
+            final y = 200 + math.sin(a) * _ringRadius[ring];
+            best = (base, x, y, x > 285, Rect.fromLTWH(x - dot / 2, y - h / 2, w, h));
+          }
+          final (deg, x, y, left, box) = best;
+          taken.add(box);
+          // 正在用的那条：中心到它的光束也算占地，别的名字别压在光束上。
+          if (cur) {
+            for (var t = 0.15; t < 1; t += 0.12) {
+              taken.add(Rect.fromCenter(center: Offset(200 + (x - 200) * t, 200 + (y - 200) * t), width: 8, height: 8));
+            }
+          }
           return _Blip(
             line: l,
-            current: l.name == current,
+            current: cur,
             measured: lv > 0,
             available: lv != 4,
             deg: deg,
-            x: 200 + math.cos(a) * _ringRadius[ring],
-            y: 200 + math.sin(a) * _ringRadius[ring],
+            x: x,
+            y: y,
+            labelLeft: left,
           );
         }(),
     ];
   }
+
+  static const _bandLabels = [('快', 235.0), ('中', 300.0), ('慢', 358.0)];
+
+  // 估一段字的宽度（像素）：汉字算一个字号宽，其余算 0.56 个。只用来避让，不求准。
+  static double _textWidth(String s, double px) =>
+      s.runes.fold(0.0, (w, r) => w + (r > 0x2e80 ? px : px * 0.56));
 
   static double _angleOf(String id) {
     var h = 7;
@@ -214,6 +261,7 @@ class _Blip {
     required this.deg,
     required this.x,
     required this.y,
+    required this.labelLeft,
   });
 
   final LineOption line;
@@ -223,6 +271,7 @@ class _Blip {
   final double deg;
   final double x;
   final double y;
+  final bool labelLeft;
 }
 
 class _ScopePainter extends CustomPainter {
@@ -245,7 +294,7 @@ class _ScopePainter extends CustomPainter {
     );
     // 快 / 中 / 慢三圈不画线、不画十字：三块越往里越深的极淡强调色（10-18 雷达方案④，线条显廉价）。
     for (final (r, a) in [(190.0, .025), (130.0, .035), (70.0, .05)]) {
-      canvas.drawCircle(c, r * k, Paint()..color = tk.acc.withValues(alpha: identical(tk, OneRayTokens.dark) ? a * 0.7 : a));
+      canvas.drawCircle(c, r * k, Paint()..color = tk.acc.withValues(alpha: identical(tk, OneRayTokens.dark) ? a * 0.6 : a));
     }
 
     if (state == RadarState.connecting) {

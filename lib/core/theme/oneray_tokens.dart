@@ -143,7 +143,7 @@ class OneRayTokens {
     line: Color(0xFF2A3452),
     warn: Color(0xFFE5B04A),
     warnInk: Color(0xFFE5B04A),
-    radarCard: [Color(0xFF16203A), Color(0xFF121A2E), Color(0xFF22181C)],
+    radarCard: [Color(0xFF16203A), Color(0xFF121A2E), Color(0xFF1E1A26)],
   );
 
   static OneRayTokens of(BuildContext context) =>

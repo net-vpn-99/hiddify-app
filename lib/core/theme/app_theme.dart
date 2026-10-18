@@ -76,8 +76,9 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: tk.acc,
           foregroundColor: tk.accInk,
-          disabledBackgroundColor: tk.acc.withValues(alpha: 0.48),
-          disabledForegroundColor: tk.accInk,
+          // 不能点：中性灰底 + 淡字（10-18：以前强调色半透明，深色底上发褐，跟 Windows 同一套）。
+          disabledBackgroundColor: tk.panel,
+          disabledForegroundColor: tk.dim,
           minimumSize: const Size(64, 52),
           shape: const StadiumBorder(),
           textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),

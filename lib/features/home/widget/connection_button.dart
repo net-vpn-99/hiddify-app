@@ -661,7 +661,7 @@ class HomeConnectPanel extends StatelessWidget {
                     ],
                     Text(
                       connectedDot ? '已连接' : kicker,
-                      style: TextStyle(fontSize: 13, color: connectedDot ? tk.ok : tk.sub),
+                      style: TextStyle(fontSize: 12, color: connectedDot ? tk.ok : tk.sub),
                     ),
                   ],
                 ),
@@ -677,7 +677,13 @@ class HomeConnectPanel extends StatelessWidget {
                     textAlign: TextAlign.center,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: title.length > 10 ? 20 : 26, fontWeight: FontWeight.w700, color: tk.text),
+                    // 字号层级（10-18，跟 Windows 一样）：标题大一号，下面小字小一号、淡一档。
+                    style: TextStyle(
+                      fontSize: title.length > 10 ? 22 : 30,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
+                      color: tk.text,
+                    ),
                   ),
                 ),
               ),
@@ -689,7 +695,7 @@ class HomeConnectPanel extends StatelessWidget {
                     textAlign: TextAlign.center,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, height: 1.5, color: tk.sub),
+                    style: TextStyle(fontSize: 12, height: 1.5, color: tk.sub),
                   ),
                 ),
               if (steps != null) Padding(padding: const EdgeInsets.only(top: 8), child: steps),
