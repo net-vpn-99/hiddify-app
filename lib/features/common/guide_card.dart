@@ -246,6 +246,41 @@ class GuideCard extends StatelessWidget {
   }
 }
 
+/// 引导卡里的「1 2 3」步骤图例（Windows 是 qml/overlays/GuideSteps.qml，两边一起改）。
+class GuideSteps extends StatelessWidget {
+  const GuideSteps(this.steps, {super.key});
+
+  final List<String> steps;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = OneRayTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < steps.length; i++)
+          Padding(
+            padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: t.acc, shape: BoxShape.circle),
+                  child: Text('${i + 1}', style: TextStyle(color: t.accInk, fontSize: 11, fontWeight: FontWeight.w600)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(steps[i], style: TextStyle(color: t.text, fontSize: 13, height: 1.45))),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// 弹一张只需要「知道了」的引导卡（底部带「还是不行？联系客服」）。
 Future<void> showGuideCard(
   BuildContext context, {

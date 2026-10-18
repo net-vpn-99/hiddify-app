@@ -5,6 +5,7 @@ import 'package:hiddify/core/model/remote_site_config.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
+import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/common/line_icon.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -316,7 +317,12 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
             onUpgradeStd: () => _upgrade(context, 'std'),
             onClaim: () async {
               final msg = await ref.read(lineTierProvider.notifier).claim();
-              if (!context.mounted || msg == null) return;
+              if (!context.mounted) return;
+              if (msg == null) {
+                // 领到了：只告诉他精品线路在哪、点哪条，不替他换线路（10-19 运营定）。
+                await showProTrialGuide(context, ref.read(lineTierProvider), isp);
+                return;
+              }
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
             },
           ));
@@ -491,6 +497,94 @@ List<String> _countries(List<LineOption> lines) {
     if (!out.contains(c)) out.add(c);
   }
   return out;
+}
+
+/// 领完精品线路体验弹的引导卡：精品线路在哪、点哪条、到时会怎样。
+/// Windows 同款：qml/overlays/HelpGuides.qml 的 proTrialCard，两边一起改。
+Future<void> showProTrialGuide(BuildContext context, LineTierState tiers, String isp) {
+  final t = OneRayTokens.of(context);
+  final span = tiers.minutes == 60 ? '1 小时' : '${tiers.minutes} 分钟';
+  bool fits(ProLine l) => isp.isNotEmpty && (splitNodeName(l.name).isps?.contains(isp) ?? false);
+  // 示意图里画的那条：适合他宽带的第一条精品线路，没有就第一条。
+  final sample = tiers.proLines.where(fits).firstOrNull ?? tiers.proLines.firstOrNull;
+  final sampleName = sample == null ? '' : splitNodeName(sample.name).name;
+  final sampleFits = sample != null && fits(sample);
+  final country = sampleName.isEmpty ? '' : lineCountry(sampleName);
+  return showGuideCard(
+    context,
+    title: '精品线路体验已开始',
+    body: '接下来 $span，精品线路都能用。',
+    showContact: false,
+    illustration: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: t.card,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: t.ring),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text.rich(TextSpan(children: [
+                TextSpan(text: '精品线路', style: TextStyle(color: t.acc, fontSize: 13, fontWeight: FontWeight.w700)),
+                TextSpan(text: '  体验中 · 还剩 ${tiers.minutes} 分钟', style: TextStyle(color: t.acc, fontSize: 11)),
+              ])),
+              if (sampleName.isNotEmpty) ...[
+                const Gap(6),
+                Container(
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: t.accSoft,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: t.acc, width: 2),
+                  ),
+                  child: Row(
+                    children: [
+                      LineFlag(sampleName),
+                      const Gap(8),
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(children: [
+                            TextSpan(text: country, style: TextStyle(fontWeight: FontWeight.w700, color: t.text)),
+                            TextSpan(text: ' · ${_shortName(country, sampleName)}'),
+                          ]),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 13, color: t.text),
+                        ),
+                      ),
+                      if (sampleFits)
+                        Text('适合$isp', style: TextStyle(color: t.acc, fontSize: 11, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ],
+              const Gap(6),
+              // 下面还有别的精品线路（示意）
+              Padding(
+                padding: const EdgeInsets.only(left: 10),
+                child: Container(
+                  width: 120,
+                  height: 8,
+                  decoration: BoxDecoration(color: t.ring, borderRadius: BorderRadius.circular(4)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Gap(12),
+        GuideSteps([
+          '点「知道了」，在「全部线路」里找到「精品线路」这一组',
+          '点一条精品线路，光速雷达就换到这条线路连接${sampleFits ? '。标着「适合$isp」的更适合你的宽带' : ''}',
+          '$span后体验结束，精品线路会断开。到时选一条标准线路，就能接着用',
+        ]),
+      ],
+    ),
+  );
 }
 
 /// 「日本 东京 03」→「东京 03」；「香港 03」去掉地区只剩编号，看不出是哪，留全名。
