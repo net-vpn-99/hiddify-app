@@ -1,14 +1,17 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
+import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/route_check_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:path/path.dart' as p;
 
 /// 「查看分流规则」整页。文案、排版两端一致（VPN 仓库 docs/查看分流规则-说明页-手册.md）：
 /// 一句话 → 国内 / 国外 / 线路 IP 固定 三块 → 实测 → 走错了反馈。
@@ -69,6 +72,8 @@ class _RouteRulesPageState extends ConsumerState<RouteRulesPage> {
         '平台：安卓 $version';
     try {
       final email = ref.read(panelAuthProvider).email ?? '';
+      final boxLog = p.join(ref.read(appDirectoriesProvider).requireValue.workingDir.path, 'box.log');
+      final report = '--- 最近走代理的连接（新的在前，直连的不列）---\n${await proxiedTargets(boxLog)}';
       final dio = PanelApiBase.dio(userAgent: 'OneRay-Android-Feedback');
       await dio.post<dynamic>(
         '/api/v1/guest/gsl_diag/feedback',
@@ -79,6 +84,7 @@ class _RouteRulesPageState extends ConsumerState<RouteRulesPage> {
           'state': (ref.read(connectionNotifierProvider).valueOrNull?.isConnected ?? false) ? 'connected' : 'disconnected',
           'contact': '',
           'email': email,
+          'report_gz': base64.encode(ZLibCodec(level: 9).encode(utf8.encode(report))),
         }),
       );
       if (!mounted) return;
@@ -334,5 +340,35 @@ class _RouteRulesPageState extends ConsumerState<RouteRulesPage> {
         ),
       ),
     );
+  }
+}
+
+/// 「走错了」反馈附带的连接清单：box.log（info 级）尾部 512KB 里出站不是直连 / 拦截的
+/// 「outbound/vless[…]: outbound connection to host:443」，去重、新的在前、最多 200 条。
+/// 直连的不带（隐私）。Windows 同一份逻辑在 connectioncontroller.cpp 的 ProxiedTargets()。
+Future<String> proxiedTargets(String path) async {
+  try {
+    final f = File(path);
+    if (!f.existsSync()) return '（没有 box.log）';
+    final len = await f.length();
+    final start = len > 512 * 1024 ? len - 512 * 1024 : 0;
+    final raw = await f.openRead(start).transform(const Utf8Decoder(allowMalformed: true)).join();
+    final re = RegExp(r'outbound/(\w+)\[.*?\]: outbound (packet )?connection to (\S+)');
+    final order = <String>[];
+    final count = <String, int>{};
+    for (final line in raw.split('\n').reversed) {
+      final m = re.firstMatch(line);
+      if (m == null || const {'direct', 'block', 'dns'}.contains(m.group(1))) continue;
+      final target = '${m.group(2) == null ? 'tcp' : 'udp'}:${m.group(3)}';
+      if (!count.containsKey(target)) {
+        if (order.length >= 200) break;
+        order.add(target);
+      }
+      count[target] = (count[target] ?? 0) + 1;
+    }
+    if (order.isEmpty) return '（最近没有走代理的连接）';
+    return order.map((t) => '$t  ×${count[t]}').join('\n');
+  } catch (e) {
+    return '（读取失败：$e）';
   }
 }

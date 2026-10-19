@@ -42,7 +42,8 @@ abstract class ConfigOptions {
   static final blockAds = PreferencesNotifier.create<bool, bool>("block-ads", false);
   static final logLevel = PreferencesNotifier.create<LogLevel, String>(
     "log-level",
-    LogLevel.warn,
+    // OneRay：info 级 box.log 才有每条连接的出站记录（连接诊断、「走错了」反馈都靠它，跟 Windows 一致）
+    LogLevel.info,
     mapFrom: LogLevel.values.byName,
     mapTo: (value) => value.name,
   );
