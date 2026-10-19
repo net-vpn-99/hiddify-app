@@ -184,13 +184,13 @@ class AccountChip extends HookConsumerWidget {
   final lineName = ref.watch(Preferences.lastNodeName);
   if (acc == null) return ('', false);
   if (connected && acc.proThrottled && tier.isProName(lineName)) {
-    return ('精品线路今天已超 ${formatDailyAmount(acc.proQuota)}，已限速 ${acc.proThrottleMbps}Mbps；标准线路照常满速', false);
+    return ('精品线路今天已超 ${formatDailyAmount(acc.proQuota)}，现在速度最高 ${acc.proThrottleMbps}Mbps；标准线路照常用', false);
   }
   if (tier.trialEnded && !connected) return ('精品线路体验已结束，可以选一条标准线路继续用，或者升级精品版', true);
   if (!acc.dailyThrottled) return ('', false);
   final upgrade = !(acc.planName?.contains('精品') ?? false);
   if (freeTrial && acc.dailyTier == 'trial' && acc.paidQuota > 0) {
-    return ('今日标准高速已用完，限速 ${acc.dailyThrottleMbps}Mbps · 买套餐每天 ${formatDailyAmount(acc.paidQuota)} 高速', upgrade);
+    return ('今日标准高速已用完，现在速度最高 ${acc.dailyThrottleMbps}Mbps · 买套餐每天 ${formatDailyAmount(acc.paidQuota)} 高速', upgrade);
   }
-  return ('今日标准高速已用完，现在限速 ${acc.dailyThrottleMbps}Mbps，0 点恢复。', upgrade);
+  return ('今日标准高速已用完，现在速度最高 ${acc.dailyThrottleMbps}Mbps，0 点恢复。', upgrade);
 }

@@ -892,7 +892,7 @@ class _ProHeader extends StatelessWidget {
               else if (know)
                 Text(
                   throttled
-                      ? '今天已超 ${formatDailyAmount(acc.proQuota)}，限速 ${acc.proThrottleMbps}Mbps'
+                      ? '今天已超 ${formatDailyAmount(acc.proQuota)}，现在速度最高 ${acc.proThrottleMbps}Mbps'
                       : '今日 ${formatDailyAmount(acc.proUsed)} / ${formatDailyAmount(acc.proQuota)}',
                   style: TextStyle(fontSize: 12, color: throttled ? tokens.fault : tokens.sub),
                 ),

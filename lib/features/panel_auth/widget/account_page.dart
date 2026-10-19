@@ -130,7 +130,7 @@ class AccountPage extends HookConsumerWidget {
                         context,
                         '今日标准高速',
                         a.dailyThrottled
-                            ? '已用完，限速 ${a.dailyThrottleMbps}Mbps'
+                            ? '已用完，现在最高 ${a.dailyThrottleMbps}Mbps'
                             : '还剩 ${formatDailyAmount((a.dailyQuota - a.dailyUsed).clamp(0, 1 << 62))} / 共 ${formatDailyAmount(a.dailyQuota)}',
                         warn: a.dailyThrottled,
                       ),
@@ -139,7 +139,7 @@ class AccountPage extends HookConsumerWidget {
                           context,
                           '今日精品高速',
                           a.proThrottled
-                              ? '已用完，限速 ${a.proThrottleMbps}Mbps'
+                              ? '已用完，现在最高 ${a.proThrottleMbps}Mbps'
                               : '还剩 ${formatDailyAmount((a.proQuota - a.proUsed).clamp(0, 1 << 62))} / 共 ${formatDailyAmount(a.proQuota)}',
                           warn: a.proThrottled,
                         ),
@@ -147,8 +147,8 @@ class AccountPage extends HookConsumerWidget {
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                         child: Text(
                           a.proKnown && a.dailyThrottleMbps != a.proThrottleMbps
-                              ? '每天 0 点重置高速流量，超出后标准线路限速 ${a.dailyThrottleMbps}Mbps，精品线路限速 ${a.proThrottleMbps}Mbps'
-                              : '每天 0 点重置高速流量，超出后限速 ${a.proKnown ? a.proThrottleMbps : a.dailyThrottleMbps}Mbps',
+                              ? '每天 0 点重置高速流量，超出后标准线路速度最高 ${a.dailyThrottleMbps}Mbps，精品线路最高 ${a.proThrottleMbps}Mbps'
+                              : '每天 0 点重置高速流量，超出后速度最高 ${a.proKnown ? a.proThrottleMbps : a.dailyThrottleMbps}Mbps',
                           style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ),

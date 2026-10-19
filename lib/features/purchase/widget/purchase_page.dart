@@ -342,11 +342,11 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
       // 精品版：标准线路、精品线路两份额度分开算（GslNode 1.6.0），各写各的，别写成「其中」（运营 10-16）。
       final pro = ref.watch(purchaseNotifierProvider).tiers.where((x) => x.planId == offer?.planId && x.tier == 'pro' && x.dailyGb > 0);
       if (pro.isEmpty) {
-        speedLine = '每天 ${formatDailyAmount(paid)} 高速，超出后限速 ${paidMbps}Mbps';
+        speedLine = '每天 ${formatDailyAmount(paid)} 高速，超出后速度最高 ${paidMbps}Mbps';
       } else {
         final p = pro.first;
         final proMbps = p.dailyMbps > 0 ? p.dailyMbps : paidMbps;
-        final over = proMbps == paidMbps ? '超出后限速 ${paidMbps}Mbps' : '超出后标准线路限速 ${paidMbps}Mbps、精品线路 ${proMbps}Mbps';
+        final over = proMbps == paidMbps ? '超出后速度最高 ${paidMbps}Mbps' : '超出后标准线路速度最高 ${paidMbps}Mbps、精品线路 ${proMbps}Mbps';
         speedLine = '每天标准线路 ${formatDailyAmount(paid)}、精品线路 ${p.dailyGb} GB 高速，$over';
       }
       final own = acc?.dailyQuota ?? 0;
