@@ -521,7 +521,7 @@ class ConnectionButton extends HookConsumerWidget {
           ? '自动选择线路'
           : lineName,
       sub: shownStep > 0
-          ? '一般 5 秒内连好。10 秒还没好会停下来告诉你原因，不会自己换线路。'
+          ? '一般 5 秒内连好。连不上会告诉你原因，不会自己换线路。'
           : radarState == RadarState.failed && progress.message.isNotEmpty
           ? progress.message
           : lineDesc,

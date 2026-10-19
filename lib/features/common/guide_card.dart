@@ -382,22 +382,30 @@ Future<void> showGuideSheet(
   );
 }
 
-/// 原因不明的兜底（10-13 运营定稿，两端同一段话）：不猜原因，请他联系客服，查清后送会员时长表示感谢。
+/// 原因不明（10-19 运营定稿，两端同一段话）：主按钮联系客服，帮我们查清后发公告鼓励 + 送会员时长。
+const unknownFaultLead = '这次的情况我们还没见过。';
+const unknownFaultThanks = '如果你愿意帮我们检查测试并解决，作为感谢我们将发公告鼓励，并赠送相应的会员时长奖励。';
+const unknownFaultCopy = '$unknownFaultLead$unknownFaultThanks';
+
+/// 从连接失败那里找客服：打开客服页，第一条消息自动带上诊断码（跟 Windows 一样）。
+void openSupportWithDiag(BuildContext context) => context.pushNamed('supportChat', queryParameters: {'diag': '1'});
+
+/// 原因不明的兜底卡：不猜原因，请他联系客服。
 Future<void> showUnknownFaultGuide(BuildContext context) {
   return showDialog<void>(
     context: context,
     barrierColor: guideCanvasColor(context),
     builder: (ctx) => GuideCard(
       title: '连接没有完成',
-      body: '这台手机上出现了我们还没认出来的情况，导致光速雷达没能连接。点「联系客服」，我们帮你查。',
+      body: '$unknownFaultLead点「联系客服」，我们帮你查。',
       tipTitle: '你的反馈能帮我们改进光速雷达',
-      tipText: '问题查清后，我们会送你会员时长表示感谢。',
+      tipText: unknownFaultThanks,
       tipIcon: LineIconName.gift,
       tipBelow: true,
       actionText: '联系客服',
       onAction: () {
         Navigator.of(ctx).pop();
-        context.pushNamed('supportChat');
+        openSupportWithDiag(context);
       },
       links: [GuideLink('稍后再说', () => Navigator.of(ctx).pop())],
     ),

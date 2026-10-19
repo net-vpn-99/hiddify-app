@@ -38,12 +38,12 @@ part 'connection_notifier.g.dart';
 /// provider 重建也留得住。自动连接（快捷开关、启动自动连）不震，本来也不该震。
 bool _userAskedToConnect = false;
 
-/// 每次进入 Connected +1，让「10 秒没通」的定时器认得出自己是不是还是那一次连接。
+/// 每次进入 Connected +1，让「判不通」认得出自己是不是还是那一次连接。
 int _connectedSerial = 0;
 
 @Riverpod(keepAlive: true)
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
-  /// 10 秒到了人还在后台：先不断开，回到前台再给 10 秒。
+  /// 判出不通时人在后台：先不断开，回到前台再判（concludeNoAnswer）。
   bool _deadlineHeld = false;
   bool _wasUp = false;
   bool _userStop = false;
@@ -114,7 +114,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       if (serial != _connectedSerial) return;
       if (state.valueOrNull is! Connected) return;
       if (ref.read(stabilityProvider).confirmed) return;
-      _armUnconfirmedDeadline(serial);
+      unawaited(concludeNoAnswer());
     });
     ref.onDispose(() {
       _stopQuotaPoll();
@@ -143,6 +143,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           reporter.markStage(ConnectReporter.stageCoreStarted);
           ref.read(deadLineProvider.notifier).state = false;
           ref.read(homeFaultProvider.notifier).state = '';
+          ref.read(deadEvidenceProvider.notifier).state = '';
         case Connected():
           if (!ref.read(stabilityProvider).confirmed) ConnectFlowClock.at(5);
           _wasUp = true;
@@ -156,11 +157,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           if (!ref.read(stabilityProvider).confirmed) {
             ref.read(stabilityProvider.notifier).restart();
           }
-          final serial = ++_connectedSerial;
-          // 两端统一（docs/连上但不通-两端统一-手册.md）：10 秒一次都没通 → 断开，首页说
-          // 原因和下一步。**不自动换线** —— 换了用户不知道后来连上了、觉得我们慢、可能已经走了。
-          // 人在后台时先不下这个结论，回到前台再给 10 秒。
-          _armUnconfirmedDeadline(serial);
+          // 判通 / 判不通由 stability 按「节点有没有回数据」和正面证据来（concludeNoAnswer），不再计时。
+          ++_connectedSerial;
         case Disconnected() || Disconnecting():
           var judging = false;
           if (event is Disconnected && _wasUp && !_userStop && ref.read(homeFaultProvider).isEmpty) {
@@ -204,7 +202,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       if (confirmed) {
         reporter.abandon();
       } else if (reporter.attemptOpen) {
-        unawaited(reporter.reportCancel(ConnectFlowClock.slug(5)));
+        unawaited(reporter.reportCancel(ConnectFlowClock.slug(5), detail: ref.read(stabilityProvider.notifier).byteDetail()));
       }
       return;
     }
@@ -236,47 +234,43 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     }
   }
 
-  void _armUnconfirmedDeadline(int serial) {
-    // 10 秒一次都没通 = 这条线不通（两端统一，Windows armDeadTunnelCheck）。正常 2~4 秒就通，
-    // 到 10 秒还不通，就算线路没坏也是我们的问题，不能让人再等。
-    Future<void>.delayed(const Duration(seconds: 10), () async {
-      if (serial != _connectedSerial) return;
-      if (state.valueOrNull is! Connected) return;
-      if (ref.read(stabilityProvider).confirmed) return;
-      if (!ref.read(appForegroundProvider)) {
-        _deadlineHeld = true;
-        _heldSerial = serial;
-        return;
-      }
-      final reporter = ref.read(connectReporterProvider);
-      if (reporter.attemptOpen) {
-        reporter.captureCoreLogSync();
-        // 连上了但 10 秒没有一次成功的隧道请求 —— 先看是不是这段时间流量用完了。
-        // 是账号原因：sync 会触发上面的 listen，拆隧道并弹窗，这里不要记成节点失败。
-        if (await _accountExhaustedAfterFailure(reporter)) return;
-        // 这就是 proxy_request 阶段失败的定义本身（隧道已建好，只是没有一次请求
-        // 成功穿过去），不用再让 _mapFailStage 去猜字符串——这条消息本来就不含任何
-        // 关键词，猜的话会落进「reached>=tunnelReady 就默认 node_tcp」的兜底，
-        // 明明 TCP 大概率是通的，却被标成"没通"。
-        await reporter.reportFailure(
-          "连接后 10 秒内没有一次通过隧道的请求成功（proxy_request）",
-          forcedStage: 'proxy_request',
-          appForeground: ref.read(appForegroundProvider),
-          probeLog: ref.read(stabilityProvider.notifier).probeLog(),
-        );
-      }
-      // 等上报的这一会儿里用户可能自己断了 / 重连了，或者恰好通了，或者切到了后台。
-      if (serial != _connectedSerial || state.valueOrNull is! Connected) return;
-      if (ref.read(stabilityProvider).confirmed) return;
-      if (!ref.read(appForegroundProvider)) {
-        _deadlineHeld = true;
-        _heldSerial = serial;
-        return;
-      }
-      ref.read(deadLineProvider.notifier).state = true;
-      await abortConnection();
-      await _probeDeadLineDirect(reporter);
-    });
+  /// 还没确认通，检测连接一条条被结束、节点一个字节没回（stability 数够了）：按正面证据下结论、停下说原因。
+  /// 不再按「10 秒内有没有成功」判（10-19 运营定，两端统一，Windows ConnectionController::concludeNoAnswer）。
+  /// **不自动换线**。人在后台时先不下结论（手机会限制后台联网），回到前台再判。
+  Future<void> concludeNoAnswer() async {
+    final serial = _connectedSerial;
+    if (state.valueOrNull is! Connected) return;
+    if (ref.read(stabilityProvider).confirmed) return;
+    if (!ref.read(appForegroundProvider)) {
+      _deadlineHeld = true;
+      _heldSerial = serial;
+      return;
+    }
+    final stability = ref.read(stabilityProvider.notifier);
+    final reporter = ref.read(connectReporterProvider);
+    // 节点没认出我们（REALITY 校验失败）是线路配置的问题，不是用户的；其余只能说「节点结束了连接」，
+    // 断开后直连节点的结果再细分（被挡 / 两条线都这样 = 原因不明）。
+    final reality = await reporter.coreLogHas('reality verification failed');
+    ref.read(deadEvidenceProvider.notifier).state = reality ? 'reality' : 'refused';
+    if (reporter.attemptOpen) {
+      reporter.captureCoreLogSync();
+      // 先看是不是这段时间流量用完了。是账号原因：sync 会触发上面的 listen，拆隧道并弹窗，这里不要记成节点失败。
+      if (await _accountExhaustedAfterFailure(reporter)) return;
+      await reporter.reportFailure(
+        '节点一个字节没回，${stability.zeroEnds} 个检测连接被结束｜${reality ? 'REALITY 校验失败' : '节点结束了连接'}｜${stability.zeroWhy()}',
+        forcedStage: 'dead_tunnel',
+        fault: reality ? 'reality_mismatch' : 'dead_tunnel',
+        probeNode: false,
+        appForeground: ref.read(appForegroundProvider),
+        probeLog: ref.read(stabilityProvider.notifier).probeLog(),
+      );
+    }
+    // 等上报的这一会儿里用户可能自己断了 / 重连了，或者恰好通了。
+    if (serial != _connectedSerial || state.valueOrNull is! Connected) return;
+    if (ref.read(stabilityProvider).confirmed) return;
+    ref.read(deadLineProvider.notifier).state = true;
+    await abortConnection();
+    await _probeDeadLineDirect(reporter);
   }
 
   /// 「这条线路现在不通」断开之后：绕开 VPN 直接碰节点 + 接口服务器，只按碰的结果下结论（10-13）。
@@ -292,9 +286,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     if (ref.read(panelAuthProvider).account?.isLineDown(ref.read(Preferences.lastNodeName)) ?? false) return;
     final r = await reporter.probeLastNodeDirect();
     final set = {...ref.read(unreachableNodesProvider)};
-    ref.read(reachableDeadNodeProvider.notifier).state = r.nodeOk ? host : null;
     if (r.nodeOk) {
       set.remove(host);
+      // 节点端口是通的，节点却把连接结束了、一个字节没回：记下这条线。两条不同的线都这样 = 原因不明（主按钮联系客服）。
+      if (ref.read(deadEvidenceProvider) == 'refused') {
+        ref.read(refusedNodesProvider.notifier).state = {...ref.read(refusedNodesProvider), host};
+      }
     } else if (r.noAnswer && r.apiOk) {
       set.add(host);
     } else {
@@ -418,7 +415,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           // 还没确认网通（第 5 步）就点了：这是取消，记一条（看大家在哪一步等不及）。
           final reporter = ref.read(connectReporterProvider);
           if (!ref.read(stabilityProvider).confirmed && reporter.attemptOpen) {
-            unawaited(reporter.reportCancel(ConnectFlowClock.slug(5)));
+            unawaited(reporter.reportCancel(ConnectFlowClock.slug(5), detail: ref.read(stabilityProvider.notifier).byteDetail()));
           }
           _userAskedToConnect = false;
           await haptic.mediumImpact();

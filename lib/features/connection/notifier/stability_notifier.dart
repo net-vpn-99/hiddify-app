@@ -5,14 +5,17 @@ import 'dart:io';
 import 'package:hiddify/core/http_client/http_client_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/app/notifier/app_foreground.dart';
+import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/drop_notice.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 连接稳定性（0~10）。默认满分，探测连着失败才降；恢复即回满。
-/// 连接后经隧道问出口 IP：确认通之前每秒一次（每次最多 4 秒，和 Windows 一样），
-/// 确认之后每分钟一次，不通 20 秒后再探一次。10 秒一次都没通由 connection_notifier 断开。
+/// 确认通之前：三家检测网址各问一次（不设超时）+ 每秒读一次经节点回来的字节，字节涨了或拿到 HTTP 回答就算通；
+/// 检测连接被结束、节点一个字节没回够 3 条，由 connection_notifier.concludeNoAnswer 下结论（不按秒数，两端统一）。
+/// 确认之后每 30 秒探一次，不通 5 秒后再探。
 ///
 /// **故意做得迟钝**（1.1.29）：客户盯着这行字看，一会儿「很稳」一会儿「一般」比
 /// 不显示还糟。所以 —— 偶尔一次探测没回来不降级、切后台再回来不重测也不回
@@ -20,7 +23,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 ///
 /// **两端统一的规则**（和 Windows 一样，见 docs/连上但不通-两端统一-手册.md）：
 ///  - [confirmed] 之前首页还是「连接中」，第一次探测成功才算「已连接」；
-///  - 10 秒一次都不通 → connection_notifier 断开并置 [deadLineProvider]，首页说原因和下一步；
+///  - 判出不通（有正面证据）→ connection_notifier 断开并置 [deadLineProvider]，首页说原因和下一步；
 class StabilityState {
   const StabilityState(this.score, {this.confirmed = false, this.egressAudit = ''});
 
@@ -54,7 +57,7 @@ int _rememberedScore = -1;
 final stabilityProvider =
     NotifierProvider<StabilityNotifier, StabilityState>(StabilityNotifier.new);
 
-/// 上一次连接「连上了服务器但 10 秒打不开外网、已断开」。首页据此显示原因和下一步；
+/// 上一次连接「连上了服务器但判出不通、已断开」。首页据此显示原因和下一步；
 /// 下次点连接 / 换线路 / 手动关掉时清掉。
 final deadLineProvider = StateProvider<bool>((ref) => false);
 
@@ -64,8 +67,11 @@ final deadLineProvider = StateProvider<bool>((ref) => false);
 /// 任何一次确认网通就清空。
 final unreachableNodesProvider = StateProvider<Set<String>>((ref) => const {});
 
-/// 判「不通」后直连节点是通的那台（体检修复 R2）：线路是好的，是这台手机这边没走通，首页不叫他换线。
-final reachableDeadNodeProvider = StateProvider<String?>((ref) => null);
+/// 端口通、节点却把连接结束且零字节的不同线路地址（两条都这样 = 原因不明，主按钮给联系客服）。任何一次确认网通就清空。
+final refusedNodesProvider = StateProvider<Set<String>>((ref) => const {});
+
+/// 判「不通」的正面证据：refused = 节点结束了连接、零字节；reality = 节点没认出我们（REALITY 校验失败）。
+final deadEvidenceProvider = StateProvider<String>((ref) => '');
 
 /// 首页故障原因。空 = 没有。engine / egress / line。
 final homeFaultProvider = StateProvider<String>((ref) => '');
@@ -82,6 +88,21 @@ class StabilityNotifier extends Notifier<StabilityState> {
   DateTime? _ifacesChangedAt;   // 网卡最近一次变化（换网络时「没回音」先不算）
   final List<String> _probeNotes = [];
   DateTime? _confirmedAt;
+  // 经节点回来的字节（内核按线路记的下载量）；null = 还没读到 / 读不到。判通看它涨没涨，不看过了几秒。
+  int? _down;
+  // 用着用着检测开始没回音时的字节数：要断开前对一下，涨了说明节点还在回数据，线路没坏。
+  int? _downAtMiss;
+  // 还没确认通时，被结束且节点一个字节都没回的检测连接（条数、各自原因）。
+  int _zeroEnds = 0;
+  final List<String> _zeroWhy = [];
+  final Set<HttpClient> _warmClients = {};
+
+  /// 第 5 步取消 / 失败时记进上报：节点回了多少字节、几条检测连接被结束（两端统一）。
+  String byteDetail() => '节点回了 ${_down ?? 0} 字节，$_zeroEnds 个检测连接被结束';
+
+  /// 被结束的检测连接条数和各自原因（判不通时写进上报）。
+  int get zeroEnds => _zeroEnds;
+  String zeroWhy() => _zeroWhy.join('；');
 
   bool get isRunning => _running;
 
@@ -139,20 +160,138 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _firstMissAt = null;
     _confirmed = false;
     _probeNotes.clear();
+    _down = null;
+    _downAtMiss = null;
+    _zeroEnds = 0;
+    _zeroWhy.clear();
+    _closeWarmClients();
     // 有上次的分数就先照着显示，探完再更新；没有才是「测量中」。
     state = StabilityState(_rememberedScore);
     _schedule(immediate: true);
   }
 
+  /// 确认通之前（两端统一，docs/计划/连上后判通-按节点回数据.md）：三家检测网址同时问一次，**不设超时**
+  /// （「没回音」不是证据）；每秒读一次经节点回来的字节（取样），一涨就亮绿。确认后在 _confirm 里换成 30 秒一探。
   void _schedule({required bool immediate}) {
     _timer?.cancel();
     final gen = _gen;
-    if (immediate) unawaited(_probe(gen));
-    // 确认通之前每秒一探（和 Windows 一样；每一轮自己的连接，不等上一轮）：
-    // 隧道一通就立刻亮绿。确认后在 _probe 里换成 30 秒一次。
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _probe(gen));
+    if (immediate) {
+      for (final url in _exitUrls) {
+        unawaited(_warmAsk(gen, url));
+      }
+    }
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _pollBytes(gen));
     _ifaceTimer?.cancel();
     _ifaceTimer = Timer.periodic(const Duration(seconds: 5), (_) => _watchIfaces(gen));
+  }
+
+  void _closeWarmClients() {
+    for (final c in _warmClients) {
+      c.close(force: true);
+    }
+    _warmClients.clear();
+  }
+
+  /// 读一次经节点回来的字节。还没确认通、读到 > 0：线路是通的，亮绿。
+  Future<void> _pollBytes(int gen) => _bytesInflight ??= _readBytes(gen).whenComplete(() => _bytesInflight = null);
+
+  Future<void>? _bytesInflight;
+
+  Future<void> _readBytes(int gen) async {
+    final d = await ref.read(proxyRepositoryProvider).selectedOutboundDownload();
+    if (gen != _gen || !_running) return;
+    if (d != null) _down = d;
+    if (!_confirmed && (d ?? 0) > 0) {
+      ConnectFlowClock.log?.call('node answered $d bytes');
+      _confirm(gen, _audit(true, null, ref.read(Preferences.lastNodeName), note: '节点回了 $d 字节'));
+    }
+  }
+
+  /// 确认通之前的一个检测请求（自己的连接，不设超时，只等它自己有结果）。
+  Future<void> _warmAsk(int gen, String url) async {
+    final port = ref.read(httpClientProvider).port;
+    if (port <= 0) return;
+    final client = HttpClient()
+      ..findProxy = ((_) => 'PROXY localhost:$port')
+      ..idleTimeout = Duration.zero;
+    _warmClients.add(client);
+    _Exit? exit;
+    Object? err;
+    // 拿到了 HTTP 回答（哪怕是 429 / 格式认不出）：回答是经节点回来的，线路是通的。
+    var answered = false;
+    try {
+      final req = await client.getUrl(Uri.parse(url));
+      req.persistentConnection = false;
+      final res = await req.close();
+      answered = true;
+      final body = await res.transform(utf8.decoder).join();
+      exit = _parseExit(url, body);
+    } catch (e) {
+      err = e;
+    } finally {
+      client.close(force: true);
+      _warmClients.remove(client);
+    }
+    if (gen != _gen || !_running || _confirmed) return;
+    if (!answered) {
+      await _warmEnded(gen, url, '$err');
+      return;
+    }
+    final line = ref.read(Preferences.lastNodeName);
+    // 出口是国内 = 流量没走隧道。别的情况回答都是经节点来的，线路是通的（出口国家对不上多半是 IP 库标错）。
+    if (exit != null && exit.cc.toUpperCase() == 'CN') {
+      _note('err');
+      state = StabilityState(_rememberedScore, egressAudit: _audit(false, exit, line));
+      _fault('egress');
+      return;
+    }
+    _note('ok');
+    _confirm(gen, _audit(exit == null || _proves(exit, line), exit, line,
+        note: exit == null ? '${Uri.parse(url).host} 有回答' : null));
+  }
+
+  /// 一个检测连接自己结束了。先现读一次字节：节点回过数据就不算（线路通，只是这家没答上来）；
+  /// 一个字节都没回才记一条，够 3 条（三家同时问的第一轮全被结束）就下结论，不够就把这一家再问一次。
+  /// 按条数，不按时间（10-19 实测：账号 / 密钥不对时节点 0.5 秒内就把三条都断了）。
+  Future<void> _warmEnded(int gen, String url, String why) async {
+    await _pollBytes(gen);
+    if (gen != _gen || !_running || _confirmed || (_down ?? 0) > 0) return;
+    _zeroEnds++;
+    final short = why.split('\n').first;
+    _zeroWhy.add('${Uri.parse(url).host} ${short.length > 80 ? short.substring(0, 80) : short}');
+    _note('end');
+    ConnectFlowClock.log?.call('probe ended, 0 bytes from node ($_zeroEnds): ${_zeroWhy.last}');
+    if (_zeroEnds >= 3) {
+      _timer?.cancel();
+      unawaited(ref.read(connectionNotifierProvider.notifier).concludeNoAnswer());
+    } else {
+      unawaited(_warmAsk(gen, url));
+    }
+  }
+
+  /// 确认通了（检测请求核到出口，或者节点回了数据）：上报成功、亮绿、换成 30 秒一探。
+  void _confirm(int gen, String audit) {
+    _misses = 0;
+    _firstMissAt = null;
+    final reporter = ref.read(connectReporterProvider);
+    if (reporter.attemptOpen) {
+      reporter.markStage(ConnectReporter.stageProxyRequest);
+      unawaited(reporter.reportSuccess(1));
+    }
+    if (!_confirmed) {
+      _confirmed = true;
+      _confirmedAt = DateTime.now();
+      _closeWarmClients();
+    }
+    if (ref.read(unreachableNodesProvider).isNotEmpty) {
+      ref.read(unreachableNodesProvider.notifier).state = const {};
+    }
+    if (ref.read(refusedNodesProvider).isNotEmpty) {
+      ref.read(refusedNodesProvider.notifier).state = const {};
+    }
+    _armSteady(gen);
+    _rememberedScore = 10;
+    state = StabilityState(10, confirmed: true, egressAudit: audit);
   }
 
   void _stop() {
@@ -161,6 +300,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _confirmed = false;
     _timer?.cancel();
     _ifaceTimer?.cancel();
+    _closeWarmClients();
     // 分数留着不清：断开时首页本来就不显示这一行，下次连上先显示上次结果。
     state = StabilityState(_rememberedScore);
   }
@@ -214,31 +354,14 @@ class StabilityNotifier extends Notifier<StabilityState> {
       _note(proved ? 'ok' : 'err');
     }
     if (proved) {
-      _misses = 0;
-      _firstMissAt = null;
-      final reporter = ref.read(connectReporterProvider);
-      if (reporter.attemptOpen) {
-        reporter.markStage(ConnectReporter.stageProxyRequest);
-        unawaited(reporter.reportSuccess(1));
-      }
-      if (!_confirmed) {
-        _confirmed = true;
-        _confirmedAt = DateTime.now();
-      }
-      if (ref.read(unreachableNodesProvider).isNotEmpty) {
-        ref.read(unreachableNodesProvider.notifier).state = const {};
-      }
-      _armSteady(gen);
-      _rememberedScore = 10;
-      state = StabilityState(10, confirmed: true, egressAudit: audit);
+      _confirm(gen, audit);
       return;
     }
 
     final cn = exit != null && exit.cc.toUpperCase() == 'CN';
     if (!_confirmed) {
+      // 确认通之前判通由 _warmAsk / _pollBytes 管（不按时间），这里只管出口是国内这一种。
       state = StabilityState(_rememberedScore, egressAudit: audit);
-      // 10 秒一直核不到由 connection_notifier 的 _armUnconfirmedDeadline 处理
-      // （它先查流量用完、在后台时等回到前台），这里只管出口是国内这一种。
       if (cn) _fault('egress');
       return;
     }
@@ -251,6 +374,19 @@ class StabilityNotifier extends Notifier<StabilityState> {
     // 跟 Windows 同一套（R3，finecomb 审查 A-1）：
     //  - 换网络后 1 分钟内的没回音都不算（整整 1 分钟，不是只挡一次：换之前发出的那轮和换网卡时那轮往往都会失败）；
     //  - 没换网络：没回音要持续 30 秒以上（期间 5 秒再探一次、都不通）才断开。以前两次没回音、约 8 秒就断。
+    // 检测没回音，但经节点回来的字节比上一次没回音时涨了：节点一直在回数据，线路是通的，
+    // 算一次成功（字节在涨就是通，两端统一，Windows healthMissed）。
+    final before = _downAtMiss;
+    await _pollBytes(gen);
+    if (gen != _gen || !_running) return;
+    _downAtMiss = _down;
+    if (before != null && (_down ?? 0) > before) {
+      _misses = 0;
+      _firstMissAt = null;
+      _armSteady(gen);
+      state = StabilityState(10, confirmed: true, egressAudit: audit);
+      return;
+    }
     final now = DateTime.now();
     final changedAt = _ifacesChangedAt;
     if (changedAt != null && now.difference(changedAt) < const Duration(minutes: 1)) {
@@ -263,7 +399,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     if (_misses >= 2 && now.difference(since) >= const Duration(seconds: 30)) {
       // App 在后台时手机会限制它联网，探测没回音不等于线路断了：先不断开，照常探，
       // 回到前台再重新判断。跟「还没确认网通、人在后台」同一条规矩（connection_notifier
-      // _armUnconfirmedDeadline）。10-15 查：7 天 25 次「用着用着断了」24 次在后台，
+      // concludeNoAnswer）。10-15 查：7 天 25 次「用着用着断了」24 次在后台，
       // 连了几小时被我们自己断开还弹通知。
       if (!ref.read(appForegroundProvider)) {
         _armSteady(gen);
@@ -397,10 +533,10 @@ class StabilityNotifier extends Notifier<StabilityState> {
     return expect.isEmpty || cc == expect;
   }
 
-  String _audit(bool passed, _Exit? exit, String line) {
+  String _audit(bool passed, _Exit? exit, String line, {String? note}) {
     final when = DateTime.now().toIso8601String().substring(0, 19).replaceFirst('T', ' ');
     final ip = exit == null || exit.ip.isEmpty ? '无' : exit.ip;
-    return '$when  ${passed ? '通过' : '未通过'}  出口 $ip  线路 $line';
+    return '$when  ${passed ? '通过' : '未通过'}  ${note ?? '出口 $ip'}  线路 $line';
   }
 }
 

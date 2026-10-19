@@ -290,7 +290,11 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         GoRoute(name: 'addDevice', path: '/add-device', builder: (_, _) => const AddDevicePage()),
         GoRoute(name: 'invite', path: '/invite', builder: (_, _) => const InvitePage()),
         GoRoute(name: 'purchase', path: '/purchase', builder: (_, _) => const PurchasePage()),
-        GoRoute(name: 'supportChat', path: '/support-chat', builder: (_, _) => const SupportChatPage()),
+        GoRoute(
+          name: 'supportChat',
+          path: '/support-chat',
+          builder: (_, state) => SupportChatPage(attachDiag: state.uri.queryParameters['diag'] == '1'),
+        ),
         GoRoute(
           name: 'resetPassword',
           path: '/reset-password',

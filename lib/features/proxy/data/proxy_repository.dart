@@ -19,6 +19,9 @@ abstract interface class ProxyRepository {
 
   /// 直接测当前选中出站。毫秒；测完不通为 0；没测成（通道断了）为 null。
   Future<int?> probeActiveDelay();
+
+  /// 当前选中线路经节点回来的字节；读不到为 null。
+  Future<int?> selectedOutboundDownload();
 }
 
 class ProxyRepositoryImpl with ExceptionHandler, InfraLogger implements ProxyRepository {
@@ -96,6 +99,9 @@ class ProxyRepositoryImpl with ExceptionHandler, InfraLogger implements ProxyRep
 
   @override
   Future<int?> probeActiveDelay() => singbox.probeActiveDelay();
+
+  @override
+  Future<int?> selectedOutboundDownload() => singbox.selectedOutboundDownload();
 
   static final Map<String, oldipinfo.IpInfo Function(Map<String, dynamic> response)> _ipInfoSources = {
     // "https://geolocation-db.com/json/": IpInfo.fromGeolocationDbComJson, //bug response is not json

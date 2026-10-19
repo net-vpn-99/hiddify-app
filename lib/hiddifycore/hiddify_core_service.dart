@@ -396,6 +396,18 @@ class HiddifyCoreService with InfraLogger {
     }
   }
 
+  /// 当前选中线路经节点回来的字节（判通用，跟 Windows 读 xray 统计同一个意思，
+  /// docs/计划/连上后判通-按节点回数据.md）。读不到返回 null。
+  Future<int?> selectedOutboundDownload() async {
+    if (!core.isInitialized()) return null;
+    try {
+      final info = await _readSelectedOutbound();
+      return info?.download.toInt();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<int> _activeUrlTestStamp() async {
     try {
       final info = await _readSelectedOutbound();

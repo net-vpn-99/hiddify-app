@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
@@ -14,17 +13,19 @@ import 'package:hiddify/features/settings/notifier/battery_optimization/battery_
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 首页：连上了却不通时，告诉用户为什么、下一步怎么做。两端同一套文案和按钮
-/// （docs/连上但不通-两端统一-手册.md）。
+/// （docs/计划/连上后判通-按节点回数据.md）。
 ///
-///  - 10 秒一次都没通 → 已经断开，显示「这条线路现在连不通」；
-///  - 用着用着约 1 分钟不通 → 不断开，显示「网络中断了约 1 分钟」，恢复后自己收起。
+///  - 检测连接被节点结束、一个字节没回 → 已经断开，按正面证据说原因（不再按「10 秒没通」判）；
+///  - 用着用着约 1 分钟不通、节点也没再回数据 → 断开说原因。
 ///
 /// **不自动换线**：「换一条线路」只打开线路列表，让用户自己选。
 ///
-/// 10-13：只说查到的事实。「网页没走线路」原因查不到 → 给「怎么办」打开「原因不明」兜底卡；
-/// 「连接意外断开」（核心没走正常停止就没了）→ 10-15 起给一次「修复并重新连接」，修过还断就只剩
-/// 「联系客服」（docs/计划/一键修复-初始化本地网络.md 第八节）。两种连续第二次都自动弹兜底卡（两端统一）。
+/// 按钮有主次（10-19 运营定）：第一个是主按钮。原因不明 / 线路设置对不上 / 同一种情况连着第二次（照办法做了
+/// 还不行）→ 主按钮是「联系客服」，原来的处理办法挪到后面。只说查到的事实。
 final unknownFaultStreakProvider = StateProvider<int>((ref) => 0);
+
+/// 连着判「这条线路不通」几次（确认网通就清零）。
+final deadStreakProvider = StateProvider<int>((ref) => 0);
 
 class ConnectIssueCard extends ConsumerWidget {
   const ConnectIssueCard({super.key});
@@ -35,7 +36,6 @@ class ConnectIssueCard extends ConsumerWidget {
     final deadLine = ref.watch(deadLineProvider);
     final fault = ref.watch(homeFaultProvider);
     final unreachable = ref.watch(unreachableNodesProvider);
-    final reachableHost = ref.watch(reachableDeadNodeProvider);
     // 连接意外断开（不是系统收回）= 原因不明：给一次「修复并重新连接」，修过还断就只剩联系客服。
     final canRepair = ref.watch(repairedKindProvider) != 'engine';
 
@@ -46,8 +46,16 @@ class ConnectIssueCard extends ConsumerWidget {
       if (n >= 2) showUnknownFaultGuide(context);
     });
     ref.listen<bool>(stabilityProvider.select((s) => s.confirmed), (prev, next) {
-      if (next) ref.read(unknownFaultStreakProvider.notifier).state = 0;
+      if (!next) return;
+      ref.read(unknownFaultStreakProvider.notifier).state = 0;
+      ref.read(deadStreakProvider.notifier).state = 0;
     });
+    ref.listen<bool>(deadLineProvider, (prev, next) {
+      if (next && prev != true) ref.read(deadStreakProvider.notifier).state++;
+    });
+    final evidence = ref.watch(deadEvidenceProvider);
+    final refused = ref.watch(refusedNodesProvider);
+    final deadStreak = ref.watch(deadStreakProvider);
     final lastHost = ref.read(connectReporterProvider).lastNodeHost;
 
     // 断开后直接碰：两台不同的节点都没回音、接口服务器却通 → 自动弹一次引导卡（攒到 2 个那一刻）。
@@ -63,8 +71,10 @@ class ConnectIssueCard extends ConsumerWidget {
     final bool lineDown = dead && ref.watch(panelAuthProvider.select((s) => s.account?.isLineDown(lineName) ?? false));
     final bool netBlocked = dead && !lineDown && unreachable.length >= 2;
     final bool thisLineBlocked = dead && !netBlocked && lastHost != null && unreachable.contains(lastHost);
-    // 直连节点是通的、隧道没走通：线路是好的，问题在这台手机这边，不叫他换线（体检修复 R2，跟 Windows tunnel_local 同一句）。
-    final bool localPath = dead && !lineDown && !netBlocked && !thisLineBlocked && lastHost != null && reachableHost == lastHost;
+    // 节点没认出我们（REALITY 校验失败）：线路配置的问题，不是用户的。
+    final bool reality = dead && !lineDown && evidence == 'reality';
+    // 两条不同的线都是「端口通、节点却把连接结束了、一个字节没回」：原因说不清。
+    final bool unknown = dead && !lineDown && !netBlocked && !reality && refused.length >= 2;
     final bool revoked = fault == 'revoked' && status is Disconnected;
     final bool engine = (fault == 'engine' || revoked) && status is Disconnected;
     final bool gone = engine && !revoked;
@@ -100,12 +110,18 @@ class ConnectIssueCard extends ConsumerWidget {
     } else if (netBlocked) {
       title = '你的网络连不上我们的线路';
       body = '试了 ${unreachable.length} 条线路都没有回应，换线路也没用';
+    } else if (reality) {
+      title = '这条线路暂时用不了';
+      body = '这条线路的设置和服务器对不上，不是你的问题。请联系客服，我们来处理；你也可以先换一条线路';
+    } else if (unknown) {
+      title = '连接没有完成';
+      body = unknownFaultCopy;
     } else if (thisLineBlocked) {
       title = '这条线路现在不通';
       body = '这条线路在你的网络里连不上，请换一条';
-    } else if (localPath) {
-      title = '这台手机没连通';
-      body = '线路是好的，是这台手机这边没连通。点「重新连接」再试一次，还不行请联系客服';
+    } else if (evidence == 'refused') {
+      title = '这条线路现在不通';
+      body = '这条线路断开了光速雷达的连接。请换一条线路';
     } else {
       title = '这条线路现在不通';
       body = '换一条线路试试，或者稍后点「重新连接」';
@@ -121,6 +137,32 @@ class ConnectIssueCard extends ConsumerWidget {
         await notifier.toggleConnection();
       }
     }
+
+    void pickLine() {
+      ref.read(deadLineProvider.notifier).state = false;
+      ref.read(homeFaultProvider.notifier).state = '';
+      showLinePicker(context, ref);
+    }
+
+    void support() => openSupportWithDiag(context);
+
+    // 处理办法（原因已知时它们是主按钮）。
+    final fixes = <(String, VoidCallback)>[
+      if (noBackground) ('允许后台运行', () => ref.read(batteryOptimizationNotifierProvider.notifier).requestToIgnore()),
+      if (noBackground) ('重新连接', reconnect),
+      if (gone && canRepair && !noBackground) ('修复并重新连接', () => ref.read(localRepairProvider).repairAndReconnect('engine')),
+      if (egress) ('怎么办', () => showUnknownFaultGuide(context)),
+      if (netBlocked) ('怎么办', () => showNetBlockedGuide(context, unreachable.length)),
+      if (dead && !netBlocked && !unknown) ('换一条线路', pickLine),
+      if (!gone && !lineDown) ('重新连接', reconnect),
+    ];
+    // 联系客服当主按钮：原因不明 / 线路设置对不上 / 网页没走线路且查不到原因 / 修过还断 / 同一种不通连着第二次。
+    final supportFirst = unknown ||
+        reality ||
+        egress ||
+        (gone && !canRepair && !noBackground) ||
+        (dead && !lineDown && !netBlocked && deadStreak >= 2);
+    final actions = supportFirst ? [('联系客服', support), ...fixes] : fixes;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -152,60 +194,25 @@ class ConnectIssueCard extends ConsumerWidget {
             Text(body, style: theme.textTheme.bodySmall?.copyWith(color: fg, height: 1.5)),
             const SizedBox(height: 4),
             Wrap(
-              spacing: 4,
+              spacing: 8,
+              runSpacing: 4,
               children: [
-                if (noBackground)
-                  TextButton(
-                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
-                    onPressed: () => ref.read(batteryOptimizationNotifierProvider.notifier).requestToIgnore(),
-                    child: const Text('允许后台运行'),
-                  ),
-                if (noBackground)
-                  TextButton(
-                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
-                    onPressed: reconnect,
-                    child: const Text('重新连接'),
-                  ),
-                if (gone && canRepair && !noBackground)
-                  TextButton(
-                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
-                    onPressed: () => ref.read(localRepairProvider).repairAndReconnect('engine'),
-                    child: const Text('修复并重新连接'),
-                  ),
-                if (egress)
-                  TextButton(
-                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
-                    onPressed: () => showUnknownFaultGuide(context),
-                    child: const Text('怎么办'),
-                  ),
-                if (netBlocked)
-                  TextButton(
-                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
-                    onPressed: () => showNetBlockedGuide(context, unreachable.length),
-                    child: const Text('怎么办'),
-                  ),
-                if (dead && !netBlocked && !localPath)
-                  TextButton(
-                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
-                    onPressed: () {
-                      ref.read(deadLineProvider.notifier).state = false;
-                      ref.read(homeFaultProvider.notifier).state = '';
-                      showLinePicker(context, ref);
-                    },
-                    child: const Text('换一条线路'),
-                  ),
-                if (!gone && !lineDown)
-                  TextButton(
-                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
-                    onPressed: reconnect,
-                    child: const Text('重新连接'),
-                  ),
-                if (localPath || (gone && !canRepair && !noBackground))
-                  TextButton(
-                    style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
-                    onPressed: () => context.pushNamed('supportChat'),
-                    child: const Text('联系客服'),
-                  ),
+                for (final (i, act) in actions.indexed)
+                  i == 0
+                      ? FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: fg,
+                            foregroundColor: bg,
+                            minimumSize: const Size(48, 40),
+                          ),
+                          onPressed: act.$2,
+                          child: Text(act.$1),
+                        )
+                      : TextButton(
+                          style: TextButton.styleFrom(foregroundColor: fg, minimumSize: const Size(48, 48)),
+                          onPressed: act.$2,
+                          child: Text(act.$1),
+                        ),
               ],
             ),
           ],

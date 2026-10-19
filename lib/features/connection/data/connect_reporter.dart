@@ -248,6 +248,15 @@ class ConnectReporter {
     } catch (_) {}
   }
 
+  /// 这次连接的内核日志（box.log 末尾 64KB）里有没有这句（不分大小写）。判「不通」找正面证据用，
+  /// 比如 REALITY 校验失败（节点没认出我们）。
+  Future<bool> coreLogHas(String needle) async {
+    final dir = _workingDirSync();
+    if (dir == null) return false;
+    final text = await _tail(p.join(dir.path, 'box.log'), 2000, 64 * 1024);
+    return text.toLowerCase().contains(needle.toLowerCase());
+  }
+
   Future<void> reportSuccess(int proxyMs) async {
     if (!attemptOpen) return;
     _done = true;
@@ -278,6 +287,8 @@ class ConnectReporter {
     String? tunnelNote,
     bool? appForeground,
     String? probeLog,
+    String? fault,
+    bool probeNode = true,
   }) async {
     if (!attemptOpen) return;
     _done = true;
@@ -292,7 +303,10 @@ class ConnectReporter {
     // Active TCP probe: whenever we got at least as far as tunnel takeover, or
     // the mapped stage is node-level, probe the node ourselves so we record the
     // dest / latency / OS error code / text directly, not only via the core log.
-    if (_tcp == null &&
+    // [probeNode] = false：调用方失败后自己会直连节点（connection_notifier._probeDeadLineDirect），这里不再碰一遍——
+    // 直连不自己计时、要等系统的 TCP 超时（安卓最长约 2 分钟），等它的话这条失败要很久才发出去，他走了就丢了。
+    if (probeNode &&
+        _tcp == null &&
         _nodeHost != null &&
         _nodePort != null &&
         (_reached >= stageTunnelReady ||
@@ -317,6 +331,8 @@ class ConnectReporter {
     if (steps.isNotEmpty) payload['step_ms'] = steps;
     if (appForeground != null) payload['app_fg'] = appForeground;
     if (probeLog != null && probeLog.isNotEmpty) payload['probe_n'] = probeLog;
+    // 诊断结论（dead_tunnel / reality_mismatch …），服务器据此标「原因不明」（两端统一，Windows 的 fault）。
+    if (fault != null && fault.isNotEmpty) payload['fault'] = fault;
     if (_sub.isNotEmpty) payload['sub'] = _sub;
     if (_tcp != null) payload['tcp'] = _tcp;
     final errMsg = _errMsg(engineError);
@@ -414,7 +430,8 @@ class ConnectReporter {
 
   /// 连接过程中他自己点了取消。[stepSlug]：account / nodes / route_pick / connect / verify。
   /// 第 4、5 步连接尝试已经开着，就记到那一条上（不再悄悄丢掉）。
-  Future<void> reportCancel(String stepSlug) async {
+  /// [detail]：比如第 5 步取消时节点回了多少字节（跟 Windows 一样记进 err_msg）。
+  Future<void> reportCancel(String stepSlug, {String? detail}) async {
     final steps = ConnectFlowClock.text();
     ConnectFlowClock.end('cancel');
     final open = attemptOpen;
@@ -429,6 +446,7 @@ class ConnectReporter {
       ..['fail_stage'] = stepSlug
       ..['reached_stage'] = open ? _reached : 0;
     if (steps.isNotEmpty) payload['step_ms'] = steps;
+    if (detail != null && detail.isNotEmpty) payload['err_msg'] = _errMsg(detail);
     ConnectFlowClock.log?.call('connect cancelled at $stepSlug');
     await _send(payload, null);
   }
@@ -677,7 +695,8 @@ class ConnectReporter {
     final dest = '$host:$port';
     final sw = Stopwatch()..start();
     try {
-      final s = await Socket.connect(host, port, timeout: const Duration(seconds: 6));
+      // 不自己计时：等系统给结论（连上 / 被拒 / 不可达 / 系统的 TCP 连接超时），跟 Windows 一样（10-19 运营：不按秒数判）。
+      final s = await Socket.connect(host, port);
       sw.stop();
       s.destroy();
       return {'dest': dest, 'ms': sw.elapsedMilliseconds, 'ok': true, 'errno': 0};

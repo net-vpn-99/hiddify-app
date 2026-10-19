@@ -59,7 +59,7 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
 /// 「最快」节点（国内经常是美国 CN2 GIA），负载均衡白排。
 ///
 /// 以前这里切完还会后台测一轮：推荐节点连不上就**自动回退到最快那条**。两端统一
-/// 去掉了（docs/连上但不通-两端统一-手册.md）：连不上 10 秒内由 connection_notifier
+/// 去掉了（docs/连上但不通-两端统一-手册.md）：连不上由 connection_notifier 按正面证据
 /// 断开并在首页说原因和下一步，换哪条由用户自己选。
 Future<void> _applyServerRecommended(
   ProxyRepository repo,

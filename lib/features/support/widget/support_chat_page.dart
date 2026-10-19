@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
+import 'package:hiddify/features/diagnostic/diag_service.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/support/model/support_message.dart';
 import 'package:hiddify/features/support/notifier/support_chat_notifier.dart';
@@ -11,7 +12,10 @@ import 'package:hiddify/features/support/widget/support_image_viewer.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class SupportChatPage extends ConsumerStatefulWidget {
-  const SupportChatPage({super.key});
+  /// [attachDiag]：从连接失败那里点进来的。打开就传一份诊断，第一条消息自动带上诊断码（跟 Windows 一样）。
+  const SupportChatPage({super.key, this.attachDiag = false});
+
+  final bool attachDiag;
 
   @override
   ConsumerState<SupportChatPage> createState() => _SupportChatPageState();
@@ -21,6 +25,10 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   int _lastCount = 0;
+  // 连接失败点进来的：诊断码（传好之前为空）、他是不是在诊断码传好之前就发了消息。
+  bool _attachDiag = false;
+  String _diagCode = '';
+  bool _sentBeforeCode = false;
 
   // dispose 里不能再用 ref（页面已卸载会抛错，10-10 诊断包里见过），先在 initState 存一份。
   late final SupportChatNotifier _notifier;
@@ -38,6 +46,19 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
       if (acc?.planName != null) notifier.bindIdentity(plan: acc!.planName);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => notifier.openChat());
+    if (widget.attachDiag) {
+      _attachDiag = true;
+      uploadDiagnostics(ref).then((r) {
+        final code = r.code ?? '';
+        if (code.isEmpty || !_attachDiag) return;
+        _diagCode = code;
+        // 他已经发了消息、诊断码才传好：单独补一条。
+        if (_sentBeforeCode) {
+          _notifier.sendText('（诊断码 $code）');
+          _attachDiag = false;
+        }
+      });
+    }
   }
 
   @override
@@ -79,9 +100,17 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
   }
 
   void _send() {
-    final text = _input.text;
+    var text = _input.text;
     if (text.trim().isEmpty) return;
     _input.clear();
+    if (_attachDiag) {
+      if (_diagCode.isNotEmpty) {
+        text = '$text（诊断码 $_diagCode）';
+        _attachDiag = false;
+      } else {
+        _sentBeforeCode = true;
+      }
+    }
     ref.read(supportChatNotifierProvider.notifier).sendText(text);
   }
 
