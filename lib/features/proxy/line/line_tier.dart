@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/utils/device_id.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
@@ -131,6 +132,8 @@ class LineTierNotifier extends Notifier<LineTierState> {
       final ended = _prev == 'active' && trial == 'used';
       _prev = trial;
       final up = data['upgrade'];
+      // 先换好线路再更新状态：结束卡是看着 endedUnseen 弹的，那一刻就要有「换到了哪条」这句
+      final note = ended ? await _leaveProLine() : null;
       state = state.copyWith(
         trial: trial,
         seconds: seconds,
@@ -139,8 +142,8 @@ class LineTierNotifier extends Notifier<LineTierState> {
         trialEnded: ended || state.trialEnded,
         endedUnseen: data['trial_ended_unseen'] == true,
         upgrade: up is Map ? Map<String, dynamic>.from(up) : const {},
+        endNote: note,
       );
-      if (ended) state = state.copyWith(endNote: await _leaveProLine());
       if (trial != 'active') {
         _endingNoted = false;
       } else if (!_endingNoted && seconds > 0 && seconds <= 300) {
@@ -186,6 +189,18 @@ class LineTierNotifier extends Notifier<LineTierState> {
     await ref.read(Preferences.lastNodeDesc.notifier).update(pick.desc);
     return '已经帮你换到同一个国家的标准线路「${pick.name}」，网络没断。';
   }
+
+  /// 购买页看了精品没买退出时问「先免费试」：每个账号只问一次（他在别处选过「直接升级」也算问过）。
+  bool shopAsked() {
+    final prefs = ref.read(sharedPreferencesProvider).valueOrNull;
+    return prefs == null || (prefs.getBool(_shopAskKey()) ?? false);
+  }
+
+  Future<void> markShopAsked() async {
+    await ref.read(sharedPreferencesProvider).valueOrNull?.setBool(_shopAskKey(), true);
+  }
+
+  String _shopAskKey() => 'pro_trial_shop_asked_${(ref.read(panelAuthProvider).account?.email ?? '').toLowerCase()}';
 
   /// 体验结束卡弹过了：告诉服务器（没报上去下次刷新还会再弹一次，不要紧）。
   Future<void> markEndSeen() async {

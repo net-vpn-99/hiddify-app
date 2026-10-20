@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
@@ -92,12 +91,12 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final acc = ref.watch(purchaseAccountProvider).asData?.value ?? auth.account;
     final renewing = auth.loggedIn && !auth.freeTrial && (acc?.planName?.trim().isNotEmpty ?? false);
     // 能领体验的标准版会员看着精品版、没下单就要走：问一次要不要先免费试（每个账号只问一次，运营 10-20，Windows 同款）
-    final askTrial = _shouldAskTrial(state, auth.account?.email ?? '');
+    final askTrial = _shouldAskTrial(state);
     return PopScope(
       canPop: !askTrial,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        await _markTrialAsked(auth.account?.email ?? '');
+        await ref.read(lineTierProvider.notifier).markShopAsked();
         if (!context.mounted) return;
         var stay = false;
         await offerProTrial(context, ref, 'shop_view', onUpgrade: () => stay = true);
@@ -107,20 +106,13 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     );
   }
 
-  bool _shouldAskTrial(PurchaseState state, String email) {
-    if (state.stage != PurchaseStage.browsing || email.isEmpty) return false;
+  bool _shouldAskTrial(PurchaseState state) {
+    if (state.stage != PurchaseStage.browsing) return false;
     final sel = state.selected;
     if (sel == null) return false;
     final tier = state.tiers.where((x) => x.planId == sel.planId).firstOrNull;
     if (tier?.tier != 'pro' || ref.read(lineTierProvider).trial != 'can') return false;
-    final prefs = ref.read(sharedPreferencesProvider).valueOrNull;
-    return prefs != null && !(prefs.getBool(_askKey(email)) ?? false);
-  }
-
-  String _askKey(String email) => 'pro_trial_shop_asked_${email.toLowerCase()}';
-
-  Future<void> _markTrialAsked(String email) async {
-    await ref.read(sharedPreferencesProvider).valueOrNull?.setBool(_askKey(email), true);
+    return !ref.read(lineTierProvider.notifier).shopAsked();
   }
 
   Widget _scaffold(OneRayTokens t, PurchaseState state, bool renewing) {

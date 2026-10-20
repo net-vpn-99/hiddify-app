@@ -469,9 +469,8 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
       _upgrade(context, 'pro');
       return;
     }
-    final root = Navigator.of(context, rootNavigator: true).context;
-    Navigator.of(context).pop();
-    unawaited(offerProTrial(root, ref, 'tap_line'));
+    // 面板不关：领到了在面板上弹「体验已开始」，刷新完精品线路就在眼前（关了面板，这个 ref 也跟着没了）
+    unawaited(offerProTrial(context, ref, 'tap_line', onUpgrade: () => _upgrade(context, 'pro')));
   }
 
   void _upgrade(BuildContext context, String tier) {
@@ -528,6 +527,8 @@ Future<void> offerProTrial(BuildContext context, WidgetRef ref, String why, {Voi
       secondaryText: '直接升级精品版',
       onSecondary: () {
         Navigator.of(ctx).pop();
+        // 他选了升级：之后关购买页就别再问「先免费试」
+        unawaited(ref.read(lineTierProvider.notifier).markShopAsked());
         if (onUpgrade != null) {
           onUpgrade();
           return;
