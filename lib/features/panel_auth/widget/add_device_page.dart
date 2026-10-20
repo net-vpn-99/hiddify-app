@@ -148,6 +148,7 @@ class _AddDevicePageState extends ConsumerState<AddDevicePage> {
   String _label(String? platform) {
     if (platform == 'android') return '安卓手机';
     if (platform == 'windows') return 'Windows 电脑';
+    if (platform == 'linux') return 'Linux 电脑';
     return platform ?? '';
   }
 
