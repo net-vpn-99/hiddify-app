@@ -34,6 +34,7 @@ import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/active/auto_line_fixer.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
+import 'package:hiddify/features/proxy/line/line_tier.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/features/proxy/model/node_flag.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
@@ -170,6 +171,10 @@ class HomePage extends HookConsumerWidget {
     final giftPending = useState(false);
     final giftClaimed = useState(false);
     ref.listen<bool>(Preferences.panelLoggedIn, (_, _) => activityHidden.value = false);
+    // 精品体验结束卡：刚结束的、App 关着时结束的都弹一次（服务器说没看过才弹，弹了就告诉它，运营 10-20）。
+    ref.listen<bool>(lineTierProvider.select((s) => s.endedUnseen && s.trial != 'pro'), (prev, next) {
+      if (next && prev != true && context.mounted) unawaited(showProTrialEnd(context, ref));
+    });
     useEffect(() {
       final state = gift.value?['state'];
       if (giftPending.value && state == 'claimed') {

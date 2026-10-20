@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
@@ -168,7 +170,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
           if (preview) {
             _promptUnlock(context, ref);
           } else if (isPro(o) && proLocked) {
-            _upgrade(context, 'pro');
+            _lockedTap(context);
           } else {
             _pick(context, ref, o);
           }
@@ -312,19 +314,8 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
             tokens: tokens,
             lines: proOthers,
             countries: _countries(proAll),
-            tiers: tiers,
             onUpgrade: () => _upgrade(context, 'pro'),
-            onUpgradeStd: () => _upgrade(context, 'std'),
-            onClaim: () async {
-              final msg = await ref.read(lineTierProvider.notifier).claim();
-              if (!context.mounted) return;
-              if (msg == null) {
-                // 领到了：只告诉他精品线路在哪、点哪条，不替他换线路（10-19 运营定）。
-                await showProTrialGuide(context, ref.read(lineTierProvider), isp);
-                return;
-              }
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-            },
+            onLineTap: () => _lockedTap(context),
           ));
         }
         final stdAll = all.where((o) => !isPro(o)).toList();
@@ -472,6 +463,17 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     _search.text = name;
   }
 
+  /// 点了锁着的精品线路：能领体验就先问要不要免费试（运营 10-20：只给想试的人），不能就去升级。
+  void _lockedTap(BuildContext context) {
+    if (ref.read(lineTierProvider).trial != 'can') {
+      _upgrade(context, 'pro');
+      return;
+    }
+    final root = Navigator.of(context, rootNavigator: true).context;
+    Navigator.of(context).pop();
+    unawaited(offerProTrial(root, ref, 'tap_line'));
+  }
+
   void _upgrade(BuildContext context, String tier) {
     ref.read(purchasePreferTierProvider.notifier).state = tier;
     Navigator.of(context).pop();
@@ -497,6 +499,84 @@ List<String> _countries(List<LineOption> lines) {
     if (!out.contains(c)) out.add(c);
   }
   return out;
+}
+
+/// 问他要不要先免费试精品线路（他自己表现出想用精品了才问：点了锁着的精品线路 / 购买页看了精品没买，运营 10-20）。
+/// Windows 同款：HelpGuides.qml 的 proTrialOfferCard。领到了弹「体验已开始」那张。
+/// [onUpgrade]：「直接升级精品版」做什么，不给就去购买页选好精品版（已经在购买页里时给一个只关卡片的）。
+Future<void> offerProTrial(BuildContext context, WidgetRef ref, String why, {VoidCallback? onUpgrade}) {
+  final tiers = ref.read(lineTierProvider);
+  final span = tiers.minutes == 60 ? '1 小时' : '${tiers.minutes} 分钟';
+  return showDialog<void>(
+    context: context,
+    barrierColor: guideCanvasColor(context),
+    builder: (ctx) => GuideCard(
+      title: '先免费试$span精品线路？',
+      body: '精品线路晚高峰也稳。免费试 $span，到时间自动结束。',
+      actionText: '免费试 $span',
+      onAction: () async {
+        Navigator.of(ctx).pop();
+        final msg = await ref.read(lineTierProvider.notifier).claim(why);
+        if (!context.mounted) return;
+        if (msg != null) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+          return;
+        }
+        final isp = ref.read(panelAuthProvider).account?.isp ?? '';
+        await showProTrialGuide(context, ref.read(lineTierProvider), isp);
+      },
+      secondaryText: '直接升级精品版',
+      onSecondary: () {
+        Navigator.of(ctx).pop();
+        if (onUpgrade != null) {
+          onUpgrade();
+          return;
+        }
+        ref.read(purchasePreferTierProvider.notifier).state = 'pro';
+        context.pushNamed('purchase');
+      },
+      links: [GuideLink('不用了', () => Navigator.of(ctx).pop())],
+    ),
+  );
+}
+
+/// 体验结束卡：写明升级精品版要补多少（会员按标准版剩下的天数抵，送的天数接在精品后面，运营 10-20）。
+/// 刚结束的、App 关着时结束的都弹一次，弹出就告诉服务器看过了。Windows 同款：HelpGuides.qml 的 proTrialEndCard。
+Future<void> showProTrialEnd(BuildContext context, WidgetRef ref) {
+  final tiers = ref.read(lineTierProvider);
+  unawaited(ref.read(lineTierProvider.notifier).markEndSeen());
+  String yuan(Object? fen) {
+    final v = ((fen is num) ? fen : 0) / 100;
+    return v == v.floorToDouble() ? '${v.toInt()}' : v.toStringAsFixed(2);
+  }
+
+  final o = tiers.upgrade;
+  final price = o['price_fen'];
+  var offer = '想一直用精品线路，可以升级精品版。';
+  if (price is num && price > 0) {
+    final credit = o['credit_fen'];
+    offer = (credit is num && credit > 0)
+        ? '升级精品版，本月只需补 ¥${yuan(o['pay_fen'])}（标准版剩下的天数已抵 ¥${yuan(credit)}）。'
+        : '升级精品版，本月 ¥${yuan(o['pay_fen'])}。';
+    final days = o['std_days_after'];
+    if (days is num && days > 0) offer += '送你的 ${days.toInt()} 天标准版接在精品版后面，一天不少。';
+  }
+  return showDialog<void>(
+    context: context,
+    barrierColor: guideCanvasColor(context),
+    builder: (ctx) => GuideCard(
+      title: '精品线路体验结束了',
+      body: tiers.endNote.isEmpty ? offer : '${tiers.endNote}\n$offer',
+      actionText: '升级精品版',
+      onAction: () {
+        Navigator.of(ctx).pop();
+        ref.read(purchasePreferTierProvider.notifier).state = 'pro';
+        context.pushNamed('purchase');
+      },
+      secondaryText: '继续用标准版',
+      onSecondary: () => Navigator.of(ctx).pop(),
+    ),
+  );
 }
 
 /// 领完精品线路体验弹的引导卡：精品线路在哪、点哪条、到时会怎样。
@@ -928,31 +1008,21 @@ class _LockedProCard extends StatelessWidget {
     required this.tokens,
     required this.lines,
     required this.countries,
-    required this.tiers,
     required this.onUpgrade,
-    required this.onUpgradeStd,
-    required this.onClaim,
+    required this.onLineTap,
   });
 
   final OneRayTokens tokens;
   final List<LineOption> lines;
   final List<String> countries;
-  final LineTierState tiers;
   final VoidCallback onUpgrade;
-  final VoidCallback onUpgradeStd;
-  final VoidCallback onClaim;
+  // 点了某条锁着的精品线路：能领体验就先问要不要试（10-20 起不再给所有人挂「领取」横幅）
+  final VoidCallback onLineTap;
 
   @override
   Widget build(BuildContext context) {
-    final offer = tiers.trial == 'offer';
-    final lockedTrial = tiers.trial == 'locked';
-    final hour = tiers.minutes == 60;
-    final label = offer
-        ? (hour ? '您可领取 1 小时精品线路体验' : '您可领取 ${tiers.minutes} 分钟精品线路体验')
-        : lockedTrial
-            ? (hour ? '标准版会员可领 1 小时精品线路体验' : '标准版会员可领 ${tiers.minutes} 分钟精品线路体验')
-            : '想晚高峰更快？';
-    final action = offer ? '领取' : (lockedTrial ? '升级' : '升级精品版');
+    const label = '想晚高峰更快？';
+    const action = '升级精品版';
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: tokens.ring),
@@ -984,7 +1054,7 @@ class _LockedProCard extends StatelessWidget {
             ),
             for (final o in lines)
               InkWell(
-                onTap: onUpgrade,
+                onTap: onLineTap,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                   child: Row(
@@ -1030,7 +1100,7 @@ class _LockedProCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       shape: const StadiumBorder(),
                     ),
-                    onPressed: offer ? onClaim : (lockedTrial ? onUpgradeStd : onUpgrade),
+                    onPressed: onUpgrade,
                     child: Text(action, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefaultTextStyle.of(context).style.fontFamily)),
                   ),
                 ],

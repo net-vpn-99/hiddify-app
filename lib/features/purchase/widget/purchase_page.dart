@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/text_link.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/guest_bootstrap.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/proxy/line/line_picker.dart';
+import 'package:hiddify/features/proxy/line/line_tier.dart';
 import 'package:hiddify/features/purchase/data/purchase_service.dart';
 import 'package:hiddify/features/purchase/model/plan_offer.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
@@ -88,6 +91,39 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     final auth = ref.watch(panelAuthProvider);
     final acc = ref.watch(purchaseAccountProvider).asData?.value ?? auth.account;
     final renewing = auth.loggedIn && !auth.freeTrial && (acc?.planName?.trim().isNotEmpty ?? false);
+    // 能领体验的标准版会员看着精品版、没下单就要走：问一次要不要先免费试（每个账号只问一次，运营 10-20，Windows 同款）
+    final askTrial = _shouldAskTrial(state, auth.account?.email ?? '');
+    return PopScope(
+      canPop: !askTrial,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _markTrialAsked(auth.account?.email ?? '');
+        if (!context.mounted) return;
+        var stay = false;
+        await offerProTrial(context, ref, 'shop_view', onUpgrade: () => stay = true);
+        if (!stay && context.mounted) Navigator.of(context).pop();
+      },
+      child: _scaffold(t, state, renewing),
+    );
+  }
+
+  bool _shouldAskTrial(PurchaseState state, String email) {
+    if (state.stage != PurchaseStage.browsing || email.isEmpty) return false;
+    final sel = state.selected;
+    if (sel == null) return false;
+    final tier = state.tiers.where((x) => x.planId == sel.planId).firstOrNull;
+    if (tier?.tier != 'pro' || ref.read(lineTierProvider).trial != 'can') return false;
+    final prefs = ref.read(sharedPreferencesProvider).valueOrNull;
+    return prefs != null && !(prefs.getBool(_askKey(email)) ?? false);
+  }
+
+  String _askKey(String email) => 'pro_trial_shop_asked_${email.toLowerCase()}';
+
+  Future<void> _markTrialAsked(String email) async {
+    await ref.read(sharedPreferencesProvider).valueOrNull?.setBool(_askKey(email), true);
+  }
+
+  Widget _scaffold(OneRayTokens t, PurchaseState state, bool renewing) {
     return Scaffold(
       backgroundColor: t.bg,
       appBar: AppBar(
@@ -324,9 +360,6 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     if (tier == null) return null;
     final me = state.me;
     if (tier.tier == 'pro' && me?.tier != 'pro') return _proPerDayMore(state);
-    if (tier.tier == 'std' && me != null && (me.trial == 'locked' || me.trial == 'offer')) {
-      return me.trialMinutes == 60 ? '送 1 小时精品线路体验' : '送 ${me.trialMinutes} 分钟精品线路体验';
-    }
     return null;
   }
 
@@ -836,15 +869,12 @@ class _PickRadio extends StatelessWidget {
 /// 版本对比表：一张白卡，左边项目名，右边每档一列；选中那一列整列铺浅橙 + 右上角圆勾，
 /// 没选的放空心圆圈。不描边、不画格子框，只有很淡的行线。点哪一格都选那一档。
 /// 每档最多一个状态小标签（两端一样，Windows ShopOverlay.tierBadge）。
-/// 精品版：当前 → 本月名额已满 → 推荐；标准版：当前 → 精品版已包含 → 送精品线路体验。
+/// 精品版：当前 → 本月名额已满 → 推荐；标准版：当前 → 精品版已包含（10-20 起不再写「送精品线路体验」）。
 /// 不写「剩 N 个名额」（运营 10-16：不打算限制购买人数）。返回 (字, 口气)：current / muted / warm。
 (String, String)? tierBadge(ShopTier tier, ShopMe? me) {
   if (me?.tier == tier.tier) return ('当前', 'current');
   if (tier.tier == 'std' && me?.canBuyStd == false) return ('精品版已包含', 'muted');
   if (tier.full && me?.tier != 'pro') return ('本月名额已满', 'muted');
-  if (tier.tier == 'std' && me != null && (me.trial == 'locked' || me.trial == 'offer')) {
-    return (me.trialMinutes == 60 ? '送 1 小时精品线路体验' : '送 ${me.trialMinutes} 分钟精品线路体验', 'warm');
-  }
   // 只写「推荐」，跟时长的「推荐」区分开。
   if (tier.recommended) return ('推荐', 'warm');
   return null;
