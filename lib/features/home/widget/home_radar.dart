@@ -91,14 +91,7 @@ class HomeRadar extends HookConsumerWidget {
                   ),
                 ),
               ),
-            // 「快 / 中 / 慢」写在三块色块正下方，光点的名字会让开它们（Windows RadarScope 同一套）。
-            for (final (t, y) in _bandLabels)
-              Positioned(
-                left: 0,
-                right: 0,
-                top: y * k - 8,
-                child: Text(t, textAlign: TextAlign.center, style: TextStyle(fontSize: 10, height: 1.3, color: tk.dim.withValues(alpha: 0.7))),
-              ),
+            // 三圈不写「快 / 中 / 慢」（10-20 运营：不懂的人看到自己那条在「慢」圈会觉得慢；Windows RadarScope 同一套）。
             for (final b in blips)
               _blipWidget(context, tk, b, k, hollow, blink),
           ],
@@ -179,11 +172,10 @@ class HomeRadar extends HookConsumerWidget {
     (lines.toList()..sort((a, b) => score(a) - score(b))).forEach(take);
 
     // 一条条摆（正在用的先摆）：在自己那一圈上从固定角度起左右各挪 15° 试，名字放右边或左边；
-    // 光点 + 名字这一块不能跟已经摆好的、中心点、「快 / 中 / 慢」叠上，也不能伸出雷达卡。都不行就放回原位。
+    // 光点 + 名字这一块不能跟已经摆好的、中心点叠上，也不能伸出雷达卡。都不行就放回原位。
     final pad = 3 / k;
     final taken = <Rect>[
       const Rect.fromLTWH(190, 190, 20, 20),
-      for (final (_, y) in _bandLabels) Rect.fromCenter(center: Offset(200, y), width: 16 / k, height: 16 / k),
     ];
     return [
       for (final l in picked)
@@ -236,8 +228,6 @@ class HomeRadar extends HookConsumerWidget {
         }(),
     ];
   }
-
-  static const _bandLabels = [('快', 235.0), ('中', 300.0), ('慢', 358.0)];
 
   // 估一段字的宽度（像素）：汉字算一个字号宽，其余算 0.56 个。只用来避让，不求准。
   static double _textWidth(String s, double px) =>

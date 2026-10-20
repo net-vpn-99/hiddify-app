@@ -109,12 +109,12 @@ void main() {
     ));
     await _shot(tester, 'H2-已连接.png', state: RadarState.connected, panel: (radar) => HomeConnectPanel(
       radar: radar, onTap: () {}, enabled: true, connectedDot: true,
-      kicker: '', title: '东京 03', sub: '48 ms · ↓ 2.4 MB/s · 晚高峰稳',
+      kicker: '', title: '东京 03', sub: '↓ 2.4 MB/s · 晚高峰稳',
       buttonLabel: '断开连接', buttonOutlined: true, showAllLines: true, onAllLines: () {},
     ));
     await _shot(tester, 'H4-已连接-深色.png', dark: true, state: RadarState.connected, panel: (radar) => HomeConnectPanel(
       radar: radar, onTap: () {}, enabled: true, connectedDot: true,
-      kicker: '', title: '东京 03', sub: '48 ms · ↓ 2.4 MB/s · 晚高峰稳',
+      kicker: '', title: '东京 03', sub: '↓ 2.4 MB/s · 晚高峰稳',
       buttonLabel: '断开连接', buttonOutlined: true, showAllLines: true, onAllLines: () {},
     ));
     await _shot(tester, 'H3-连接失败.png', state: RadarState.failed, panel: (radar) => HomeConnectPanel(
