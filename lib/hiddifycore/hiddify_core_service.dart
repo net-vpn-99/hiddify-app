@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:fpdart/fpdart.dart';
@@ -9,6 +10,7 @@ import 'package:hiddify/core/model/directories.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
+import 'package:hiddify/features/log/data/log_path_resolver.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/hiddifycore/core_interface/core_interface.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcommon/common.pb.dart';
@@ -140,9 +142,22 @@ class HiddifyCoreService with InfraLogger {
     });
   }
 
+  /// 内核日志（data/box.log）是一直往后追加的，info 级每条连接一行。每次连接前清空（这次连接的日志从头记，
+  /// 失败诊断、「走错了」读的都是这次的），连着时每 10 分钟看一眼，超过 16MB 也清空，免得占满手机。
+  Timer? _coreLogGuard;
+
+  void _truncateCoreLog({int over = 0}) {
+    try {
+      final f = File(LogPathResolver.corePath(ref.read(appDirectoriesProvider).requireValue.workingDir));
+      if (f.existsSync() && f.lengthSync() > over) f.writeAsBytesSync(const [], flush: true);
+    } catch (_) {}
+  }
+
   TaskEither<ConnectionFailure, Unit> start(String path, String name, bool disableMemoryLimit) {
     return TaskEither(() async {
       statusController.add(currentState = const CoreStatus.starting());
+      _truncateCoreLog();
+      _coreLogGuard ??= Timer.periodic(const Duration(minutes: 10), (_) => _truncateCoreLog(over: 16 << 20));
       loggy.debug("starting");
       final background = await core.setupBackground(path, name);
       if (background != const CoreStatus.started()) {

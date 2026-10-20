@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:hiddify/features/log/data/log_path_resolver.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
@@ -89,6 +90,7 @@ Future<String> _collect(WidgetRef ref) async {
     b.writeln('tun_implementation=${ref.read(ConfigOptions.tunImplementation).name}');
     b.writeln('mtu=${ref.read(ConfigOptions.mtu)}');
     b.writeln('bypass_lan=${ref.read(ConfigOptions.bypassLan)}');
+    b.writeln('log_level=${ref.read(ConfigOptions.logLevel).name}');
   } catch (e) {
     b.writeln('(读取设置出错: $e)');
   }
@@ -96,7 +98,7 @@ Future<String> _collect(WidgetRef ref) async {
 
   final dir = ref.read(appDirectoriesProvider).requireValue.workingDir;
   b.writeln('--- box.log (尾部) ---');
-  b.writeln(await _tailFile(p.join(dir.path, 'box.log'), 600, 200 * 1024));
+  b.writeln(await _tailFile(LogPathResolver.corePath(dir), 600, 200 * 1024));
   b.writeln();
   b.writeln('--- app.log (尾部) ---');
   b.writeln(await _tailFile(p.join(dir.path, 'app.log'), 300, 100 * 1024));

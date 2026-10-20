@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
+import 'package:hiddify/features/log/data/log_path_resolver.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/model/constants.dart';
@@ -252,7 +253,7 @@ class ConnectReporter {
     try {
       final dir = _workingDirSync();
       if (dir == null) return;
-      final src = File(p.join(dir.path, 'box.log'));
+      final src = File(LogPathResolver.corePath(dir));
       final dst = File(p.join(dir.path, 'box.log.snap'));
       if (src.existsSync()) {
         src.copySync(dst.path);
@@ -268,7 +269,7 @@ class ConnectReporter {
   Future<bool> coreLogHas(String needle) async {
     final dir = _workingDirSync();
     if (dir == null) return false;
-    final text = await _tail(p.join(dir.path, 'box.log'), 2000, 64 * 1024);
+    final text = await _tail(LogPathResolver.corePath(dir), 2000, 64 * 1024);
     return text.toLowerCase().contains(needle.toLowerCase());
   }
 
@@ -833,7 +834,7 @@ class ConnectReporter {
       // box.log: prefer the failure-time snapshot (a reconnect truncates the
       // live file). app.log is app-written and append-only, read live.
       final snap = File(p.join(dir.path, 'box.log.snap'));
-      final boxPath = snap.existsSync() ? snap.path : p.join(dir.path, 'box.log');
+      final boxPath = snap.existsSync() ? snap.path : LogPathResolver.corePath(dir);
 
       final text = StringBuffer()
         ..writeln('===== 光速雷达 连接轨迹 =====')
