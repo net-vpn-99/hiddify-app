@@ -106,12 +106,12 @@ class ConnectReporter {
   /// 断开（VPN 已经拆掉）之后直接碰一下刚才的节点，同时碰一下我们的接口服务器作对照。
   /// 返回 (节点通不通, 节点没回音（超时 / 不可达）, 接口服务器通不通)。
   /// Android 错误码：110 超时、113 主机不可达、101 网络不可达。
-  Future<({bool nodeOk, bool noAnswer, bool apiOk})> probeLastNodeDirect() async {
+  Future<({bool nodeOk, bool noAnswer, bool apiOk, Map<String, dynamic> tcp})> probeLastNodeDirect() async {
     final host = lastNodeHost;
     final port = lastNodePort;
-    if (host == null || port == null) return (nodeOk: false, noAnswer: false, apiOk: false);
+    if (host == null || port == null) return (nodeOk: false, noAnswer: false, apiOk: false, tcp: <String, dynamic>{});
     final node = await _probeTcp(host, port);
-    if (node['ok'] == true) return (nodeOk: true, noAnswer: false, apiOk: true);
+    if (node['ok'] == true) return (nodeOk: true, noAnswer: false, apiOk: true, tcp: node);
     final errno = node['errno'] as int? ?? -1;
     final msg = (node['err'] as String? ?? '').toLowerCase();
     final noAnswer = errno == 110 || errno == 113 || errno == 101 || msg.contains('timed out');
@@ -120,8 +120,23 @@ class ConnectReporter {
     if (api != null && api.host.isNotEmpty) {
       final r = await _probeTcp(api.host, api.hasPort ? api.port : 443);
       apiOk = r['ok'] == true;
+      node['api_ok'] = apiOk;
     }
-    return (nodeOk: false, noAnswer: noAnswer, apiOk: apiOk);
+    return (nodeOk: false, noAnswer: noAnswer, apiOk: apiOk, tcp: node);
+  }
+
+  /// 上一条失败记录（不带诊断包），给 [amendFailure] 补直连节点的结果用。
+  Map<String, dynamic>? _lastFail;
+
+  /// 失败已经先发出去了（不等直连节点）；直连结果回来后用同一个 attempt_id 再报一次，服务器按它更新那一条。
+  /// [fault]：直连结果让原因细分了（两条线都这样 = unknown / 网络挡了线路 = net_blocked）。
+  Future<void> amendFailure(Map<String, dynamic> tcp, {String? fault}) async {
+    final payload = _lastFail;
+    _lastFail = null;
+    if (payload == null || tcp.isEmpty) return;
+    payload['tcp'] = tcp;
+    if (fault != null) payload['fault'] = fault;
+    await _send(payload, null);
   }
 
   String _host(String url) => Uri.tryParse(url)?.host ?? url;
@@ -338,6 +353,7 @@ class ConnectReporter {
     final errMsg = _errMsg(engineError);
     if (errMsg.isNotEmpty) payload['err_msg'] = errMsg;
 
+    _lastFail = Map.of(payload);
     String? bundle;
     final sig = '$failStage|$_nodeTag|${_host(_primaryApiBase())}';
     if (await _bundleRateLimitOk(sig)) {

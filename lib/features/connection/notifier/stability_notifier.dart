@@ -90,6 +90,10 @@ class StabilityNotifier extends Notifier<StabilityState> {
   DateTime? _confirmedAt;
   // 经节点回来的字节（内核按线路记的下载量）；null = 还没读到 / 读不到。判通看它涨没涨，不看过了几秒。
   int? _down;
+  // 判通的起点：新连接 0；接回已在跑的连接时取第一次读数（_takeBase）。
+  int _base = 0;
+  bool _takeBase = false;
+  bool get _sentData => (_down ?? 0) > _base;
   // 用着用着检测开始没回音时的字节数：要断开前对一下，涨了说明节点还在回数据，线路没坏。
   int? _downAtMiss;
   // 还没确认通时，被结束且节点一个字节都没回的检测连接（条数、各自原因）。
@@ -148,9 +152,12 @@ class StabilityNotifier extends Notifier<StabilityState> {
   }
 
   /// Connected 每来一次都重新计。已经确认过的这次连接（状态流重放）不打回「连接中」。
-  void restart() {
+  /// [attach]：接回已经在跑的连接（App 重开、内核没重启），内核的下载量是之前一直累计的，
+  /// 第一次读到的当起点，比它多了才算节点现在在回数据（跟 Windows m_nodeBase 一样）。
+  void restart({bool attach = false}) {
     if (_running && _confirmed) return;
     _start();
+    _takeBase = attach;
   }
 
   void _start() {
@@ -161,6 +168,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _confirmed = false;
     _probeNotes.clear();
     _down = null;
+    _base = 0;
+    _takeBase = false;
     _downAtMiss = null;
     _zeroEnds = 0;
     _zeroWhy.clear();
@@ -192,16 +201,40 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _warmClients.clear();
   }
 
-  /// 读一次经节点回来的字节。还没确认通、读到 > 0：线路是通的，亮绿。
-  Future<void> _pollBytes(int gen) => _bytesInflight ??= _readBytes(gen).whenComplete(() => _bytesInflight = null);
+  /// 读一次经节点回来的字节。还没确认通、比起点多：线路是通的，亮绿。
+  /// 同一次连接里同一时间只读一份；换了连接（gen 变了）不能拿上一次连接那份当这次的读数。
+  Future<void> _pollBytes(int gen) {
+    final inflight = _bytesInflight;
+    if (inflight != null && _bytesGen == gen) return inflight;
+    _bytesGen = gen;
+    late final Future<void> f;
+    f = _readBytes(gen).whenComplete(() {
+      if (identical(_bytesInflight, f)) _bytesInflight = null;
+    });
+    return _bytesInflight = f;
+  }
 
   Future<void>? _bytesInflight;
+  int _bytesGen = -1;
+
+  /// 判不通前最后现读一次：这期间节点回了数据就算通（concludeNoAnswer 用；人在后台等过一阵再判时尤其要）。
+  Future<bool> sentDataNow() async {
+    final gen = _gen;
+    await _pollBytes(gen);
+    return gen == _gen && _running && (_confirmed || _sentData);
+  }
 
   Future<void> _readBytes(int gen) async {
     final d = await ref.read(proxyRepositoryProvider).selectedOutboundDownload();
     if (gen != _gen || !_running) return;
-    if (d != null) _down = d;
-    if (!_confirmed && (d ?? 0) > 0) {
+    if (d != null) {
+      if (_takeBase) {
+        _base = d;
+        _takeBase = false;
+      }
+      _down = d;
+    }
+    if (!_confirmed && _sentData) {
       ConnectFlowClock.log?.call('node answered $d bytes');
       _confirm(gen, _audit(true, null, ref.read(Preferences.lastNodeName), note: '节点回了 $d 字节'));
     }
@@ -255,7 +288,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
   /// 按条数，不按时间（10-19 实测：账号 / 密钥不对时节点 0.5 秒内就把三条都断了）。
   Future<void> _warmEnded(int gen, String url, String why) async {
     await _pollBytes(gen);
-    if (gen != _gen || !_running || _confirmed || (_down ?? 0) > 0) return;
+    if (gen != _gen || !_running || _confirmed || _sentData) return;
     _zeroEnds++;
     final short = why.split('\n').first;
     _zeroWhy.add('${Uri.parse(url).host} ${short.length > 80 ? short.substring(0, 80) : short}');
@@ -282,6 +315,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
       _confirmed = true;
       _confirmedAt = DateTime.now();
       _closeWarmClients();
+      // 用着时「没回音但字节在涨」从亮绿这一刻比起（不然亮绿后第一次没回音永远算失败）。
+      _downAtMiss = _down;
     }
     if (ref.read(unreachableNodesProvider).isNotEmpty) {
       ref.read(unreachableNodesProvider.notifier).state = const {};

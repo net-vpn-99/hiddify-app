@@ -162,7 +162,8 @@ class ConnectIssueCard extends ConsumerWidget {
         egress ||
         (gone && !canRepair && !noBackground) ||
         (dead && !lineDown && !netBlocked && deadStreak >= 2);
-    final actions = supportFirst ? [('联系客服', support), ...fixes] : fixes;
+    // 原因已知时「联系客服」也一直在（排最后），跟 Windows 失败卡下面那行「联系客服（会自动带上诊断码）」一样。
+    final actions = supportFirst ? [('联系客服', support), ...fixes] : [...fixes, ('联系客服', support)];
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),

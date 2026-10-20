@@ -45,6 +45,8 @@ int _connectedSerial = 0;
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   /// 判出不通时人在后台：先不断开，回到前台再判（concludeNoAnswer）。
   bool _deadlineHeld = false;
+  /// 这个进程里看到过「正在连接」：没看到就来了 Connected = 接回已经在跑的连接（App 重开、内核没重启）。
+  bool _sawConnecting = false;
   bool _wasUp = false;
   bool _userStop = false;
   // connect() 还没返回（含失败分支里复核账号那一下网络请求）。这期间核心报的 Disconnected
@@ -144,6 +146,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           ref.read(deadLineProvider.notifier).state = false;
           ref.read(homeFaultProvider.notifier).state = '';
           ref.read(deadEvidenceProvider.notifier).state = '';
+          _sawConnecting = true;
         case Connected():
           if (!ref.read(stabilityProvider).confirmed) ConnectFlowClock.at(5);
           _wasUp = true;
@@ -155,8 +158,9 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           _deadlineHeld = false;
           // 还没确认过的这次必须重计。已经确认过的状态流重放不要打回「连接中」。
           if (!ref.read(stabilityProvider).confirmed) {
-            ref.read(stabilityProvider.notifier).restart();
+            ref.read(stabilityProvider.notifier).restart(attach: !_sawConnecting);
           }
+          _sawConnecting = false;
           // 判通 / 判不通由 stability 按「节点有没有回数据」和正面证据来（concludeNoAnswer），不再计时。
           ++_connectedSerial;
         case Disconnected() || Disconnecting():
@@ -247,12 +251,17 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       return;
     }
     final stability = ref.read(stabilityProvider.notifier);
+    // 最后现读一次字节：这期间节点回了数据（比如在后台等过一阵）就是通的，不下结论。
+    if (await stability.sentDataNow()) return;
+    if (serial != _connectedSerial || state.valueOrNull is! Connected) return;
     final reporter = ref.read(connectReporterProvider);
     // 节点没认出我们（REALITY 校验失败）是线路配置的问题，不是用户的；其余只能说「节点结束了连接」，
     // 断开后直连节点的结果再细分（被挡 / 两条线都这样 = 原因不明）。
     final reality = await reporter.coreLogHas('reality verification failed');
     ref.read(deadEvidenceProvider.notifier).state = reality ? 'reality' : 'refused';
-    if (reporter.attemptOpen) {
+    // 这次真的报了失败，直连节点的结果才补进去（没报就别去改上一条不相干的记录）。
+    final reported = reporter.attemptOpen;
+    if (reported) {
       reporter.captureCoreLogSync();
       // 先看是不是这段时间流量用完了。是账号原因：sync 会触发上面的 listen，拆隧道并弹窗，这里不要记成节点失败。
       if (await _accountExhaustedAfterFailure(reporter)) return;
@@ -270,12 +279,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     if (ref.read(stabilityProvider).confirmed) return;
     ref.read(deadLineProvider.notifier).state = true;
     await abortConnection();
-    await _probeDeadLineDirect(reporter);
+    await _probeDeadLineDirect(reporter, amend: reported);
   }
 
   /// 「这条线路现在不通」断开之后：绕开 VPN 直接碰节点 + 接口服务器，只按碰的结果下结论（10-13）。
   /// 接口通、节点没回音 → 记下这个节点地址；攒到 2 个不同地址，首页改说「你的网络连不上我们的线路」。
-  Future<void> _probeDeadLineDirect(ConnectReporter reporter) async {
+  Future<void> _probeDeadLineDirect(ConnectReporter reporter, {bool amend = false}) async {
     final host = reporter.lastNodeHost;
     if (host == null) return;
     // 先重拉一次账号（里面带维修中名单）：这条在维修，首页就说「正在维修」（connect_issue_card），
@@ -286,17 +295,22 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     if (ref.read(panelAuthProvider).account?.isLineDown(ref.read(Preferences.lastNodeName)) ?? false) return;
     final r = await reporter.probeLastNodeDirect();
     final set = {...ref.read(unreachableNodesProvider)};
+    String? fault;
     if (r.nodeOk) {
       set.remove(host);
       // 节点端口是通的，节点却把连接结束了、一个字节没回：记下这条线。两条不同的线都这样 = 原因不明（主按钮联系客服）。
       if (ref.read(deadEvidenceProvider) == 'refused') {
-        ref.read(refusedNodesProvider.notifier).state = {...ref.read(refusedNodesProvider), host};
+        final refused = {...ref.read(refusedNodesProvider), host};
+        ref.read(refusedNodesProvider.notifier).state = refused;
+        if (refused.length >= 2) fault = 'unknown';
       }
     } else if (r.noAnswer && r.apiOk) {
       set.add(host);
-    } else {
-      return;
+      fault = 'net_blocked';
     }
+    // 直连节点的结果补进刚才那条失败记录（同一个 attempt_id，跟 Windows 一样）：失败先发、不等它。
+    if (amend) unawaited(reporter.amendFailure(r.tcp, fault: fault));
+    if (!r.nodeOk && !(r.noAnswer && r.apiOk)) return;
     ref.read(unreachableNodesProvider.notifier).state = set;
   }
 
