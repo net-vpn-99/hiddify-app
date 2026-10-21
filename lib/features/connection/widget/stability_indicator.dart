@@ -34,7 +34,11 @@ class StabilityIndicator extends ConsumerWidget {
           _Bars(score: s.score, color: color),
           const SizedBox(width: 8),
           Text(
-            s.measuring ? '稳定性检测中…' : '连接${s.label}',
+            s.measuring
+                ? '稳定性检测中…'
+                : s.offline
+                ? '这台手机现在没连上网，网络恢复后会自动接上'
+                : '连接${s.label}',
             style: theme.textTheme.bodySmall?.copyWith(color: color, fontWeight: FontWeight.w600),
           ),
         ],

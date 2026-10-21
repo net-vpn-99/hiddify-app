@@ -294,6 +294,12 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     } catch (_) {}
     if (ref.read(panelAuthProvider).account?.isLineDown(ref.read(Preferences.lastNodeName)) ?? false) return;
     final r = await reporter.probeLastNodeDirect();
+    // 节点和接口服务器、百度都碰不到：是这台手机没上网，不是这条线路的事（两端统一，Windows onNodeProbed）。
+    if (!r.nodeOk && !r.online) {
+      ref.read(homeFaultProvider.notifier).state = 'offline';
+      if (amend) unawaited(reporter.amendFailure(r.tcp, fault: 'offline'));
+      return;
+    }
     final set = {...ref.read(unreachableNodesProvider)};
     String? fault;
     if (r.nodeOk) {

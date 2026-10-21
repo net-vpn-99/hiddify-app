@@ -27,7 +27,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 ///  - [confirmed] 之前首页还是「连接中」，第一次探测成功才算「已连接」；
 ///  - 判出不通（有正面证据）→ connection_notifier 断开并置 [deadLineProvider]，首页说原因和下一步；
 class StabilityState {
-  const StabilityState(this.score, {this.confirmed = false, this.egressAudit = ''});
+  const StabilityState(this.score, {this.confirmed = false, this.egressAudit = '', this.offline = false});
 
   /// 0~10；-1 = 这次连接还没测出过结果
   final int score;
@@ -37,6 +37,9 @@ class StabilityState {
 
   /// 诊断报告用：最近一次出口核对。
   final String egressAudit;
+
+  /// 用着时没回音、直连一查这台手机自己上不了网：不断开，等网好（Windows 同一句提示）。
+  final bool offline;
 
   bool get measuring => score < 0;
 
@@ -451,6 +454,20 @@ class StabilityNotifier extends Notifier<StabilityState> {
         _armSteady(gen);
         return;
       }
+      // 判线路断之前先看手机自己上不上得了网：上不了网不是线路的事，不断开、重新数，照常探；
+      // 网好了探测自己会通（两端统一，Windows fetchExit，E8E6-1021）。
+      // 查的时候停掉定时探测（要等系统给结论，可能几十秒），别再叠一轮进来；查完再按结果排下一次。
+      _timer?.cancel();
+      if (!await ref.read(connectReporterProvider).internetUp()) {
+        if (gen != _gen || !_running) return;
+        _note('offline');
+        _misses = 0;
+        _firstMissAt = null;
+        state = StabilityState(4, confirmed: true, egressAudit: audit, offline: true);
+        _recheckSoon(gen);
+        return;
+      }
+      if (gen != _gen || !_running) return;
       _fault('line');
       return;
     }

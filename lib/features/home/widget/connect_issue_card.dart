@@ -82,7 +82,9 @@ class ConnectIssueCard extends ConsumerWidget {
     // 近 7 天安卓 8 个人「核心没走正常停止就没了」）。只在查实没有权限时才说、才给按钮。
     final bool noBackground = gone && ref.watch(batteryOptimizationNotifierProvider).valueOrNull == false;
     final bool egress = fault == 'egress' && status is Disconnected;
-    if (!dead && !engine && !egress) return const SizedBox.shrink();
+    // 判不通后直连一查：节点、接口服务器、百度都碰不到 = 这台手机没上网（connection_notifier._probeDeadLineDirect）。
+    final bool offline = fault == 'offline' && status is Disconnected;
+    if (!dead && !engine && !egress && !offline) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -91,7 +93,10 @@ class ConnectIssueCard extends ConsumerWidget {
 
     final String title;
     final String body;
-    if (revoked) {
+    if (offline) {
+      title = '这台手机没连上网';
+      body = '请先确认能打开网页，再点「重新连接」';
+    } else if (revoked) {
       title = '连接断了';
       // 只说查到的事实（10-13 / 10-15）：系统收回了我们的 VPN，不猜是谁。
       body = '手机系统断开了光速雷达的 VPN 连接。手机上开着别的 VPN 的话，先关掉它，再点「重新连接」';
@@ -153,7 +158,7 @@ class ConnectIssueCard extends ConsumerWidget {
       if (gone && canRepair && !noBackground) ('修复并重新连接', () => ref.read(localRepairProvider).repairAndReconnect('engine')),
       if (egress) ('怎么办', () => showUnknownFaultGuide(context)),
       if (netBlocked) ('怎么办', () => showNetBlockedGuide(context, unreachable.length)),
-      if (dead && !netBlocked && !unknown) ('换一条线路', pickLine),
+      if (dead && !offline && !netBlocked && !unknown) ('换一条线路', pickLine),
       if (!gone && !lineDown) ('重新连接', reconnect),
     ];
     // 联系客服当主按钮：原因不明 / 线路设置对不上 / 网页没走线路且查不到原因 / 修过还断 / 同一种不通连着第二次。
@@ -161,7 +166,7 @@ class ConnectIssueCard extends ConsumerWidget {
         reality ||
         egress ||
         (gone && !canRepair && !noBackground) ||
-        (dead && !lineDown && !netBlocked && deadStreak >= 2);
+        (dead && !offline && !lineDown && !netBlocked && deadStreak >= 2);
     // 原因已知时「联系客服」也一直在（排最后），跟 Windows 失败卡下面那行「联系客服（会自动带上诊断码）」一样。
     final actions = supportFirst ? [('联系客服', support), ...fixes] : [...fixes, ('联系客服', support)];
 
@@ -179,7 +184,7 @@ class ConnectIssueCard extends ConsumerWidget {
                 Expanded(
                   child: Text(title, style: theme.textTheme.titleSmall?.copyWith(color: fg, fontWeight: FontWeight.w600)),
                 ),
-                if (dead)
+                if (dead || offline)
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     tooltip: '关闭',

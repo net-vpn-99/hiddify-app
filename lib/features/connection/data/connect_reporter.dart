@@ -107,12 +107,15 @@ class ConnectReporter {
   /// 断开（VPN 已经拆掉）之后直接碰一下刚才的节点，同时碰一下我们的接口服务器作对照。
   /// 返回 (节点通不通, 节点没回音（超时 / 不可达）, 接口服务器通不通)。
   /// Android 错误码：110 超时、113 主机不可达、101 网络不可达。
-  Future<({bool nodeOk, bool noAnswer, bool apiOk, Map<String, dynamic> tcp})> probeLastNodeDirect() async {
+  /// [online] = 同一时刻这台手机自己上得了网（接口服务器或百度，有一个通就算）。
+  Future<({bool nodeOk, bool noAnswer, bool apiOk, bool online, Map<String, dynamic> tcp})> probeLastNodeDirect() async {
     final host = lastNodeHost;
     final port = lastNodePort;
-    if (host == null || port == null) return (nodeOk: false, noAnswer: false, apiOk: false, tcp: <String, dynamic>{});
+    if (host == null || port == null) {
+      return (nodeOk: false, noAnswer: false, apiOk: false, online: true, tcp: <String, dynamic>{});
+    }
     final node = await _probeTcp(host, port);
-    if (node['ok'] == true) return (nodeOk: true, noAnswer: false, apiOk: true, tcp: node);
+    if (node['ok'] == true) return (nodeOk: true, noAnswer: false, apiOk: true, online: true, tcp: node);
     final errno = node['errno'] as int? ?? -1;
     final msg = (node['err'] as String? ?? '').toLowerCase();
     final noAnswer = errno == 110 || errno == 113 || errno == 101 || msg.contains('timed out');
@@ -123,8 +126,22 @@ class ConnectReporter {
       apiOk = r['ok'] == true;
       node['api_ok'] = apiOk;
     }
-    return (nodeOk: false, noAnswer: noAnswer, apiOk: apiOk, tcp: node);
+    final online = apiOk || await _baiduUp();
+    node['online'] = online;
+    return (nodeOk: false, noAnswer: noAnswer, apiOk: apiOk, online: online, tcp: node);
   }
+
+  /// 这台手机自己能不能上网：直接碰接口服务器和百度（本进程不走 VPN），有一个通就算。不自己计时，等系统给结论。
+  /// 判「线路断了」之前先问它：上不了网（Wi-Fi 刚断、进电梯）不是线路的事（两端统一，Windows probeInternet，E8E6-1021）。
+  Future<bool> internetUp() async {
+    final api = Uri.tryParse(_primaryApiBase());
+    if (api != null && api.host.isNotEmpty && (await _probeTcp(api.host, api.hasPort ? api.port : 443))['ok'] == true) {
+      return true;
+    }
+    return _baiduUp();
+  }
+
+  Future<bool> _baiduUp() async => (await _probeTcp('www.baidu.com', 443))['ok'] == true;
 
   /// 上一条失败记录（不带诊断包），给 [amendFailure] 补直连节点的结果用。
   Map<String, dynamic>? _lastFail;
