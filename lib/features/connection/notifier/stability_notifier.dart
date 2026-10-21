@@ -328,6 +328,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
     if (!_confirmed) {
       _confirmed = true;
       _confirmedAt = DateTime.now();
+      // 网通了：之前没发出去、排着队的连接上报补发掉（不等下一次点连接）
+      unawaited(reporter.flushQueue());
       _closeWarmClients();
       // 用着时「没回音但字节在涨」从亮绿这一刻比起（不然亮绿后第一次没回音永远算失败）。
       _downAtMiss = _down;

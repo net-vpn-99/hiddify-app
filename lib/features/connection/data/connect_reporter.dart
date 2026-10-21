@@ -1008,6 +1008,10 @@ class ConnectReporter {
     } catch (_) {}
   }
 
+  /// 网通了（连上并确认）时补发排队的上报。以前只在下一次点连接时补，连上一次就一直用着的人永远补不上
+  /// （10-21 查：有流量却一条连接记录都没有，两端统一，Windows ConnectReporter::flushQueue）。
+  Future<void> flushQueue() => _flushQueue();
+
   Future<void> _flushQueue() async {
     try {
       final f = await _queueFile();
