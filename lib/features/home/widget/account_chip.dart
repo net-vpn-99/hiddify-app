@@ -155,6 +155,7 @@ class AccountChip extends HookConsumerWidget {
       case 'no_plan':
         return ('还没有套餐 · 去看看', false, 'purchase');
       default:
+        if (acc.trialPendingHours > 0) return ('试用 ${acc.trialPendingHours} 小时 · 连上后开始算', false, 'purchase');
         final left = acc.remainingClock(now);
         if (freeTrial) return (left == null ? '免费试用' : '免费试用 · 剩 $left', false, 'purchase');
         if (acc.lifetime) return ('长期有效', false, 'purchase');

@@ -227,7 +227,7 @@ class PanelApi {
   static const _snapshotStore = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
   static const _snapshotFields = [
     'email', 'expired_at', 'plan', 'plan_id', 'plan_name', 'device_limit', 'transfer_enable', 'u', 'd',
-    'gsl_daily', 'gsl_free_trial', 'gsl_down', 'gsl_isp',
+    'gsl_daily', 'gsl_free_trial', 'gsl_down', 'gsl_isp', 'gsl_trial',
   ];
   // 退出登录时加一：退出前发出、退出后才回来的那次读账号，不能把旧号的快照又写回去。
   static int _snapshotEpoch = 0;
@@ -284,6 +284,9 @@ class PanelApi {
       dailyThrottleMbps: dailyMap == null ? 0 : n(dailyMap['throttle_mbps']).toInt(),
       dailyTier: dailyMap == null || dailyMap['tier'] is! String ? null : dailyMap['tier'] as String,
       freeTrialFlag: data['gsl_free_trial'] is bool ? data['gsl_free_trial'] as bool : null,
+      trialPendingHours: data['gsl_trial'] is Map && (data['gsl_trial'] as Map)['pending'] == true
+          ? (n((data['gsl_trial'] as Map)['hours']).toInt() > 0 ? n((data['gsl_trial'] as Map)['hours']).toInt() : 12)
+          : 0,
       paidQuota: dailyMap == null ? 0 : n(dailyMap['paid_quota']).toInt(),
       paidThrottleMbps: dailyMap == null ? 0 : n(dailyMap['paid_throttle_mbps']).toInt(),
       proKnown: dailyMap != null && dailyMap.containsKey('pro_quota'),
@@ -1014,6 +1017,7 @@ class PanelAccount {
     this.dailyThrottleMbps = 0,
     this.dailyTier,
     this.freeTrialFlag,
+    this.trialPendingHours = 0,
     this.paidQuota = 0,
     this.paidThrottleMbps = 0,
     this.proKnown = false,
@@ -1048,6 +1052,10 @@ class PanelAccount {
 
   /// GslGuest 1.9.0 gsl_free_trial：还在免费试用（免注册号 + 体验套餐）。老插件没给 = null。
   final bool? freeTrialFlag;
+
+  /// GslInviteBonus 1.55.0 gsl_trial.pending：邮箱号的试用还没开始算（第一次连上才算），给的是试用时长。
+  /// 这时服务器的到期时间是「要是现在开始能用到哪」，界面不倒计时（跟 Windows remainingLabel 一样）。0 = 已经在算。
+  final int trialPendingHours;
   final int paidQuota;
   final int paidThrottleMbps;
   final bool proKnown;
