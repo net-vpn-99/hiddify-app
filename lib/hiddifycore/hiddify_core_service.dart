@@ -346,9 +346,14 @@ class HiddifyCoreService with InfraLogger {
     }
   }
 
+  /// 切过几次线路（发出切换就加一，在内核真切之前）。内核切线路时会把正在走的连接全部结束
+  /// （selector 的 interrupt_exist_connections），判通据此认出「检测连接是被切线路结束的、没到节点」。
+  int lineSwitches = 0;
+
   TaskEither<String, Unit> selectOutbound(String groupTag, String outboundTag) {
     return TaskEither(() async {
       loggy.debug("selecting outbound");
+      lineSwitches++;
       try {
         final res = await core.bgClient.selectOutbound(
           SelectOutboundRequest(groupTag: groupTag, outboundTag: outboundTag),

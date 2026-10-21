@@ -183,8 +183,16 @@ class ConnectionButton extends HookConsumerWidget {
         progressCtl.state = ConnectProgress(step: n);
       }
 
-      void failAt(int n, String title, String message, {String? reportStage, SettingsAction action = SettingsAction.none}) {
-        progressCtl.state = ConnectProgress(failedStep: n, title: title, message: message, action: action);
+      void failAt(int n, String title, String message,
+          {String? reportStage, SettingsAction action = SettingsAction.none, bool lineGone = false, String switchTo = ''}) {
+        progressCtl.state = ConnectProgress(
+          failedStep: n,
+          title: title,
+          message: message,
+          action: action,
+          lineGone: lineGone,
+          switchTo: switchTo,
+        );
         // 前三步停下的：上报写清停在哪步、什么原因（以前这几步失败服务器一条都没有）。
         // 第 4 步的失败由 connection_notifier 按连接尝试报，这里不重复。
         if (n <= 3) {
@@ -279,8 +287,20 @@ class ConnectionButton extends HookConsumerWidget {
         return;
       }
       if (stopped()) return;
-      // 选的线路在维修：不去连，说清楚，让他自己换（不自动换线；Windows 同一句，route_down）。
       final line = ref.read(Preferences.preferredLineName);
+      // 选的线路不在订阅里了（下线 / 隐藏）：不去连（以前内核会悄悄走自动挑的那条），说清楚，
+      // 按钮给服务器排第一的那条，换不换他点（不自动换线；Windows 同一套，route_gone）。
+      final set = await ref.read(lineSetProvider.future);
+      if (stopped()) return;
+      final lines = set.lines;
+      // 只对真订阅比（locked = 账号用不了时的公开橱窗，不算）；精品体验结束后选的精品线路也不在订阅里，
+      // 那不是「下线」（line_tier 管），这里不拦。
+      if (!set.locked && line.isNotEmpty && lines.isNotEmpty && !lines.any((o) => o.name == line) &&
+          !ref.read(lineTierProvider).isProName(line)) {
+        failAt(3, '「$line」已下线', '请换一条线路', reportStage: 'route_gone', lineGone: true, switchTo: lines.first.name);
+        return;
+      }
+      // 选的线路在维修：不去连，说清楚，让他自己换（不自动换线；Windows 同一句，route_down）。
       if (ref.read(panelAuthProvider).account?.isLineDown(line) ?? false) {
         failAt(3, '$line 正在维修', '暂时连不上，请换一条线路', reportStage: 'route_down');
         return;
@@ -370,6 +390,14 @@ class ConnectionButton extends HookConsumerWidget {
       },
       _ => () async {},
     });
+
+    // 选的线路下线了（第 3 步）：主按钮「换到 X」= 不再记「自己选的」，连服务器排第一的那条（auto_line_fixer 切过去），
+    // 以后也跟服务器排的走（Windows switchToSuggestedRoute 同一套）。
+    final lineGone = radarState == RadarState.failed && shownFailed == 3 && progress.lineGone;
+    Future<void> switchFromGone() async {
+      await ref.read(Preferences.preferredLineName.notifier).update('');
+      ref.read(connectRequestProvider.notifier).state++;
+    }
 
     // ---- 三种「还不能连」的主页（两端同一张表：docs/计划/主页状态表.md）----
     // 放在所有 hook 之后：以前到期那段在 useState 前面就 return，账号一恢复 hook 个数变了会出错。
@@ -492,7 +520,7 @@ class ConnectionButton extends HookConsumerWidget {
           }
         },
       ),
-      onTap: onTap,
+      onTap: lineGone ? switchFromGone : onTap,
       // 准备那几步里按钮可以点（= 取消）；引擎在起的那一下（Connecting）不能点。
       enabled:
           busy ||
@@ -536,12 +564,13 @@ class ConnectionButton extends HookConsumerWidget {
               AsyncData(value: Connected()) => '断开连接',
               AsyncData(value: Connecting()) => '正在连接…',
               AsyncData(value: Disconnecting()) => '正在断开…',
+              _ when lineGone => '换到 ${progress.switchTo}',
               _ when radarState == RadarState.failed => '重新连接',
               _ => '开始连接',
             },
       buttonOutlined: busy || (connected && requiresReconnect != true) || status is Connecting || status is Disconnecting,
       showAllLines: connected,
-      secondLabel: radarState == RadarState.failed ? '换一条线路' : '',
+      secondLabel: radarState != RadarState.failed ? '' : lineGone ? '自己选线路' : '换一条线路',
       // 没连接时最下面那行：试用中给「看套餐」，付过钱的给「换一条线路」（跟 Windows homeThird 一样）。
       linkLabel: radarState != RadarState.off
           ? ''

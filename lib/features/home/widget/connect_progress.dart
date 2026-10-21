@@ -24,6 +24,8 @@ class ConnectProgress {
     this.message = '',
     this.action = SettingsAction.none,
     this.repair = false,
+    this.lineGone = false,
+    this.switchTo = '',
   });
 
   /// 点击流程正在做第几步（1~4），0 = 没在跑。
@@ -40,6 +42,12 @@ class ConnectProgress {
   /// 失败时给「修复并重新连接」（local_repair.dart）。只在连接没启动起来、原因不明时给，
   /// 同一种失败修过一次就不再给（docs/计划/一键修复-初始化本地网络.md 第三、八节）。
   final bool repair;
+
+  /// 第 3 步：他选的线路不在订阅里了（下线 / 隐藏）。主按钮「换到 [switchTo]」（服务器给这个号排第一的那条，
+  /// 他点了才换，不自动换线），次按钮「自己选线路」。
+  /// 两端统一，Windows 见 ConnectionController::goneSwitchName。
+  final bool lineGone;
+  final String switchTo;
 }
 
 final connectProgressProvider = StateProvider<ConnectProgress>((ref) => const ConnectProgress());

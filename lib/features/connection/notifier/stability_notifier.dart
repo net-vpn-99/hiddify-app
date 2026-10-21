@@ -10,11 +10,13 @@ import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/drop_notice.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
+import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 连接稳定性（0~10）。默认满分，探测连着失败才降；恢复即回满。
 /// 确认通之前：三家检测网址各问一次（不设超时）+ 每秒读一次经节点回来的字节，字节涨了或拿到 HTTP 回答就算通；
 /// 检测连接被结束、节点一个字节没回够 3 条，由 connection_notifier.concludeNoAnswer 下结论（不按秒数，两端统一）。
+/// 检测连接在途中切过线路的不算（切线路时内核把正在走的连接全部结束，没到节点），重问一次。
 /// 确认之后每 30 秒探一次，不通 5 秒后再探。
 ///
 /// **故意做得迟钝**（1.1.29）：客户盯着这行字看，一会儿「很稳」一会儿「一般」比
@@ -244,6 +246,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
   Future<void> _warmAsk(int gen, String url) async {
     final port = ref.read(httpClientProvider).port;
     if (port <= 0) return;
+    final core = ref.read(hiddifyCoreServiceProvider);
+    final switches = core.lineSwitches;
     final client = HttpClient()
       ..findProxy = ((_) => 'PROXY localhost:$port')
       ..idleTimeout = Duration.zero;
@@ -267,6 +271,13 @@ class StabilityNotifier extends Notifier<StabilityState> {
     }
     if (gen != _gen || !_running || _confirmed) return;
     if (!answered) {
+      // 发出后 App 切过线路（连上后 auto_line_fixer 切到偏好 / 推荐那条，或用户自己点）：这条是被切线路结束的，
+      // 没到节点，不是证据，重问。1.1.67 的 24 份 dead_tunnel 包全是这样（三条同一毫秒结束，离连上 13～50 毫秒）。
+      if (core.lineSwitches != switches) {
+        ConnectFlowClock.log?.call('probe cut by line switch, ask again: ${Uri.parse(url).host}');
+        unawaited(_warmAsk(gen, url));
+        return;
+      }
       await _warmEnded(gen, url, '$err');
       return;
     }
