@@ -9,17 +9,18 @@ import 'package:hiddify/features/proxy/model/node_display.dart';
 /// 这条线写着适合 [isp] 这家（[isp] 为空 = 不知道用户是哪家，谁都不算）。
 bool lineFitsIsp(LineOption o, String isp) => isp.isNotEmpty && (o.isps?.contains(isp) ?? false);
 
-/// 同一个国家里，适合 [isp] 的线路排前面；国家之间的位置、同类线路之间的先后都不动。
-/// 做法：每个国家原来占的那几个位置不变，只把这个国家自己的线路按「适合的在前」重新填进去。
-List<LineOption> ispFitFirst(List<LineOption> lines, String isp) {
-  if (isp.isEmpty) return lines;
-  final fit = <String, List<LineOption>>{};
-  final rest = <String, List<LineOption>>{};
+/// 同一个国家里，适合 [isp] 的线路排前面、[last]（繁忙、维修中）的排最后；国家之间的位置、同类线路之间的先后都不动。
+/// 做法：每个国家原来占的那几个位置不变，只把这个国家自己的线路按「适合的在前、繁忙的最后」重新填进去。
+/// Windows RoutePalette.qml fitFirst 同一套。
+List<LineOption> ispFitFirst(List<LineOption> lines, String isp, {Set<String> last = const {}}) {
+  if (isp.isEmpty && last.isEmpty) return lines;
+  int rank(LineOption o) => last.contains(o.name) ? 2 : (isp.isNotEmpty && !lineFitsIsp(o, isp) ? 1 : 0);
+  final byRank = <String, List<List<LineOption>>>{};
   for (final o in lines) {
-    (lineFitsIsp(o, isp) ? fit : rest).putIfAbsent(lineCountry(o.name), () => []).add(o);
+    byRank.putIfAbsent(lineCountry(o.name), () => [[], [], []])[rank(o)].add(o);
   }
   final sorted = {
-    for (final c in {...fit.keys, ...rest.keys}) c: [...?fit[c], ...?rest[c]],
+    for (final e in byRank.entries) e.key: [...e.value[0], ...e.value[1], ...e.value[2]],
   };
   final cursor = <String, int>{};
   final out = <LineOption>[];

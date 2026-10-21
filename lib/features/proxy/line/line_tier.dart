@@ -178,7 +178,7 @@ class LineTierNotifier extends Notifier<LineTierState> {
       final same = set.lines
           .where((o) => !state.isProName(o.name) && !down.contains(o.name) && lineCountry(o.name) == country)
           .toList();
-      pick = ispFitFirst(same, isp).firstOrNull;
+      pick = ispFitFirst(same, isp, last: ref.read(panelAuthProvider).account?.busyLines ?? const {}).firstOrNull;
     } catch (_) {}
     if (pick == null) {
       await ref.read(connectionNotifierProvider.notifier).toggleConnection();

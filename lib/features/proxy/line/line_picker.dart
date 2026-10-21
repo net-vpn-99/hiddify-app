@@ -118,6 +118,10 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     final tiers = ref.watch(lineTierProvider);
     final speed = ref.watch(lineSpeedProvider);
     final downLines = account?.downLines ?? const <String>{};
+    final busyLines = account?.busyLines ?? const <String>{};
+    // 同国家里适合他宽带的在前、繁忙和维修中的最后（两端统一）。
+    final lastLines = preview ? const <String>{} : {...busyLines, ...downLines};
+    List<LineOption> orderLines(List<LineOption> l) => ispFitFirst(l, isp, last: lastLines);
     final tiered = subOptions.isNotEmpty && tiers.proLines.isNotEmpty;
     final proLocked = tiers.trial != 'pro' && tiers.trial != 'active';
 
@@ -148,6 +152,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
       Key? key,
     }) {
       final down = !preview && downLines.contains(o.name);
+      final busy = !preview && !down && busyLines.contains(o.name);
       final grade = down ? null : speed.grades[o.name];
       final code = countryCodeFromLineName(o.name);
       final tag = RemoteSiteConfig.aiTipTag;
@@ -163,6 +168,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
         tierTag: tierTag,
         recommended: !preview && pickedName.isEmpty && o.name == firstName,
         down: down,
+        busy: busy,
         grade: grade,
         best: !down && speed.bestName == o.name && grade != null && grade.level <= 2,
         aiTip: tag != null && code != null && RemoteSiteConfig.aiTipRegions.contains(code) ? tag : '',
@@ -190,7 +196,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     } else if (query.isNotEmpty) {
       // ===== 搜索：精品在前，每行右边写「精品 / 标准」=====
       final hits = all.where((o) => o.name.toLowerCase().contains(query.toLowerCase())).toList();
-      final ordered = [...ispFitFirst(hits.where(isPro).toList(), isp), ...ispFitFirst(hits.where((o) => !isPro(o)).toList(), isp)];
+      final ordered = [...orderLines(hits.where(isPro).toList()), ...orderLines(hits.where((o) => !isPro(o)).toList())];
       for (final o in ordered) {
         children.add(row(o, isCurrent: current != null && o.name == current.name, tierTag: tiered ? (isPro(o) ? '精品' : '标准') : ''));
       }
@@ -233,7 +239,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
       }
     } else if (_stdPage) {
       // ===== 标准线路那一页 =====
-      final std = ispFitFirst(all.where((o) => !isPro(o)).toList(), isp);
+      final std = orderLines(all.where((o) => !isPro(o)).toList());
       // 10-21 运营定：只写对用户有用的一句，不写「晚高峰可能变慢」「用 AI 选精品」这类说明
       if (isp.isNotEmpty && std.any((o) => lineFitsIsp(o, isp))) {
         children.add(Padding(
@@ -292,12 +298,12 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
       }
       final others = all.where((o) => current == null || o.name != current.name).toList();
       if (!tiered) {
-        for (final o in ispFitFirst(others, isp)) {
+        for (final o in orderLines(others)) {
           children.add(row(o));
         }
       } else {
         final proAll = all.where(isPro).toList();
-        final proOthers = ispFitFirst(others.where(isPro).toList(), isp);
+        final proOthers = orderLines(others.where(isPro).toList());
         if (proAll.isNotEmpty && !proLocked) {
           children.add(_ProHeader(
             tokens: tokens,
@@ -749,6 +755,7 @@ class _LineRow extends StatelessWidget {
     required this.tierTag,
     required this.recommended,
     required this.down,
+    required this.busy,
     required this.grade,
     required this.best,
     required this.aiTip,
@@ -767,6 +774,7 @@ class _LineRow extends StatelessWidget {
   final String tierTag;
   final bool recommended;
   final bool down;
+  final bool busy;
   final SpeedGrade? grade;
   final bool best;
   final String aiTip;
@@ -780,6 +788,8 @@ class _LineRow extends StatelessWidget {
         ? (connected ? '使用中' : '上次用的', connected ? 2 : 1)
         : down
             ? ('维修中', 0)
+            : busy
+            ? ('繁忙', 0)
             : recommended
                 ? ('推荐', 0)
                 : tierTag.isNotEmpty

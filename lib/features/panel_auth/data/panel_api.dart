@@ -227,7 +227,7 @@ class PanelApi {
   static const _snapshotStore = FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
   static const _snapshotFields = [
     'email', 'expired_at', 'plan', 'plan_id', 'plan_name', 'device_limit', 'transfer_enable', 'u', 'd',
-    'gsl_daily', 'gsl_free_trial', 'gsl_down', 'gsl_isp', 'gsl_trial',
+    'gsl_daily', 'gsl_free_trial', 'gsl_down', 'gsl_busy', 'gsl_isp', 'gsl_trial',
   ];
   // 退出登录时加一：退出前发出、退出后才回来的那次读账号，不能把旧号的快照又写回去。
   static int _snapshotEpoch = 0;
@@ -292,10 +292,8 @@ class PanelApi {
       proQuota: dailyMap == null ? 0 : n(dailyMap['pro_quota']).toInt(),
       proThrottled: dailyMap != null && dailyMap['pro_throttled'] == true,
       proThrottleMbps: dailyMap == null ? 0 : n(dailyMap['pro_throttle_mbps']).toInt(),
-      downLines: {
-        for (final d in (data['gsl_down'] is List ? data['gsl_down'] as List : const []))
-          if (d is Map && '${d['name'] ?? ''}'.trim().isNotEmpty) splitNodeName('${d['name']}').name,
-      },
+      downLines: lineNamesOf(data['gsl_down']),
+      busyLines: lineNamesOf(data['gsl_busy']),
       isp: kIspWords.contains(data['gsl_isp']) ? data['gsl_isp'] as String : '',
     );
   }
@@ -999,6 +997,12 @@ String formatDailyAmount(int bytes) {
   return '$shown $unit';
 }
 
+/// getSubscribe 的 gsl_down / gsl_busy（[{host, port, name}]）→ 线路名（splitNodeName 的 name）。
+Set<String> lineNamesOf(Object? raw) => {
+      for (final d in (raw is List ? raw : const []))
+        if (d is Map && '${d['name'] ?? ''}'.trim().isNotEmpty) splitNodeName('${d['name']}').name,
+    };
+
 /// getSubscribe 的 gsl_trial：试用还没开始算时给试用小时数（没写按 12），已经在算 / 不是试用给 0。
 int trialPendingHoursOf(Object? raw) {
   if (raw is! Map || raw['pending'] != true) return 0;
@@ -1032,6 +1036,7 @@ class PanelAccount {
     this.proThrottled = false,
     this.proThrottleMbps = 0,
     this.downLines = const {},
+    this.busyLines = const {},
     this.isp = '',
   });
 
@@ -1075,6 +1080,9 @@ class PanelAccount {
   final Set<String> downLines;
 
   bool isLineDown(String name) => name.isNotEmpty && downLines.contains(name);
+
+  /// getSubscribe 的 gsl_busy（GslNode 1.11.0）：带宽快跑满的线路名。列表标「繁忙」、同国家里排后面，照样能点（两端统一）。
+  final Set<String> busyLines;
 
   /// getSubscribe 的 gsl_isp：这个号是哪家宽带，「电信」「联通」「移动」或空（认不出 / 老服务端）。
   /// 线路页给这家的 LOGO 加橙圈、顶上提示一句、同国家里适合的排前面（计划书第九节，两端统一）。
