@@ -234,14 +234,16 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     } else if (_stdPage) {
       // ===== 标准线路那一页 =====
       final std = ispFitFirst(all.where((o) => !isPro(o)).toList(), isp);
-      children.add(Padding(
-        padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-        child: Text(
-          '大部分时间流畅，晚高峰可能变慢。晚上追剧、用 AI 建议用精品线路。'
-          '${isp.isNotEmpty && std.any((o) => lineFitsIsp(o, isp)) ? '\n标着「适合$isp」的适合你的宽带，同一个国家里排在前面。' : ''}',
-          style: TextStyle(fontSize: 12, height: 1.4, color: tokens.sub),
-        ),
-      ));
+      // 10-21 运营定：只写对用户有用的一句，不写「晚高峰可能变慢」「用 AI 选精品」这类说明
+      if (isp.isNotEmpty && std.any((o) => lineFitsIsp(o, isp))) {
+        children.add(Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+          child: Text(
+            '标着「适合$isp」的，你用起来更快。',
+            style: TextStyle(fontSize: 12, height: 1.4, color: tokens.sub),
+          ),
+        ));
+      }
       for (final o in std) {
         final cur = current != null && o.name == current.name;
         children.add(row(o, isCurrent: cur, key: cur ? _currentKey : null));
