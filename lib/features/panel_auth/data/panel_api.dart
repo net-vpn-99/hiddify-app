@@ -284,9 +284,7 @@ class PanelApi {
       dailyThrottleMbps: dailyMap == null ? 0 : n(dailyMap['throttle_mbps']).toInt(),
       dailyTier: dailyMap == null || dailyMap['tier'] is! String ? null : dailyMap['tier'] as String,
       freeTrialFlag: data['gsl_free_trial'] is bool ? data['gsl_free_trial'] as bool : null,
-      trialPendingHours: data['gsl_trial'] is Map && (data['gsl_trial'] as Map)['pending'] == true
-          ? (n((data['gsl_trial'] as Map)['hours']).toInt() > 0 ? n((data['gsl_trial'] as Map)['hours']).toInt() : 12)
-          : 0,
+      trialPendingHours: trialPendingHoursOf(data['gsl_trial']),
       paidQuota: dailyMap == null ? 0 : n(dailyMap['paid_quota']).toInt(),
       paidThrottleMbps: dailyMap == null ? 0 : n(dailyMap['paid_throttle_mbps']).toInt(),
       proKnown: dailyMap != null && dailyMap.containsKey('pro_quota'),
@@ -999,6 +997,14 @@ String formatDailyAmount(int bytes) {
   final text = value.toStringAsFixed(1);
   final shown = text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
   return '$shown $unit';
+}
+
+/// getSubscribe 的 gsl_trial：试用还没开始算时给试用小时数（没写按 12），已经在算 / 不是试用给 0。
+int trialPendingHoursOf(Object? raw) {
+  if (raw is! Map || raw['pending'] != true) return 0;
+  final h = raw['hours'];
+  final hours = h is num ? h.toInt() : int.tryParse('$h') ?? 0;
+  return hours > 0 ? hours : 12;
 }
 
 class PanelAccount {

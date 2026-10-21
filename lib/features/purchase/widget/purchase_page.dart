@@ -312,6 +312,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
       return on.isEmpty ? '● $plan · 还能用 ${me.daysLeft} 天' : '● $plan · 还能用 ${me.daysLeft} 天（$on 到期）';
     }
     if (acc?.lifetime == true) return '● $plan · 长期有效';
+    if ((acc?.trialPendingHours ?? 0) > 0) return '● $plan · 试用 ${acc!.trialPendingHours} 小时，连上后开始算';
     final days = acc?.expiredAt == null ? null : acc!.daysLeft();
     if (days == null) return '● $plan';
     return days <= 0 ? '● $plan · 已到期' : '● $plan · 还能用 $days 天';
@@ -339,7 +340,8 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
     if (offer.periodDays <= 0) return '买完长期有效';
     final now = DateTime.now();
     final cur = acc?.expiredAt;
-    final renewing = cur != null && cur > 0 && cur * 1000 > now.millisecondsSinceEpoch;
+    // 试用还没开始算时付费，服务器先收掉试用、从现在算，不在试用上顺延（跟 Windows purchaseExpiryHint 一样）。
+    final renewing = (acc?.trialPendingHours ?? 0) == 0 && cur != null && cur > 0 && cur * 1000 > now.millisecondsSinceEpoch;
     final base = renewing ? DateTime.fromMillisecondsSinceEpoch(cur * 1000) : now;
     final d = base.add(Duration(days: offer.periodDays));
     final date = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
