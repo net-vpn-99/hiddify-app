@@ -95,7 +95,8 @@ Widget connectCheckCard(ConnectCheckState s, void Function(String act) onAct) =>
       onAction: () => onAct(s.primaryAct),
       secondaryText: s.secondaryText,
       onSecondary: () => onAct(s.secondaryAct),
-      links: s.running
+      // 底部小字的「更多办法」只在查出问题时给；没发现问题（R7）不给，给了反而让人以为还有事要做（10-22 运营，两端统一）
+      links: s.running || s.result == 'R7'
           ? const []
           : [
               GuideLink('更多办法：初始化本地网络', () => onAct('init')),
@@ -139,6 +140,21 @@ Future<void> _runAct(BuildContext context, WidgetRef ref, String act) async {
     case 'site':
       await UriUtils.tryLaunch(Uri.parse(Constants.websiteUrl));
     case 'init':
+      // 先说清楚做什么，他点了「开始初始化」才做（10-22 运营：点了就开始，不知道是干嘛的；Windows initConfirmCard 同一个做法，正文按各自实际做的事写）
+      if (!context.mounted) return;
+      final go = await showDialog<bool>(
+        context: context,
+        barrierColor: guideCanvasColor(context),
+        builder: (ctx) => GuideCard(
+          title: '初始化本地网络？',
+          body: '光速雷达会断开自己的连接，再重新获取线路。之前连着的话，会自动重新连上。手机的其他设置不会改动。',
+          actionText: '开始初始化',
+          onAction: () => Navigator.of(ctx).pop(true),
+          secondaryText: '不用了',
+          onSecondary: () => Navigator.of(ctx).pop(false),
+        ),
+      );
+      if (go != true) return;
       final done = await read(localRepairProvider).initialize();
       if (done.isNotEmpty && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已$done')));
