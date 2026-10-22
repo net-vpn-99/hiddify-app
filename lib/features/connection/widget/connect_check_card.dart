@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/model/constants.dart';
-import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/common/line_icon.dart';
@@ -15,7 +14,6 @@ import 'package:hiddify/features/diagnostic/diag_tile.dart';
 import 'package:hiddify/features/home/widget/connect_progress.dart';
 import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
-import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -24,10 +22,22 @@ const checkRewardTip = '如果你愿意帮我们检查测试并解决，作为�
 
 /// 连接检查结果卡（docs/计划/连接检查.md）：开始查并弹出来，查着时一行行转圈、查出结果才打勾 / 打叉；
 /// 查完上面是结论，下面是查到的几行，按钮由 ConnectCheckNotifier 按结论表给。Windows 同款：HelpGuides.qml 的 checkCard。
-/// [fault] / [canRepair] 见 ConnectCheckNotifier.start。
-Future<void> showConnectCheck(BuildContext context, WidgetRef ref, {String fault = '', bool canRepair = false}) {
-  final connected = ref.read(connectionNotifierProvider).valueOrNull is Connected;
-  void run() => unawaited(ref.read(connectCheckProvider.notifier).start(fault: fault, connected: connected, canRepair: canRepair));
+/// [fault]：打开时刚才失败的原因（首页卡认不出的那几种由调用方给，比如第 1～2 步的 account / nodes）。
+/// 每次查（含「重新检查」）都按那一刻的状态重算：正连着 / 正在连、首页卡上的原因、修复帮不帮得上
+/// （Windows 每次 startConnectCheck → startCheck 重算同一套）。
+Future<void> showConnectCheck(BuildContext context, WidgetRef ref, {String fault = ''}) {
+  void run() {
+    final status = ref.read(connectionNotifierProvider).valueOrNull;
+    // 正连着 / 正在连：结论不给「重新连接」，也不查「别的 VPN」（系统里那个就是我们）
+    final connected = status is Connected || status is Connecting;
+    // 调用方明说的原因优先（第 1～2 步的 account / nodes 首页卡认不出）；没给的看首页卡现在说的
+    final f = connected ? '' : (fault.isNotEmpty ? fault : _homeFault(ref.read));
+    unawaited(ref.read(connectCheckProvider.notifier).start(
+          fault: f,
+          connected: connected,
+          canRepair: f == 'engine_gone' && ref.read(repairedKindProvider) != 'engine',
+        ));
+  }
   run();
   return showDialog<void>(
     context: context,
@@ -57,6 +67,21 @@ Future<void> showConnectCheck(BuildContext context, WidgetRef ref, {String fault
   );
 }
 
+/// 首页失败卡现在说的原因（Windows faultKind 同一套词），没有 = ''。
+String _homeFault(T Function<T>(ProviderListenable<T>) read) {
+  final home = read(homeFaultProvider);
+  if (read(deadLineProvider) || home == 'line') {
+    if (home == 'offline') return 'offline';
+    return read(deadRealityProvider) ? 'reality_mismatch' : 'dead_tunnel';
+  }
+  return switch (home) {
+    'engine' => 'engine_gone',
+    'egress' => 'egress_mismatch',
+    'revoked' || 'offline' => home,
+    _ => '',
+  };
+}
+
 /// 检查结果卡本身（按状态画，按钮交给 [onAct]）。截图测试也用它（test/features/home/connect_check_preview_test.dart）。
 Widget connectCheckCard(ConnectCheckState s, void Function(String act) onAct) => GuideCard(
       title: s.title,
@@ -79,39 +104,42 @@ Widget connectCheckCard(ConnectCheckState s, void Function(String act) onAct) =>
     );
 
 Future<void> _runAct(BuildContext context, WidgetRef ref, String act) async {
+  // 收掉首页失败卡会让打开检查的那张卡（ref 的主人）跟着拆掉：要办的事用整个 App 的 container，不用它的 ref
+  final container = ProviderScope.containerOf(context, listen: false);
+  final read = container.read;
   // 他照结果去做了：首页那张失败卡收掉
   void clearFault() {
-    ref.read(deadLineProvider.notifier).state = false;
-    ref.read(homeFaultProvider.notifier).state = '';
+    read(deadLineProvider.notifier).state = false;
+    read(homeFaultProvider.notifier).state = '';
   }
 
   switch (act) {
     case 'switch':
-      // 换到推荐那条（他点了才换）：是服务器排第一的那条 = 不再记「自己选的」，跟服务器排的走；不是 = 记成他选的
-      // （跟线路下线卡的「换到 X」同一套，Windows switchToSource）。
+      // 换到推荐那条（他点了才换，跟线路下线「换到 X」同一份 switchToLine）；线路清单刷新过、那条没了就让他自己选
       clearFault();
-      final alt = ref.read(connectCheckProvider).altName;
-      final first = (await ref.read(lineSetProvider.future)).lines.firstOrNull?.name;
-      await ref.read(Preferences.preferredLineName.notifier).update(alt == first ? '' : alt);
-      ref.read(connectRequestProvider.notifier).state++;
+      if (!await switchToLine(read, read(connectCheckProvider).altName) && context.mounted) {
+        await showLinePicker(context, ref);
+      }
     case 'routes':
+      // 先打开线路列表再收卡（收卡会拆掉 context 的主人）
+      final picker = showLinePicker(context, ref);
       clearFault();
-      if (context.mounted) await showLinePicker(context, ref);
+      await picker;
     case 'reconnect':
       clearFault();
-      ref.read(connectRequestProvider.notifier).state++;
+      read(connectRequestProvider.notifier).state++;
     case 'contact':
-      ref.read(connectCheckProvider.notifier).markContacted();
+      read(connectCheckProvider.notifier).markContacted();
       if (context.mounted) openSupportWithDiag(context);
     case 'repair':
       clearFault();
-      await ref.read(localRepairProvider).repairAndReconnect('engine');
+      await read(localRepairProvider).repairAndReconnect('engine');
     case 'vpn_settings':
       await OtherVpn.openSettings();
     case 'site':
       await UriUtils.tryLaunch(Uri.parse(Constants.websiteUrl));
     case 'init':
-      final done = await ref.read(localRepairProvider).initialize();
+      final done = await read(localRepairProvider).initialize();
       if (done.isNotEmpty && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已$done')));
       }

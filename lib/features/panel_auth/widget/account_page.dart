@@ -230,7 +230,7 @@ class AccountPage extends HookConsumerWidget {
         title: const Text('填写推荐码'),
         content: ValueListenableBuilder<String?>(
           valueListenable: error,
-          builder: (_, msg, __) => TextField(
+          builder: (_, msg, _) => TextField(
             controller: field,
             autofocus: true,
             decoration: InputDecoration(
@@ -263,7 +263,7 @@ class AccountPage extends HookConsumerWidget {
 
   static String _remainLabel(PanelAccount a, DateTime now) {
     if (a.lifetime) return '长期有效';
-    if (a.trialPendingHours > 0) return '试用 ${a.trialPendingHours} 小时，连上后开始算';
+    if (a.trialPendingHours > 0) return a.trialPendingLabel;
     final secs = a.expiredAt! - now.millisecondsSinceEpoch ~/ 1000;
     if (secs > 0 && secs < 86400) return '剩 ${a.remainingClock(now)}';
     return a.expiryDay;

@@ -27,9 +27,9 @@ class LogRepositoryImpl with ExceptionHandler, InfraLogger implements LogReposit
         if (!await logPathResolver.directory.exists()) {
           await logPathResolver.directory.create(recursive: true);
         }
-        if (await logPathResolver.coreFile().exists()) {
-          await logPathResolver.coreFile().writeAsString("");
-        } else {
+        // 内核日志不在这里清：快捷开关 / 开机自动连起的连接可能正在跑（App 重开接回它），上一次失败的日志也要留给诊断。
+        // 每次连接前清空、超过 16MB 清空在 hiddify_core_service 里做。
+        if (!await logPathResolver.coreFile().exists()) {
           await logPathResolver.coreFile().create(recursive: true);
         }
         if (await logPathResolver.appFile().exists()) {

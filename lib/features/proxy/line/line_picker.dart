@@ -704,6 +704,19 @@ Future<void> rememberLine(T Function<T>(ProviderListenable<T>) read, LineOption 
   await read(Preferences.lastNodeDesc.notifier).update(o.desc);
 }
 
+/// 「换到 X」（连接检查结论、选的线路下线都用这一份，他点了才换）：X 是服务器排第一的那条 = 不再记「自己选的」，
+/// 以后跟着服务器排的走（autoLineFixer 没有偏好时切到订阅第一条）；不是 = 记成他选的这条。跟 Windows switchToSource 同一套。
+/// 没连着就走一键连接；连着时 autoLineFixer 按偏好切过去。线路清单刷新过、那条没了返回 false。
+Future<bool> switchToLine(T Function<T>(ProviderListenable<T>) read, String name) async {
+  final lines = (await read(lineSetProvider.future)).lines;
+  final o = lines.where((x) => x.name == name).firstOrNull;
+  if (o == null) return false;
+  await rememberLine(read, o);
+  if (identical(o, lines.first)) await read(Preferences.preferredLineName.notifier).update('');
+  read(connectRequestProvider.notifier).state++;
+  return true;
+}
+
 Future<bool> chooseLine(BuildContext context, WidgetRef ref, LineOption o) async {
   if (ref.read(panelAuthProvider).account?.isLineDown(o.name) ?? false) {
     ScaffoldMessenger.of(context).showSnackBar(

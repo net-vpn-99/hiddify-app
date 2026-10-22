@@ -5,6 +5,7 @@ import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/utils/device_id.dart';
+import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
@@ -171,8 +172,13 @@ class LineTierNotifier extends Notifier<LineTierState> {
   Future<String> _leaveProLine() async {
     final name = ref.read(Preferences.lastNodeName);
     if (!state.isProName(name)) return '';
-    final connected = ref.read(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
-    if (!connected) return '';
+    final status = ref.read(connectionNotifierProvider).valueOrNull;
+    // 正在连精品线路（还没连上）：不让它连上去用完就断，直接断开让他选标准线路（Windows leaveProLine 同一处）
+    if (status is Connecting) {
+      await ref.read(connectionNotifierProvider.notifier).abortConnection();
+      return '精品线路已断开。选一条标准线路就能接着用。';
+    }
+    if (!(status?.isConnected ?? false)) return '';
     final country = lineCountry(splitNodeName(name).name);
     final isp = ref.read(panelAuthProvider).account?.isp ?? '';
     final down = ref.read(panelAuthProvider).account?.downLines ?? const <String>{};

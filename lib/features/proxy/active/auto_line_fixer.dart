@@ -14,9 +14,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 连接后跑一次：
 ///  - 如果用户在首页选过线路（preferredLineName），按名字匹配到真实出站并切过去；
-///  - 否则，如果当前选中的是 hiddify-core 自动生成的均衡组（select / balance / lowest），
-///    切到**服务端推荐的那条**（订阅第一条 —— 服务端插件 1.25.0 起会按各节点实时
-///    负载给订阅排序，第一条就是它算出来最合适的）。推荐节点连不上**不自动换**，
+///  - 否则（没选过 = 跟服务器排的走，Windows 不是自己选的线路同一套）切到**服务端推荐的那条**
+///    （订阅第一条 —— 服务端插件 1.25.0 起会按各节点实时负载给订阅排序，第一条就是它算出来最合适的）。
+///    以前只在当前选中的是均衡组时才纠正：内核会恢复上一次选的那条（clash.db），「换到 X」清掉偏好后
+///    又落回那条不通的线路（10-22 自检）。推荐节点连不上**不自动换**，
 ///    由 connection_notifier 断开并告诉用户（两端统一，不自动换线）。
 ///
 /// 为什么优先服务端：服务端有全局负载视野（每个节点多少人、CPU/内存多少），
@@ -58,8 +59,8 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
       return; // 每次连接（或每次改偏好）只跑一次
     }
 
-    // 2) 没有偏好：只有当前选中的是被藏掉的均衡组时才纠正
-    if (real.any((o) => o.tag == group.selected)) return;
+    // 2) 没有偏好：跟服务器排的第一条（已经是它就不动）
+    if (group.selected == real.first.tag) return;
 
     await _applyServerRecommended(repo, group.tag, real);
     return;

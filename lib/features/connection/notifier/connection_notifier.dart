@@ -21,6 +21,8 @@ import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/notifier/profiles_update_notifier.dart';
+import 'package:hiddify/features/settings/notifier/battery_optimization/battery_optimizations_notifier.dart';
+import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -148,7 +150,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           reporter.markStage(ConnectReporter.stageCoreStarted);
           ref.read(deadLineProvider.notifier).state = false;
           ref.read(homeFaultProvider.notifier).state = '';
-          ref.read(deadEvidenceProvider.notifier).state = '';
+          ref.read(deadRealityProvider.notifier).state = false;
           _sawConnecting = true;
         case Connected():
           if (!ref.read(stabilityProvider).confirmed) ConnectFlowClock.at(5);
@@ -157,6 +159,10 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           reporter.markStage(ConnectReporter.stageTunnelReady);
           _startQuotaPoll();
           _startDeviceKeepWarm();
+          // 快捷开关 / 开机自动连这种原生起的连接、App 重开接回的连接也要盯住内核日志大小（App 里点的在 start 里开过）
+          ref.read(hiddifyCoreServiceProvider).watchCoreLogSize();
+          // 这次连接的日志从这里算起（原生起的连接不清日志，前面是上一次连接的；判不通找证据只看这之后的）
+          if (!ref.read(stabilityProvider).confirmed) reporter.markCoreLogStart();
           ref.read(deadLineProvider.notifier).state = false;
           _deadlineHeld = false;
           // 还没确认过的这次必须重计。已经确认过的状态流重放不要打回「连接中」。
@@ -225,7 +231,14 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           '已连 $secs 秒｜$why${failure == null ? '' : '：${_truncate(failure.toString(), 120)}'}｜App 在$fg',
         ),
       );
-      unawaited(DropNotice.show(revoked ? '手机系统断开了光速雷达的 VPN 连接。手机上开着别的 VPN 的话，先关掉它，再打开光速雷达点「连接」' : '连接意外断开了。打开光速雷达点「连接」恢复'));
+      // 原因已知的直接说（系统收回 / 没有后台运行权限，首页卡同一句）；说不清原因的叫他回来点「帮我查一查」
+      // （连接检查，首页失败卡同一套，Windows 只在 checkFault 时这么写）
+      final noBackground = !revoked && ref.read(batteryOptimizationNotifierProvider).valueOrNull == false;
+      unawaited(DropNotice.show(revoked
+          ? '手机系统断开了光速雷达的 VPN 连接。手机上开着别的 VPN 的话，先关掉它，再打开光速雷达点「连接」'
+          : noBackground
+          ? '光速雷达没有「后台运行」权限，手机省电时停掉了它的连接。打开光速雷达，点「允许后台运行」'
+          : '连接意外断开了。打开光速雷达，点「帮我查一查」'));
       reporter.abandon();
     } else if (reporter.attemptOpen) {
       // 第 5 步还没确认网通核心就停了：这是一次失败（以前直接丢掉，后台看不到）。
@@ -261,7 +274,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     // 节点没认出我们（REALITY 校验失败）是线路配置的问题，不是用户的；其余只能说「节点结束了连接」，
     // 断开后直连节点的结果再细分（被挡 / 两条线都这样 = 原因不明）。
     final reality = await reporter.coreLogHas('reality verification failed');
-    ref.read(deadEvidenceProvider.notifier).state = reality ? 'reality' : '';
+    ref.read(deadRealityProvider.notifier).state = reality;
     // 这次真的报了失败，直连节点的结果才补进去（没报就别去改上一条不相干的记录）。
     final reported = reporter.attemptOpen;
     if (reported) {
@@ -282,15 +295,18 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     if (ref.read(stabilityProvider).confirmed) return;
     ref.read(deadLineProvider.notifier).state = true;
     await abortConnection();
-    await _probeDeadLineDirect(reporter, amend: reported);
+    await _probeDeadLineDirect(reporter, serial, amend: reported);
   }
 
   /// 「这条线路现在不通」断开之后：绕开 VPN 直接碰节点 + 接口服务器 + 百度。只把查实的直接改过来（没上网）；
   /// 其余（这个网络挡了线路、两条线都不回数据）不再靠「试了几条」的计数猜，交给连接检查当场查
   /// （docs/计划/连接检查.md 第八节，Windows onNodeProbed 同一套）。直连结果照样补进刚才那条失败记录。
-  Future<void> _probeDeadLineDirect(ConnectReporter reporter, {bool amend = false}) async {
+  /// [serial] = 判不通的那一次连接：查的这一会儿里他又连了（或者关掉了这张卡），结果就不往首页上写了。
+  Future<void> _probeDeadLineDirect(ConnectReporter reporter, int serial, {bool amend = false}) async {
     final host = reporter.lastNodeHost;
     if (host == null) return;
+    bool stillThisFailure() =>
+        serial == _connectedSerial && state.valueOrNull is Disconnected && ref.read(deadLineProvider);
     // 先重拉一次账号（里面带维修中名单）：这条在维修，首页就说「正在维修」（connect_issue_card），
     // 也不算进「试了几条都没回应」——那会说成换线路也没用。
     try {
@@ -300,7 +316,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     final r = await reporter.probeLastNodeDirect();
     // 节点和接口服务器、百度都碰不到：是这台手机没上网，不是这条线路的事（两端统一，Windows onNodeProbed）。
     if (!r.nodeOk && !r.online) {
-      ref.read(homeFaultProvider.notifier).state = 'offline';
+      if (stillThisFailure()) ref.read(homeFaultProvider.notifier).state = 'offline';
       if (amend) unawaited(reporter.amendFailure(r.tcp, fault: 'offline'));
       return;
     }

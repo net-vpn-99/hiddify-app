@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:hiddify/core/http_client/http_client_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/app/notifier/app_foreground.dart';
+import 'package:hiddify/features/connection/data/connect_check.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/drop_notice.dart';
@@ -66,8 +67,8 @@ final stabilityProvider =
 /// 下次点连接 / 换线路 / 手动关掉时清掉。
 final deadLineProvider = StateProvider<bool>((ref) => false);
 
-/// 判「不通」时查到的线路配置问题：reality = 节点没认出我们（REALITY 校验失败），空 = 没有（原因交给连接检查查）。
-final deadEvidenceProvider = StateProvider<String>((ref) => '');
+/// 判「不通」时查到节点没认出我们（REALITY 校验失败）：线路配置的问题。没查到 = false（原因交给连接检查查）。
+final deadRealityProvider = StateProvider<bool>((ref) => false);
 
 /// 首页故障原因。空 = 没有。engine / egress / line。
 final homeFaultProvider = StateProvider<String>((ref) => '');
@@ -321,6 +322,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
       _confirmedAt = DateTime.now();
       // 网通了：之前没发出去、排着队的连接上报补发掉（不等下一次点连接）
       unawaited(reporter.flushQueue());
+      // 连接检查跨次记的「上一次结论」清掉：「照做了还是不行」只算这一段（Windows recordHealthSample 同一处）
+      ref.read(connectCheckProvider.notifier).resetHistory();
       _closeWarmClients();
       // 用着时「没回音但字节在涨」从亮绿这一刻比起（不然亮绿后第一次没回音永远算失败）。
       _downAtMiss = _down;
@@ -431,7 +434,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
     }
     _misses++;
     final since = _firstMissAt ??= now;
-    state = StabilityState(4, confirmed: true, egressAudit: audit);
+    // 已经查出没上网：网恢复（探测通了）之前一直这么说，不在下一次没回音时闪回「不稳定」
+    state = StabilityState(4, confirmed: true, egressAudit: audit, offline: state.offline);
     if (_misses >= 2 && now.difference(since) >= const Duration(seconds: 30)) {
       // App 在后台时手机会限制它联网，探测没回音不等于线路断了：先不断开，照常探，
       // 回到前台再重新判断。跟「还没确认网通、人在后台」同一条规矩（connection_notifier
@@ -455,6 +459,18 @@ class StabilityNotifier extends Notifier<StabilityState> {
         return;
       }
       if (gen != _gen || !_running) return;
+      // 等结果这一会儿里节点又回了数据（Wi-Fi 刚好回来）：线路是好的，不断开（Windows 判没网时同一处）
+      await _pollBytes(gen);
+      if (gen != _gen || !_running) return;
+      final at = _downAtMiss;
+      if (at != null && (_down ?? 0) > at) {
+        _misses = 0;
+        _firstMissAt = null;
+        _downAtMiss = _down;
+        _armSteady(gen);
+        state = StabilityState(10, confirmed: true, egressAudit: audit);
+        return;
+      }
       _fault('line');
       return;
     }

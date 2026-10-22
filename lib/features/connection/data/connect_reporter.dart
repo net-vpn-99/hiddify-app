@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/features/connection/data/connect_check.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/vpn_permission.dart';
 import 'package:hiddify/features/log/data/log_path_resolver.dart';
@@ -104,25 +105,18 @@ class ConnectReporter {
   String? lastNodeHost;
   int? lastNodePort;
 
-  /// 断开（VPN 已经拆掉）之后直接碰一下刚才的节点，同时碰一下我们的接口服务器作对照。
-  /// 返回 (节点通不通, 节点没回音（超时 / 不可达）, 接口服务器通不通)。
-  /// Android 错误码：110 超时、113 主机不可达、101 网络不可达。
-  /// [online] = 同一时刻这台手机自己上得了网（接口服务器或百度，有一个通就算）。
-  Future<({bool nodeOk, bool noAnswer, bool apiOk, bool online, Map<String, dynamic> tcp})> probeLastNodeDirect() async {
+  /// 断开（VPN 已经拆掉）之后直接碰一下刚才的节点；碰不到再看这台手机自己上不上得了网（接口服务器或百度，有一个通就算）。
+  /// [tcp] 是补进失败记录的那段（节点那一下 + 接口服务器通不通 + 能不能上网）。
+  Future<({bool nodeOk, bool online, Map<String, dynamic> tcp})> probeLastNodeDirect() async {
     final host = lastNodeHost;
     final port = lastNodePort;
-    if (host == null || port == null) {
-      return (nodeOk: false, noAnswer: false, apiOk: false, online: true, tcp: <String, dynamic>{});
-    }
+    if (host == null || port == null) return (nodeOk: false, online: true, tcp: <String, dynamic>{});
     final node = await probeTcp(host, port);
-    if (node['ok'] == true) return (nodeOk: true, noAnswer: false, apiOk: true, online: true, tcp: node);
-    final errno = node['errno'] as int? ?? -1;
-    final msg = (node['err'] as String? ?? '').toLowerCase();
-    final noAnswer = errno == 110 || errno == 113 || errno == 101 || msg.contains('timed out');
-    final net = await _internet();
+    if (node['ok'] == true) return (nodeOk: true, online: true, tcp: node);
+    final net = await _internet(waitBoth: true);
     if (net.apiOk != null) node['api_ok'] = net.apiOk;
     node['online'] = net.online;
-    return (nodeOk: false, noAnswer: noAnswer, apiOk: net.apiOk ?? false, online: net.online, tcp: node);
+    return (nodeOk: false, online: net.online, tcp: node);
   }
 
   /// 这台手机自己能不能上网：直接碰接口服务器和百度（本进程不走 VPN），有一个通就算。不自己计时，等系统给结论。
@@ -130,25 +124,42 @@ class ConnectReporter {
   Future<bool> internetUp() async => (await _internet()).online;
 
   /// 接口服务器和百度同时碰（真没网时只等一轮系统超时）。apiOk = null：接口地址读不出来，没碰。
-  Future<({bool online, bool? apiOk})> _internet() async {
+  /// [waitBoth] = false：哪个先通就算能上网，不等另一个（接口服务器被墙时它要等满一轮系统超时，判没网不能跟着等）；
+  /// true：两个都等完（失败记录里要接口服务器那一下）。Windows InternetReachable 同一套。
+  Future<({bool online, bool? apiOk})> _internet({bool waitBoth = false}) async {
     final api = Uri.tryParse(primaryApiBase());
-    final apiProbe = api != null && api.host.isNotEmpty ? probeTcp(api.host, api.hasPort ? api.port : 443) : null;
-    final baiduProbe = probeTcp('www.baidu.com', 443);
-    final apiOk = apiProbe == null ? null : (await apiProbe)['ok'] == true;
-    final baiduOk = (await baiduProbe)['ok'] == true;
-    return (online: (apiOk ?? false) || baiduOk, apiOk: apiOk);
+    final probes = <Future<bool>>[
+      probeTcp(onlineProbeHost, 443).then((r) => r['ok'] == true),
+      if (api != null && api.host.isNotEmpty) probeTcp(api.host, api.hasPort ? api.port : 443).then((r) => r['ok'] == true),
+    ];
+    if (!waitBoth) {
+      final first = Completer<bool>();
+      var left = probes.length;
+      for (final f in probes) {
+        unawaited(f.then((ok) {
+          left--;
+          if (!first.isCompleted && (ok || left == 0)) first.complete(ok);
+        }));
+      }
+      return (online: await first.future, apiOk: null);
+    }
+    final results = await Future.wait(probes);
+    final apiOk = results.length > 1 ? results[1] : null;
+    return (online: results.any((ok) => ok), apiOk: apiOk);
   }
 
   /// 上一条失败记录（不带诊断包），给 [amendFailure] 补直连节点的结果用。
   Map<String, dynamic>? _lastFail;
 
   /// 失败已经先发出去了（不等直连节点）；直连结果回来后用同一个 attempt_id 再报一次，服务器按它更新那一条。
-  /// [fault]：直连结果让原因细分了（两条线都这样 = unknown / 网络挡了线路 = net_blocked）。
+  /// [fault]：直连结果让原因细分了（没上网 = offline）。标成补报（amend）：服务器只让补报改已经记下的原因，
+  /// 排队后到的原报改不回去（Windows 同一套）。
   Future<void> amendFailure(Map<String, dynamic> tcp, {String? fault}) async {
     final payload = _lastFail;
     _lastFail = null;
     if (payload == null || tcp.isEmpty) return;
     payload['tcp'] = tcp;
+    payload['amend'] = true;
     if (fault != null) payload['fault'] = fault;
     await _send(payload, null);
   }
@@ -269,7 +280,15 @@ class ConnectReporter {
       final src = File(LogPathResolver.corePath(dir));
       final dst = File(p.join(dir.path, 'box.log.snap'));
       if (src.existsSync()) {
-        src.copySync(dst.path);
+        // 只拷末尾 256KB（诊断包里也只放末尾）：这里在界面线程上同步跑，整份十几 MB 拷会卡住
+        final raf = src.openSync();
+        try {
+          final len = raf.lengthSync();
+          raf.setPositionSync(len > _snapBytes ? len - _snapBytes : 0);
+          dst.writeAsBytesSync(raf.readSync(_snapBytes));
+        } finally {
+          raf.closeSync();
+        }
       } else {
         dst.writeAsStringSync('');
       }
@@ -277,12 +296,29 @@ class ConnectReporter {
     } catch (_) {}
   }
 
-  /// 这次连接的内核日志（box.log 末尾 64KB）里有没有这句（不分大小写）。判「不通」找正面证据用，
+  static const _snapBytes = 256 * 1024;
+
+  /// 这次连接的内核日志从哪里算起（连上那一刻的文件长度）。快捷开关 / 开机自动连起的连接不清日志，
+  /// 前面那段是上一次连接的，判「不通」找证据不能读到它（10-22 自检）。
+  int _coreLogFrom = 0;
+
+  void markCoreLogStart() {
+    try {
+      final dir = _workingDirSync();
+      if (dir == null) return;
+      final f = File(LogPathResolver.corePath(dir));
+      _coreLogFrom = f.existsSync() ? f.lengthSync() : 0;
+    } catch (_) {
+      _coreLogFrom = 0;
+    }
+  }
+
+  /// 这次连接的内核日志（连上之后那段的末尾 64KB）里有没有这句（不分大小写）。判「不通」找正面证据用，
   /// 比如 REALITY 校验失败（节点没认出我们）。
   Future<bool> coreLogHas(String needle) async {
     final dir = _workingDirSync();
     if (dir == null) return false;
-    final text = await _tail(LogPathResolver.corePath(dir), 2000, 64 * 1024);
+    final text = await _tail(LogPathResolver.corePath(dir), 2000, 64 * 1024, from: _coreLogFrom);
     return text.toLowerCase().contains(needle.toLowerCase());
   }
 
@@ -521,6 +557,8 @@ class ConnectReporter {
     final m = <String, dynamic>{
       'attempt_id': _attemptId,
       'outcome': outcome,
+      // 事情发生的时间（排队几天后才补发的，服务器按这个记时间，不按到达时间）
+      'occurred_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
       'platform': 'android',
       'app_ver': _version(),
       'os': '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
@@ -634,15 +672,27 @@ class ConnectReporter {
   /// will dial (and its host:port). Fully offline -- does not need the core.
   Future<({String tag, String? host, int? port})> resolveNode(String? preferred) async {
     final pref = (preferred ?? '').trim();
+    final nodes = await configNodes();
+    if (nodes.isEmpty) return (tag: pref, host: null, port: null);
+    if (pref.isNotEmpty) {
+      for (final n in nodes) {
+        if (splitNodeName(n.tag).name == pref) return n;
+      }
+    }
+    return nodes.first;
+  }
+
+  /// 订阅里的全部节点（按订阅里的顺序）。连接检查按名字精确找：找不到就是找不到，不拿第一条顶。
+  Future<List<({String tag, String? host, int? port})>> configNodes() async {
     try {
       final profile = await _ref.read(activeProfileProvider.future);
-      if (profile == null) return (tag: pref, host: null, port: null);
+      if (profile == null) return const [];
       final repo = await _ref.read(profileRepositoryProvider.future);
       final raw = await repo.getRawConfig(profile.id).getOrElse((_) => '').run();
-      final picked = _pickNodeFromConfig(raw, pref);
-      if (picked != null) return picked;
-    } catch (_) {}
-    return (tag: pref, host: null, port: null);
+      return _nodesFromConfig(raw);
+    } catch (_) {
+      return const [];
+    }
   }
 
   static const _nonNodeTypes = {
@@ -650,9 +700,9 @@ class ConnectReporter {
     'direct', 'block', 'dns', 'dns-out',
   };
 
-  ({String tag, String? host, int? port})? _pickNodeFromConfig(String raw, String preferred) {
+  List<({String tag, String? host, int? port})> _nodesFromConfig(String raw) {
     final text = raw.trim();
-    if (text.isEmpty) return null;
+    if (text.isEmpty) return const [];
 
     // 1) sing-box JSON (hiddify-core stores the generated config here)
     try {
@@ -670,13 +720,7 @@ class ConnectReporter {
           final port = (ob['server_port'] is num) ? (ob['server_port'] as num).toInt() : null;
           nodes.add((tag: tag, host: server.isEmpty ? null : server, port: port));
         }
-        if (nodes.isEmpty) return null;
-        if (preferred.isNotEmpty) {
-          for (final n in nodes) {
-            if (splitNodeName(n.tag).name == preferred) return n;
-          }
-        }
-        return nodes.first;
+        return nodes;
       }
     } catch (_) {
       // not JSON -- fall through
@@ -705,13 +749,7 @@ class ConnectReporter {
       }
       parsed.add((tag: frag, host: uri.host, port: uri.hasPort ? uri.port : null));
     }
-    if (parsed.isEmpty) return null;
-    if (preferred.isNotEmpty) {
-      for (final n in parsed) {
-        if (splitNodeName(n.tag).name == preferred) return n;
-      }
-    }
-    return parsed.first;
+    return parsed;
   }
 
   // -------------------------------------------------------------- TCP probe
@@ -906,18 +944,20 @@ class ConnectReporter {
   /// Tail of a text file, robust to a byte-offset landing mid-UTF-8 and to NUL
   /// padding (Android's rotated logs). Decodes leniently, drops NULs, and skips
   /// the partial first line when we did not start at offset 0.
-  Future<String> _tail(String path, int maxLines, int maxBytes) async {
+  /// [from]：只读这个位置之后的（文件比它短 = 中间被清过，从头读）。
+  Future<String> _tail(String path, int maxLines, int maxBytes, {int from = 0}) async {
     try {
       final f = File(path);
       if (!f.existsSync()) return '(none)';
       final len = await f.length();
-      final start = len > maxBytes ? len - maxBytes : 0;
+      final floor = from <= len ? from : 0;
+      final start = len - maxBytes > floor ? len - maxBytes : floor;
       final bytes = <int>[];
       await for (final chunk in f.openRead(start)) {
         bytes.addAll(chunk);
       }
       var raw = utf8.decode(bytes, allowMalformed: true).replaceAll('\x00', '');
-      if (start > 0) {
+      if (start > floor) {
         final nl = raw.indexOf('\n');
         if (nl >= 0) raw = raw.substring(nl + 1);
       }
@@ -990,13 +1030,26 @@ class ConnectReporter {
     return File(p.join(dir.path, 'gsl-connect-queue.json'));
   }
 
-  Future<void> _enqueue(Map<String, dynamic> payload) async {
+  /// 排队文件的「读 → 改 → 写回」一次只做一个（排队和补发最后那次重读写回不能交叉，不然新排进的被冲掉、
+  /// 发过的又被写回去再发一遍）。
+  Future<void> _queueLock = Future.value();
+
+  Future<void> _withQueueLock(Future<void> Function() body) {
+    final run = _queueLock.then((_) => body()).catchError((_) {});
+    _queueLock = run;
+    return run;
+  }
+
+  Future<void> _enqueue(Map<String, dynamic> payload) => _withQueueLock(() => _enqueueNow(payload));
+
+  Future<void> _enqueueNow(Map<String, dynamic> payload) async {
     try {
       final f = await _queueFile();
       if (f == null) return;
       List<dynamic> queue = [];
       if (f.existsSync()) queue = jsonDecode(await f.readAsString()) as List<dynamic>;
-      queue.add({'at': DateTime.now().millisecondsSinceEpoch ~/ 1000, 'payload': payload});
+      // qid：每一条自己的编号（原报和补报可能同一秒排进来、attempt_id 也一样，删的时候不能连带删掉）
+      queue.add({'at': DateTime.now().millisecondsSinceEpoch ~/ 1000, 'qid': _mintId(), 'payload': payload});
       while (queue.length > _queueMax) {
         queue.removeAt(0);
       }
@@ -1006,14 +1059,20 @@ class ConnectReporter {
 
   /// 网通了（连上并确认）时补发排队的上报。以前只在下一次点连接时补，连上一次就一直用着的人永远补不上
   /// （10-21 查：有流量却一条连接记录都没有，两端统一，Windows ConnectReporter::flushQueue）。
-  /// 上一轮还在发时这一轮不叠上去（两轮同时发会重复上报，先结束的那轮还会把文件改回它看到的样子）。
+  /// 上一轮还在发时这一轮不叠上去（两轮同时发会重复上报），记下来，上一轮完了再补一轮（不丢掉这次补发）。
   Future<void> flushQueue() async {
-    if (_flushing) return;
+    if (_flushing) {
+      _flushAgain = true;
+      return;
+    }
     _flushing = true;
     try {
       final f = await _queueFile();
-      if (f == null || !f.existsSync()) return;
-      final queue = jsonDecode(await f.readAsString()) as List<dynamic>;
+      if (f == null) return;
+      var queue = const <dynamic>[];
+      await _withQueueLock(() async {
+        if (f.existsSync()) queue = jsonDecode(await f.readAsString()) as List<dynamic>;
+      });
       if (queue.isEmpty) return;
 
       final token = await _panelToken();
@@ -1024,29 +1083,43 @@ class ConnectReporter {
         final at = ((entry as Map)['at'] as num?)?.toInt() ?? 0;
         if (now - at <= _queueTtlSecs) {
           final payload = Map<String, dynamic>.from(entry['payload'] as Map);
+          // 老版本排的没带事情发生的时间：用排进去的时间（不然服务器按补发这一刻记，算进「最近 15 分钟」）。
+          // 带上时间服务器就按新规矩看 amend 了：老版本的补报不标 amend、带着 tcp，这里按老规矩替它标上。
+          if (!payload.containsKey('occurred_at')) {
+            payload['occurred_at'] = at;
+            payload['amend'] ??= payload['tcp'] is Map && (payload['tcp'] as Map).isNotEmpty;
+          }
           final r = await _post(primaryApiBase(), payload, token);
           if (r == _PostResult.network) continue; // keep; 2xx or rejection drops it
         }
         finished.add(_queueKey(entry));
       }
       // 按文件现在的内容删：这一轮在发的时候新排进来的留着。
-      final current = f.existsSync() ? jsonDecode(await f.readAsString()) as List<dynamic> : const <dynamic>[];
-      final keep = current.where((e) => !finished.contains(_queueKey(e as Map))).toList();
-      if (keep.isEmpty) {
-        if (f.existsSync()) await f.delete();
-      } else {
-        await f.writeAsString(jsonEncode(keep));
-      }
+      await _withQueueLock(() async {
+        final current = f.existsSync() ? jsonDecode(await f.readAsString()) as List<dynamic> : const <dynamic>[];
+        final keep = current.where((e) => !finished.contains(_queueKey(e as Map))).toList();
+        if (keep.isEmpty) {
+          if (f.existsSync()) await f.delete();
+        } else {
+          await f.writeAsString(jsonEncode(keep));
+        }
+      });
     } catch (_) {
     } finally {
       _flushing = false;
+      if (_flushAgain) {
+        _flushAgain = false;
+        unawaited(flushQueue());
+      }
     }
   }
 
   bool _flushing = false;
+  bool _flushAgain = false;
 
-  /// 排队条目的身份：排进去的时间 + 这次连接的 attempt_id（不拿带诊断包的整条去比）。
-  static String _queueKey(Map entry) => '${entry['at']}|${(entry['payload'] as Map?)?['attempt_id']}';
+  /// 排队条目的身份：每条自己的编号（qid）；老版本排的没有，退回「排进去的时间 + attempt_id」。
+  static String _queueKey(Map entry) =>
+      entry['qid'] is String ? entry['qid'] as String : '${entry['at']}|${(entry['payload'] as Map?)?['attempt_id']}';
 }
 
 enum _PostResult { ok, rejected, network }

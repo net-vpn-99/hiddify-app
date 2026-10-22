@@ -98,6 +98,8 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
         if (didPop) return;
         await ref.read(lineTierProvider.notifier).markShopAsked();
         if (!context.mounted) return;
+        // 问过了：canPop 要重新算（不然他留下来升级后再按返回，又被拦住再问一次）
+        setState(() {});
         var stay = false;
         await offerProTrial(context, ref, 'shop_view', onUpgrade: () => stay = true);
         if (!stay && context.mounted) Navigator.of(context).pop();
@@ -312,7 +314,7 @@ class _PurchasePageState extends ConsumerState<PurchasePage> with WidgetsBinding
       return on.isEmpty ? '● $plan · 还能用 ${me.daysLeft} 天' : '● $plan · 还能用 ${me.daysLeft} 天（$on 到期）';
     }
     if (acc?.lifetime == true) return '● $plan · 长期有效';
-    if ((acc?.trialPendingHours ?? 0) > 0) return '● $plan · 试用 ${acc!.trialPendingHours} 小时，连上后开始算';
+    if ((acc?.trialPendingHours ?? 0) > 0) return '● $plan · ${acc!.trialPendingLabel}';
     final days = acc?.expiredAt == null ? null : acc!.daysLeft();
     if (days == null) return '● $plan';
     return days <= 0 ? '● $plan · 已到期' : '● $plan · 还能用 $days 天';
@@ -767,7 +769,7 @@ class _AccountCard extends StatelessWidget {
   }
 
   String _expiryText(PanelAccount a) {
-    if (a.trialPendingHours > 0) return '试用 ${a.trialPendingHours} 小时，连上后开始算';
+    if (a.trialPendingHours > 0) return a.trialPendingLabel;
     final secs = a.secsLeft() ?? 0;
     if (secs <= 0) return '已到期';
     if (secs < 86400) return '不到 1 天到期';

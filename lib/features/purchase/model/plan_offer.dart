@@ -288,8 +288,6 @@ class ShopMe {
     required this.expiresOn,
     required this.quotes,
     this.canBuyStd = true,
-    this.trial = '',
-    this.trialMinutes = 60,
   });
 
   final String tier;
@@ -297,8 +295,6 @@ class ShopMe {
   final int daysLeft;
   final String expiresOn;
   final bool canBuyStd;
-  final String trial;
-  final int trialMinutes;
   final List<({int planId, List<PeriodQuote> periods})> quotes;
 
   PeriodQuote? quoteFor(int planId, String period) {
@@ -339,8 +335,6 @@ class ShopMe {
       expiresOn: '${raw['expires_on'] ?? ''}',
       quotes: quotes,
       canBuyStd: raw['can_buy_std'] != false,
-      trial: '${raw['trial'] ?? ''}',
-      trialMinutes: raw['trial_minutes'] is num ? (raw['trial_minutes'] as num).toInt() : 60,
     );
   }
 }

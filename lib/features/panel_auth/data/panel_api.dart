@@ -1067,6 +1067,9 @@ class PanelAccount {
   /// GslInviteBonus 1.55.0 gsl_trial.pending：邮箱号的试用还没开始算（第一次连上才算），给的是试用时长。
   /// 这时服务器的到期时间是「要是现在开始能用到哪」，界面不倒计时（跟 Windows remainingLabel 一样）。0 = 已经在算。
   final int trialPendingHours;
+
+  /// 试用还没开始算时那句（各处同一句，Windows AccountController 同一句）。
+  String get trialPendingLabel => '试用 $trialPendingHours 小时，连上后开始算';
   final int paidQuota;
   final int paidThrottleMbps;
   final bool proKnown;

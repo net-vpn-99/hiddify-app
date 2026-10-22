@@ -21,6 +21,7 @@ import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/local_repair.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
+import 'package:hiddify/features/connection/widget/connect_check_card.dart';
 import 'package:hiddify/features/home/widget/connect_progress.dart';
 import 'package:hiddify/features/home/widget/home_radar.dart';
 import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
@@ -210,7 +211,9 @@ class ConnectionButton extends HookConsumerWidget {
         ConnectFlowClock.end('stop');
         progressCtl.state = const ConnectProgress();
       }
+      // 新的一次连接：上一次的首页失败卡（原因）收掉，不然这次第 1～2 步失败时连接检查会拿到上一次的原因
       ref.read(deadLineProvider.notifier).state = false;
+      ref.read(homeFaultProvider.notifier).state = '';
 
       // ① 开通账号：没账号先把游客号补开一次（首页开号可能还没跑完，或者上次网络
       // 不好失败了）。1.1.28 起不再直接把人踢去登录页：首页不拦人，点下去才说话。
@@ -386,21 +389,19 @@ class ConnectionButton extends HookConsumerWidget {
       _ => () async {},
     });
 
-    // 选的线路下线了（第 3 步）：主按钮「换到 X」= 不再记「自己选的」，连服务器排第一的那条（auto_line_fixer 切过去），
-    // 以后也跟服务器排的走（Windows switchToSuggestedRoute 同一套）。
+    // 选的线路下线了（第 3 步）：主按钮「换到 X」= 换到服务器排的第一条能用的（switchToLine，跟连接检查「换到 X」同一份）。
     // 没有可换的（全在维修）：主按钮「自己选线路」打开线路列表。
     final lineGone = radarState == RadarState.failed && shownFailed == 3 && progress.lineGone;
     final canSwitch = lineGone && progress.switchTo.isNotEmpty;
     Future<void> switchFromGone() async {
-      if (!canSwitch) {
-        await showLinePicker(context, ref);
-        return;
+      if (!canSwitch || !await switchToLine(ref.read, progress.switchTo)) {
+        if (context.mounted) await showLinePicker(context, ref);
       }
-      // 换到的就是服务器排第一的 = 清掉「自己选的」跟服务器走；第一条在维修、换的是下面那条 = 记成选的那条。
-      final first = (await ref.read(lineSetProvider.future)).lines.firstOrNull?.name;
-      await ref.read(Preferences.preferredLineName.notifier).update(progress.switchTo == first ? '' : progress.switchTo);
-      ref.read(connectRequestProvider.notifier).state++;
     }
+    // 第 1～2 步失败（开通账号 / 获取线路）跟线路无关：第二个按钮是「帮我查一查」，不是「换一条线路」
+    final failedEarly = radarState == RadarState.failed && shownFailed > 0 && shownFailed <= 2;
+    // 判出这台手机没上网（首页卡说「没连上网」）：换线路也没用，不给第二个按钮
+    final offlineFault = ref.watch(homeFaultProvider) == 'offline';
 
     // ---- 三种「还不能连」的主页（两端同一张表：docs/计划/主页状态表.md）----
     // 放在所有 hook 之后：以前到期那段在 useState 前面就 return，账号一恢复 hook 个数变了会出错。
@@ -573,7 +574,17 @@ class ConnectionButton extends HookConsumerWidget {
             },
       buttonOutlined: busy || (connected && requiresReconnect != true) || status is Connecting || status is Disconnecting,
       showAllLines: connected,
-      secondLabel: radarState != RadarState.failed ? '' : !lineGone ? '换一条线路' : canSwitch ? '自己选线路' : '',
+      secondLabel: radarState != RadarState.failed || offlineFault
+          ? ''
+          : failedEarly
+          ? '帮我查一查'
+          : !lineGone
+          ? '换一条线路'
+          : canSwitch
+          ? '自己选线路'
+          : '',
+      // 原因词跟 Windows faultKind 一样：第 1 步 account（开通账号）、第 2 步 nodes（获取线路）
+      onSecond: failedEarly ? () => showConnectCheck(context, ref, fault: shownFailed == 1 ? 'account' : 'nodes') : null,
       // 没连接时最下面那行：试用中给「看套餐」，付过钱的给「换一条线路」（跟 Windows homeThird 一样）。
       linkLabel: radarState != RadarState.off
           ? ''
@@ -612,6 +623,7 @@ class HomeConnectPanel extends StatelessWidget {
     this.buttonOutlined = false,
     this.showAllLines = false,
     this.secondLabel = '',
+    this.onSecond,
     this.linkLabel = '',
     this.onLink,
     this.onAllLines,
@@ -636,6 +648,9 @@ class HomeConnectPanel extends StatelessWidget {
   final bool buttonOutlined;
   final bool showAllLines;
   final String secondLabel;
+
+  /// 第二个按钮做什么；空 = 打开线路列表（onAllLines）。
+  final VoidCallback? onSecond;
   final String linkLabel;
 
   /// 最下面那行文字链接点了做什么；不给就跟「全部线路」一样打开线路列表。
@@ -775,7 +790,7 @@ class HomeConnectPanel extends StatelessWidget {
                   height: 48,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: tk.card),
-                    onPressed: onAllLines,
+                    onPressed: onSecond ?? onAllLines,
                     child: Text(secondLabel),
                   ),
                 ),

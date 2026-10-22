@@ -186,7 +186,7 @@ void main() {
     // 正在用标准线路：最上面那块写「标准线路」，标准卡上香港小标签变浅绿。
     await _shot(tester, 'B-标准在用.png', isp: '电信', std: newStd, pro: newPro, trial: 'pro', current: '香港 01', connected: true);
     // 标准版用户：精品是带锁的卡 + 领取。
-    await _shot(tester, 'C-精品锁着.png', isp: '移动', std: newStd, pro: newPro, trial: 'offer', current: '香港 01', connected: true);
+    await _shot(tester, 'C-精品锁着.png', isp: '移动', std: newStd, pro: newPro, trial: 'can', current: '香港 01', connected: true);
     // 点进标准线路那一页：只有部分适合移动 → 只给那几条挂「适合移动」。
     await _shot(tester, 'D-标准线路页.png', isp: '移动', std: newStd, pro: newPro, trial: 'pro', current: '香港 01',
         connected: true, tapAfter: const ['标准线路']);

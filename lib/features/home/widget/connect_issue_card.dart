@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/common/guide_card.dart';
+import 'package:hiddify/features/connection/data/connect_check.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
-import 'package:hiddify/features/connection/notifier/local_repair.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/connection/widget/connect_check_card.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
@@ -33,16 +33,14 @@ class ConnectIssueCard extends ConsumerWidget {
     final status = ref.watch(connectionNotifierProvider).valueOrNull;
     final deadLine = ref.watch(deadLineProvider);
     final fault = ref.watch(homeFaultProvider);
-    // 连接意外断开时「修复并重新连接」帮不帮得上（修过一次还断就不再给），交给连接检查（R11）。
-    final canRepair = ref.watch(repairedKindProvider) != 'engine';
-    final evidence = ref.watch(deadEvidenceProvider);
+    final realityFailed = ref.watch(deadRealityProvider);
 
     final bool dead = (deadLine || fault == 'line') && status is Disconnected;
     // 这条在维修（断开后 connection_notifier 重拉过一次账号）：说「正在维修」，只给换线路。
     final lineName = ref.watch(Preferences.lastNodeName);
     final bool lineDown = dead && ref.watch(panelAuthProvider.select((s) => s.account?.isLineDown(lineName) ?? false));
     // 节点没认出我们（REALITY 校验失败）：线路配置的问题，不是用户的。
-    final bool reality = dead && !lineDown && evidence == 'reality';
+    final bool reality = dead && !lineDown && realityFailed;
     final bool revoked = fault == 'revoked' && status is Disconnected;
     final bool engine = (fault == 'engine' || revoked) && status is Disconnected;
     final bool gone = engine && !revoked;
@@ -85,7 +83,7 @@ class ConnectIssueCard extends ConsumerWidget {
       body = '暂时连不上，请换一条线路';
     } else if (reality) {
       title = '这条线路暂时用不了';
-      body = '这条线路的设置和服务器对不上，不是你的问题。请联系客服，我们来处理；你也可以先换一条线路';
+      body = realityMismatchCopy;
     } else {
       title = '这条线路现在不通';
       body = checkPrompt;
@@ -114,8 +112,9 @@ class ConnectIssueCard extends ConsumerWidget {
     final fixes = <(String, VoidCallback)>[
       if (noBackground) ('允许后台运行', () => ref.read(batteryOptimizationNotifierProvider.notifier).requestToIgnore()),
       if (noBackground) ('重新连接', reconnect),
-      if (checkable) ('帮我查一查', () => showConnectCheck(context, ref, fault: checkFault, canRepair: gone && canRepair)),
-      if (dead && !checkable) ('换一条线路', pickLine),
+      if (checkable) ('帮我查一查', () => showConnectCheck(context, ref, fault: checkFault)),
+      // 没上网时换线路也没用：只给「重新连接」
+      if (dead && !checkable && !offline) ('换一条线路', pickLine),
       if (!gone && !lineDown) ('重新连接', reconnect),
     ];
     // 联系客服当主按钮：线路设置对不上（不是用户的问题，要我们处理）。

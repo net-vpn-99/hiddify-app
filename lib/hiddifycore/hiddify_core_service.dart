@@ -146,6 +146,12 @@ class HiddifyCoreService with InfraLogger {
   /// 失败诊断、「走错了」读的都是这次的），连着时每 10 分钟看一眼，超过 16MB 也清空，免得占满手机。
   Timer? _coreLogGuard;
 
+  /// 连着时盯住内核日志大小（每 10 分钟看一眼，超过 16MB 清空）。App 里点的连接在 [start] 里开；
+  /// 快捷开关 / 开机自动连这种原生那边起的、App 重开接回已在跑的连接，在连上时开（connection_notifier）。
+  void watchCoreLogSize() {
+    _coreLogGuard ??= Timer.periodic(const Duration(minutes: 10), (_) => _truncateCoreLog(over: 16 << 20));
+  }
+
   /// 超过 [over] 字节就清空（异步，不卡界面）。定时检查断开时停掉，下次连接再开。
   Future<void> _truncateCoreLog({int over = 0}) async {
     try {
@@ -161,7 +167,7 @@ class HiddifyCoreService with InfraLogger {
     return TaskEither(() async {
       statusController.add(currentState = const CoreStatus.starting());
       await _truncateCoreLog();
-      _coreLogGuard ??= Timer.periodic(const Duration(minutes: 10), (_) => _truncateCoreLog(over: 16 << 20));
+      watchCoreLogSize();
       loggy.debug("starting");
       final background = await core.setupBackground(path, name);
       if (background != const CoreStatus.started()) {
@@ -365,6 +371,8 @@ class HiddifyCoreService with InfraLogger {
           SelectOutboundRequest(groupTag: groupTag, outboundTag: outboundTag),
           options: CallOptions(timeout: const Duration(seconds: 1)),
         );
+        // 内核切完再加一次：切的这一会儿里发出去的检测连接也会被结束，它们记的是第一次加之后的数，也要认得出来
+        lineSwitches++;
         if (res.code != ResponseCode.OK) return left("${res.code} ${res.message}");
 
         return right(unit);

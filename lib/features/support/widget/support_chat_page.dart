@@ -33,11 +33,14 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
 
   // dispose 里不能再用 ref（页面已卸载会抛错，10-10 诊断包里见过），先在 initState 存一份。
   late final SupportChatNotifier _notifier;
+  // 从连接检查点进来、没发消息就走了：检查报告别留到下次聊天才发出去
+  late final ConnectCheckNotifier _check;
 
   @override
   void initState() {
     super.initState();
     final notifier = _notifier = ref.read(supportChatNotifierProvider.notifier);
+    _check = ref.read(connectCheckProvider.notifier);
     notifier.bindIdentity(
       email: ref.read(panelAuthProvider).email,
       version: ref.read(appInfoProvider).valueOrNull?.version,
@@ -53,6 +56,8 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
         final code = r.code ?? '';
         if (code.isEmpty || !_attachDiag) return;
         _diagCode = code;
+        // 从连接检查点进来的：诊断码补到服务器那条检查记录上（后台「连接检查 · 未知情况」靠它找诊断包）
+        _check.attachDiagCode(code);
         // 他已经发了消息、诊断码才传好：单独补一条。
         if (_sentBeforeCode) {
           _notifier.sendText('（诊断码 $code）');
@@ -65,6 +70,7 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
   @override
   void dispose() {
     _notifier.dialogClosed();
+    _check.supportClosed();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -105,7 +111,7 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
     if (text.trim().isEmpty) return;
     _input.clear();
     // 从连接检查结果点「联系客服」进来的：检查报告（每一行查到的 + 结论）跟第一条消息一起发，客服不用再问「你那边什么情况」
-    final report = ref.read(connectCheckProvider.notifier).takeSupportReport();
+    final report = _check.takeSupportReport();
     if (report.isNotEmpty) text = '$text\n（$report）';
     if (_attachDiag) {
       if (_diagCode.isNotEmpty) {

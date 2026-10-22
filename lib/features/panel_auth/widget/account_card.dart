@@ -168,7 +168,7 @@ class AccountCard extends ConsumerWidget {
         }
         final name = acc.planName?.trim().isNotEmpty == true ? acc.planName!.trim().split('·').first.trim() : '会员';
         if (acc.lifetime) return '$name · 长期有效';
-        if (acc.trialPendingHours > 0) return '$name · 试用 ${acc.trialPendingHours} 小时，连上后开始算';
+        if (acc.trialPendingHours > 0) return '$name · ${acc.trialPendingLabel}';
         final left = acc.remainingClock();
         return left == null ? name : '$name · 还剩 $left';
     }
