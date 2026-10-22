@@ -66,6 +66,10 @@ jobs:
       - name: Prepare (pub get / codegen / download core .aar)
         run: make android-apk-prepare
 
+      # 连接检查结论表（docs/计划/连接检查.md，VPN 仓库）：情况表里每一种情况都要对，不对就不出包。
+      - name: Test connect-check verdicts (连接检查结论表)
+        run: flutter test test/features/connection/connect_check_verdict_test.dart
+
       # 核心写死的国内名单（hiddify-geo）很不全，B 站 / QQ / 微信都不在里面 → 换成源站上
       # 跟 iOS 同一份的名单。替换不成功会让构建失败，不会带着旧名单出包。
       - name: Patch core rule-set URLs (国内名单换成自己的)

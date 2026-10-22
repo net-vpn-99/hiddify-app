@@ -43,8 +43,6 @@ bool _userAskedToConnect = false;
 /// 每次进入 Connected +1，让「判不通」认得出自己是不是还是那一次连接。
 int _connectedSerial = 0;
 
-/// 第几次连上（连接检查用：「照做了还是不行」要中间真有一次新的连接，只点「重新检查」不算）。
-int get connectedSerial => _connectedSerial;
 
 @Riverpod(keepAlive: true)
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
@@ -147,6 +145,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         case Connecting():
           // 第 4 步（启动连接）。换线路 / 自动连这种不经过按钮的，从这里开始计时。
           ConnectFlowClock.at(4);
+          noteConnectAttempt();
           reporter.markStage(ConnectReporter.stageCoreStarted);
           ref.read(deadLineProvider.notifier).state = false;
           ref.read(homeFaultProvider.notifier).state = '';

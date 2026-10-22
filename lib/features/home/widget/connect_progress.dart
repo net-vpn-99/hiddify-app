@@ -136,8 +136,18 @@ int _flowTicket = 0;
 
 int beginConnectFlow() {
   ConnectFlowClock.begin();
+  noteConnectAttempt();
   return ++_flowTicket;
 }
+
+/// 第几次发起连接（连接检查用：「照做了还是不行」要中间真有一次新的连接，只点「重新检查」不算）。
+/// 点连接（含第 1～2 步就失败的）和内核每次开始连（快捷开关、开机自动连、换线重连）都加一，
+/// 跟 Windows m_connectionAttemptSerial 一样数的是「发起」，不是「连上」。同一次多加一下没关系，只比相不相等。
+int _connectAttempts = 0;
+
+int get connectAttemptSerial => _connectAttempts;
+
+void noteConnectAttempt() => _connectAttempts++;
 
 bool connectFlowAlive(int ticket) => ticket == _flowTicket;
 

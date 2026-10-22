@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/common/guide_card.dart';
-import 'package:hiddify/features/connection/data/connect_check.dart';
+import 'package:hiddify/features/connection/data/connect_check_verdict.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';

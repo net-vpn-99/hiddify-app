@@ -4,8 +4,9 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/connection/data/connect_check_verdict.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
-import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/home/widget/connect_progress.dart';
 import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
@@ -31,8 +32,6 @@ const _rowOrder = ['net', 'api', 'line', 'others', 'local', 'alt'];
 /// 判「这台手机能不能上网」碰的那个国内地址（判没网、连接检查第 1 行都用它，Windows onlineProbeHost）。
 const onlineProbeHost = 'www.baidu.com';
 
-/// 线路设置对不上（REALITY 校验失败）时那句话，首页失败卡和连接检查共用（Windows realityMismatchCopy）。
-const realityMismatchCopy = '这条线路的设置和服务器对不上，不是你的问题。请联系客服，我们来处理；你也可以先换一条线路';
 
 class CheckRow {
   const CheckRow(this.text, this.state);
@@ -112,14 +111,8 @@ class ConnectCheckNotifier extends Notifier<ConnectCheckState> {
   String _pendingDiag = ''; // 诊断码先到了，服务器那条还没记上
   String _supportReport = '';
 
-  // 跨次记的（连接确认通了就清掉，resetHistory）：上一次的结论（R7 之后重连又不通 = R8；同一个结论连着第二次 = 客服升主按钮）
-  String _lastResult = '';
-  String _lastHost = '';
-  int _lastAttempt = -1;
-  int _streak = 0;
-
-  // 碰得到但不给回数据的线路（R8 记下）：换了一条还是这样 = 未知情况 R10
-  final Set<String> _datalessHosts = {};
+  // 跨次记的（连接确认通了就清掉，resetHistory）：上一次的结论、连着几次、不回数据的线路
+  final CheckHistory _history = CheckHistory();
 
   @override
   ConnectCheckState build() => const ConnectCheckState();
@@ -135,7 +128,7 @@ class ConnectCheckNotifier extends Notifier<ConnectCheckState> {
     _fault = fault;
     _connected = connected;
     _canRepair = canRepair;
-    _attempt = connectedSerial;
+    _attempt = connectAttemptSerial;
     _serverId = 0;
     _contacted = false;
     _contactPending = false;
@@ -189,11 +182,7 @@ class ConnectCheckNotifier extends Notifier<ConnectCheckState> {
 
   /// 连接确认通了：跨次记的那些清掉（「照做了还是不行」只算这一段，跟失败卡「连上就清零」一样，Windows resetHistory）。
   void resetHistory() {
-    _lastResult = '';
-    _lastHost = '';
-    _lastAttempt = -1;
-    _streak = 0;
-    _datalessHosts.clear();
+    _history.reset();
   }
 
   /// 查完点了「联系客服」：服务器那条记上（结果还没记上就等记上再补）；检查报告交给客服页，跟第一条消息一起发。
@@ -370,113 +359,35 @@ class ConnectCheckNotifier extends Notifier<ConnectCheckState> {
     }
   }
 
-  /// 结论表（docs/计划/连接检查.md 第六节），从上往下第一条对上的就是（Windows conclude() 同一张表、同一套文案）。
+  /// 结论表在 concludeCheck（connect_check_verdict.dart，纯函数，自动测试跑的就是它）；这里只把查到的交给它。
   ConnectCheckState _conclude() {
-    final line = _line?.name ?? '';
-    final alt = _alt?.name ?? '';
-    final hasAlt = _alt != null;
-    final lineChecked = _rows.containsKey('line');
-    final failedBefore = _fault.isNotEmpty;
-    final newAttempt = _attempt != _lastAttempt;
-    final switchText = hasAlt ? '换到 $alt' : '自己选线路';
-    final switchAct = hasAlt ? 'switch' : 'routes';
-    const contact = '联系客服';
-    String r;
-    String title;
-    String body;
-    String pText;
-    String pAct;
-    var sText = '';
-    var sAct = '';
-
-    if (_fail('local')) {
-      // 先看本机：别的 VPN 占着时我们碰哪儿都可能不通，不能说成「没连上网」
-      (r, title, body, pText, pAct) = ('R3', OtherVpn.title, OtherVpn.message, '打开 VPN 设置', 'vpn_settings');
-      (sText, sAct) = (contact, 'contact');
-    } else if (_canRepair && _fault == 'engine_gone') {
-      (r, title, body, pText, pAct) = ('R11', '光速雷达没能启动连接', '点「修复并重新连接」，再试一次。', '修复并重新连接', 'repair');
-      (sText, sAct) = (contact, 'contact');
-    } else if (!_ok('net') && !_ok('api')) {
-      (r, title, body, pText, pAct) = ('R1', '这台手机没连上网', '不是线路的问题。网络恢复后，再点「重新检查」。', '重新检查', 'recheck');
-    } else if (!_ok('api')) {
-      (r, title, body, pText, pAct) =
-          ('R2', '连不上光速雷达的服务器', '这台手机能上网。请稍后再点「重新检查」；一直这样的话，请到官网下载最新版。', '重新检查', 'recheck');
-      (sText, sAct) = ('打开官网', 'site');
-    } else if (_fault == 'reality_mismatch') {
-      (r, title, body, pText, pAct) = ('R9', '这条线路暂时用不了', realityMismatchCopy, switchText, switchAct);
-      (sText, sAct) = (contact, 'contact');
-    } else if (_fail('others') && (_fail('line') || failedBefore)) {
-      // 其他人也连不上：刚才那条碰不到，或者碰得到但他刚才也没连成——是线路自己出了问题（不说「检查没发现问题」）
-      (r, title, pText, pAct) =
-          ('R4', '$line 出了问题', _ok('alt') ? switchText : '自己选线路', _ok('alt') ? switchAct : 'routes');
-      body = '我们已经收到报警，正在处理。${_ok('alt') ? '你可以先换到 $alt。' : '你可以先换一条线路。'}';
-      (sText, sAct) = (contact, 'contact');
-    } else if (_fail('line') && !_fail('alt')) {
-      // 推荐那条有回应（或者没有可推荐的）：是他到这条线路的网络暂时不通
-      (r, title, pText, pAct) =
-          ('R5', '你的网络连不上 $line', _ok('alt') ? switchText : '自己选线路', _ok('alt') ? switchAct : 'routes');
-      body = _ok('alt') ? '换到 $alt 就能用。' : '换一条线路就能用。';
-      // 正连着 / 正在连时不给「重新连接」（那一下会变成取消）
-      if (!_connected) (sText, sAct) = ('重新连接 $line', 'reconnect');
-    } else if (_fail('line')) {
-      (r, title, body, pText, pAct) =
-          ('R6', '两条线路都没有回应', '光速雷达的服务器能连上，但两条线路都没有回应，换线路也没用。请点「联系客服」，我们帮你查。', contact, 'contact');
-      (sText, sAct) = ('重新检查', 'recheck');
-    } else {
-      // 都碰得到。碰得到只说明线路的服务器在，证明不了它会给我们回数据，所以不说「都正常了」。
-      final host = _line?.host ?? '';
-      final sameAsLast = lineChecked && host == _lastHost;
-      final otherDataless = lineChecked && _fault == 'dead_tunnel' && _datalessHosts.isNotEmpty && !_datalessHosts.contains(host);
-      // 上次查完是 R7，他照做重连了（中间有一次新的连接）还是一样
-      final againAfterR7 = failedBefore && newAttempt && _lastResult == 'R7' && sameAsLast;
-      // 上次已经是 R8、中间没再连过：重查还是 R8（不会退回「检查没发现问题」）
-      final stillR8 = !newAttempt && _lastResult == 'R8' && sameAsLast;
-      if (_fault == 'egress_mismatch' || otherDataless || (againAfterR7 && _fault != 'dead_tunnel')) {
-        // 网页没经过线路却查不出原因 / 换了一条还是碰得到不回数据 / 照做了还是一样：我们还没见过
-        (r, title, body, pText, pAct) = ('R10', '连接没有完成', '这次的情况我们还没见过。点「联系客服」，我们帮你查。', contact, 'contact');
-        (sText, sAct) = ('重新检查', 'recheck');
-      } else if (againAfterR7 || stillR8) {
-        _datalessHosts.add(host);
-        (r, title, pText, pAct) = ('R8', '$line 现在不通', switchText, switchAct);
-        body = hasAlt ? '它能碰到，但不给光速雷达回数据。换到 $alt 就能用。' : '它能碰到，但不给光速雷达回数据。换一条线路就能用。';
-        (sText, sAct) = (contact, 'contact');
-      } else {
-        r = 'R7';
-        title = '检查没发现问题';
-        final who = lineChecked ? '网络、光速雷达的服务器、$line' : '网络和光速雷达的服务器';
-        if (_connected) {
-          (body, pText, pAct) = ('$who都有回应。', '知道了', 'close');
-        } else {
-          (body, pText, pAct) = ('$who现在都有回应。刚才可能是临时断了一下，点「重新连接」试试。', '重新连接', 'reconnect');
-          if (hasAlt) (sText, sAct) = (switchText, switchAct);
-        }
-      }
-    }
-
-    // 同一个结论连着第二次（照处理办法做了还是不行）：联系客服升成主按钮（现有规矩）。只点「重新检查」不算一次。
-    final same = r == _lastResult && (_line?.host ?? '') == _lastHost;
-    _streak = !same ? 1 : (newAttempt ? _streak + 1 : _streak);
-    if (_streak >= 2 && (r == 'R4' || r == 'R5' || r == 'R8')) {
-      (sText, sAct) = (pText, pAct);
-      (pText, pAct) = (contact, 'contact');
-    }
-    _lastResult = r;
-    _lastHost = _line?.host ?? '';
-    _lastAttempt = _attempt;
-
+    final v = concludeCheck(
+      CheckInput(
+        rows: _rows,
+        line: _line?.name ?? '',
+        lineHost: _line?.host ?? '',
+        alt: _alt?.name ?? '',
+        hasAlt: _alt != null,
+        fault: _fault,
+        connected: _connected,
+        canRepair: _canRepair,
+        attempt: _attempt,
+      ),
+      _history,
+    );
     final rows = _rowList();
     // 检查报告（跟着他发给客服的第一条消息走，他自己也看得到）：结论 + 每一行查到的 + 编号（客服按编号找；Windows report() 同一格式）
-    final report = '连接检查：$title｜${rows.map((x) => '${x.state == 'ok' ? '✓' : '✗'} ${x.text}').join('；')}｜编号 $r';
+    final report = '连接检查：${v.title}｜${rows.map((x) => '${x.state == 'ok' ? '✓' : '✗'} ${x.text}').join('；')}｜编号 ${v.result}';
     return ConnectCheckState(
       rows: rows,
-      result: r,
-      title: title,
-      body: body,
-      primaryText: pText,
-      primaryAct: pAct,
-      secondaryText: sText,
-      secondaryAct: sAct,
-      altName: alt,
+      result: v.result,
+      title: v.title,
+      body: v.body,
+      primaryText: v.primaryText,
+      primaryAct: v.primaryAct,
+      secondaryText: v.secondaryText,
+      secondaryAct: v.secondaryAct,
+      altName: _alt?.name ?? '',
       report: report,
     );
   }

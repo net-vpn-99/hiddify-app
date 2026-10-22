@@ -1,0 +1,353 @@
+{
+  "_说明": [
+    "连接检查结论表的自动测试情况表（docs/计划/连接检查.md 第六节）。Windows tests/connectcheck_test.cpp 和安卓 test/features/connection/connect_check_verdict_test.dart 都跑这一份。",
+    "两个仓库各放一份，内容必须一模一样：VPN 仓库 ui/one-ray/tests/connect_check_cases.json、安卓仓库 test/fixtures/connect_check_cases.json（Windows 测试会比对两份）。改结论表时先改这里，再改两端代码，两端测试都过了才算改完。",
+    "每个 case 是一串 steps，共用一份跨次记录（上一次结论、连着几次、不回数据的线路），按顺序跑。platforms 不写 = 两端都跑。",
+    "rows：net / api / line / others / local / alt 后面 + = 通过、- = 不通过，没写的行 = 不显示。step 里没写的字段用 defaults。",
+    "expect：result 结论编号；primary / secondary 是按钮动作（\"\" = 没有这个按钮）；title / body / primaryText 要求完全一样，bodyHas 只要求包含；{device} 在 Windows 换成「电脑」、安卓换成「手机」。"
+  ],
+  "defaults": {
+    "line": "美国 洛杉矶 05",
+    "lineHost": "la05.example",
+    "alt": "美国 洛杉矶 06",
+    "hasAlt": true,
+    "fault": "",
+    "connected": false,
+    "canRepair": false,
+    "conflictText": "",
+    "blockSoftware": "",
+    "socketsFull": false,
+    "attempt": 1
+  },
+  "cases": [
+    {
+      "name": "R1 没上网：网络和服务器都碰不到",
+      "steps": [{ "rows": "net- api- line- local+", "fault": "dead_tunnel",
+        "expect": { "result": "R1", "primary": "recheck", "secondary": "", "title": "这台{device}没连上网" } }]
+    },
+    {
+      "name": "R1 没上网：线路那行通不通都不看",
+      "steps": [{ "rows": "net- api- line+ local+",
+        "expect": { "result": "R1", "primary": "recheck", "secondary": "" } }]
+    },
+    {
+      "name": "R2 能上网但连不上光速雷达的服务器",
+      "steps": [{ "rows": "net+ api- line+ local+",
+        "expect": { "result": "R2", "primary": "recheck", "secondary": "site", "title": "连不上光速雷达的服务器", "bodyHas": "这台{device}能上网" } }]
+    },
+    {
+      "name": "R3 Windows：网络被其他软件占用，用失败卡那句话",
+      "platforms": ["windows"],
+      "steps": [{ "rows": "net+ api+ line+ local-", "conflictText": "你的电脑上还开着 Clash，关掉它光速雷达才能连上。",
+        "expect": { "result": "R3", "primary": "conflict", "secondary": "contact", "title": "网络被其他软件占用", "body": "你的电脑上还开着 Clash，关掉它光速雷达才能连上。" } }]
+    },
+    {
+      "name": "R3 Windows：被点了名的安全软件拦住",
+      "platforms": ["windows"],
+      "steps": [{ "rows": "net+ api+ line- local-", "blockSoftware": "火绒",
+        "expect": { "result": "R3", "primary": "trust", "secondary": "contact", "title": "连接被 火绒 拦住了", "body": "把光速雷达加入 火绒 的信任区，再点「重新连接」" } }]
+    },
+    {
+      "name": "R3 Windows：被拦住但认不出是哪个软件",
+      "platforms": ["windows"],
+      "steps": [{ "rows": "net+ api+ line- local-",
+        "expect": { "result": "R3", "primary": "trust", "secondary": "contact", "title": "连接被这台电脑上的软件拦住了" } }]
+    },
+    {
+      "name": "R3 Windows：被拦住时碰哪儿都不通，先认本机，不说成没上网",
+      "platforms": ["windows"],
+      "steps": [{ "rows": "net- api- line- local-", "blockSoftware": "360",
+        "expect": { "result": "R3", "primary": "trust", "secondary": "contact" } }]
+    },
+    {
+      "name": "R3 安卓：开着别的 VPN",
+      "platforms": ["android"],
+      "steps": [{ "rows": "net+ api+ line+ local-",
+        "expect": { "result": "R3", "primary": "vpn_settings", "secondary": "contact", "title": "网络被其他软件占用" } }]
+    },
+    {
+      "name": "R3 安卓：别的 VPN 占着时碰哪儿都不通，先认本机，不说成没上网",
+      "platforms": ["android"],
+      "steps": [{ "rows": "net- api- line- local-",
+        "expect": { "result": "R3", "primary": "vpn_settings", "secondary": "contact" } }]
+    },
+    {
+      "name": "R11 Windows：本机连接数用满，修复帮得上",
+      "platforms": ["windows"],
+      "steps": [{ "rows": "net- api- line- local+", "socketsFull": true, "canRepair": true,
+        "expect": { "result": "R11", "primary": "repair", "secondary": "contact", "title": "这台电脑的网络连接数用满了" } }]
+    },
+    {
+      "name": "R11 Windows：本机连接数用满，修过一次了只给重新连接",
+      "platforms": ["windows"],
+      "steps": [{ "rows": "net+ api+ line+ local+", "socketsFull": true, "canRepair": false,
+        "expect": { "result": "R11", "primary": "reconnect", "secondary": "contact" } }]
+    },
+    {
+      "name": "R11 连接意外断了，修复帮得上",
+      "steps": [{ "rows": "net+ api+ line+ local+", "fault": "engine_gone", "canRepair": true,
+        "expect": { "result": "R11", "primary": "repair", "secondary": "contact", "title": "光速雷达没能启动连接" } }]
+    },
+    {
+      "name": "连接意外断了但修过一次：不给修复，按查到的走（R7）",
+      "steps": [{ "rows": "net+ api+ line+ local+", "fault": "engine_gone", "canRepair": false,
+        "expect": { "result": "R7", "primary": "reconnect", "secondary": "switch" } }]
+    },
+    {
+      "name": "连接意外断了、修复帮得上，但这台没联网：先说没联网（修复帮不上；查的几下绕开了光速雷达，不受它影响）",
+      "steps": [{ "rows": "net- api- local+", "fault": "engine_gone", "canRepair": true,
+        "expect": { "result": "R1", "primary": "recheck", "secondary": "" } }]
+    },
+    {
+      "name": "连接意外断了、修复帮得上，但连不上光速雷达的服务器：先说服务器（R2）",
+      "steps": [{ "rows": "net+ api- local+", "fault": "engine_gone", "canRepair": true,
+        "expect": { "result": "R2", "primary": "recheck", "secondary": "site" } }]
+    },
+    {
+      "name": "R9 线路设置对不上，有推荐的",
+      "steps": [{ "rows": "net+ api+ line+ local+", "fault": "reality_mismatch",
+        "expect": { "result": "R9", "primary": "switch", "secondary": "contact", "primaryText": "换到 美国 洛杉矶 06",
+          "body": "这条线路的设置和服务器对不上，不是你的问题。请联系客服，我们来处理；你也可以先换一条线路" } }]
+    },
+    {
+      "name": "R9 线路设置对不上，没有可推荐的",
+      "steps": [{ "rows": "net+ api+ line+ local+", "fault": "reality_mismatch", "hasAlt": false, "alt": "",
+        "expect": { "result": "R9", "primary": "routes", "secondary": "contact", "primaryText": "自己选线路" } }]
+    },
+    {
+      "name": "线路设置对不上但服务器连不上：先说服务器（R2）",
+      "steps": [{ "rows": "net+ api- line+ local+", "fault": "reality_mismatch",
+        "expect": { "result": "R2", "primary": "recheck", "secondary": "site" } }]
+    },
+    {
+      "name": "R4 线路出了问题：碰不到、其他人也连不上，推荐那条有回应",
+      "steps": [{ "rows": "net+ api+ line- others- local+ alt+", "fault": "dead_tunnel",
+        "expect": { "result": "R4", "primary": "switch", "secondary": "contact", "title": "美国 洛杉矶 05 出了问题", "bodyHas": "你可以先换到 美国 洛杉矶 06。" } }]
+    },
+    {
+      "name": "R4 线路出了问题：推荐那条也没回应，让他自己选",
+      "steps": [{ "rows": "net+ api+ line- others- local+ alt-", "fault": "dead_tunnel",
+        "expect": { "result": "R4", "primary": "routes", "secondary": "contact", "bodyHas": "你可以先换一条线路。" } }]
+    },
+    {
+      "name": "R4 碰得到、但他刚才也没连成、其他人也连不上：是线路的问题",
+      "steps": [{ "rows": "net+ api+ line+ others- local+ alt+", "fault": "dead_tunnel",
+        "expect": { "result": "R4", "primary": "switch", "secondary": "contact" } }]
+    },
+    {
+      "name": "其他人连不上但他没失败、线路碰得到：不说线路出问题（R7）",
+      "steps": [{ "rows": "net+ api+ line+ others- local+ alt+", "connected": true,
+        "expect": { "result": "R7", "primary": "close", "secondary": "" } }]
+    },
+    {
+      "name": "R5 他的网络连不上这条，推荐那条有回应",
+      "steps": [{ "rows": "net+ api+ line- others+ local+ alt+", "fault": "dead_tunnel",
+        "expect": { "result": "R5", "primary": "switch", "secondary": "reconnect", "title": "你的网络连不上 美国 洛杉矶 05", "body": "换到 美国 洛杉矶 06 就能用。" } }]
+    },
+    {
+      "name": "R5 正连着时不给「重新连接」（那一下会变成取消）",
+      "steps": [{ "rows": "net+ api+ line- local+ alt+", "connected": true,
+        "expect": { "result": "R5", "primary": "switch", "secondary": "" } }]
+    },
+    {
+      "name": "R5 没有可推荐的：自己选线路",
+      "steps": [{ "rows": "net+ api+ line- local+", "hasAlt": false, "alt": "", "fault": "dead_tunnel",
+        "expect": { "result": "R5", "primary": "routes", "secondary": "reconnect", "body": "换一条线路就能用。" } }]
+    },
+    {
+      "name": "R6 两条线路都没有回应",
+      "steps": [{ "rows": "net+ api+ line- local+ alt-", "fault": "dead_tunnel",
+        "expect": { "result": "R6", "primary": "contact", "secondary": "recheck", "title": "两条线路都没有回应" } }]
+    },
+    {
+      "name": "R7 都有回应，没连着：重新连接 + 换到推荐那条",
+      "steps": [{ "rows": "net+ api+ line+ others+ local+", "fault": "dead_tunnel",
+        "expect": { "result": "R7", "primary": "reconnect", "secondary": "switch", "title": "检查没发现问题", "bodyHas": "网络、光速雷达的服务器、美国 洛杉矶 05现在都有回应" } }]
+    },
+    {
+      "name": "R7 没有可推荐的：只给重新连接",
+      "steps": [{ "rows": "net+ api+ line+ local+", "hasAlt": false, "alt": "",
+        "expect": { "result": "R7", "primary": "reconnect", "secondary": "" } }]
+    },
+    {
+      "name": "R7 正连着：只给知道了",
+      "steps": [{ "rows": "net+ api+ line+ local+", "connected": true,
+        "expect": { "result": "R7", "primary": "close", "secondary": "", "bodyHas": "都有回应。" } }]
+    },
+    {
+      "name": "R7 没有刚才那条（从「更多」点进来、没连过）：只说网络和服务器",
+      "steps": [{ "rows": "net+ api+ local+", "line": "", "lineHost": "", "hasAlt": false, "alt": "",
+        "expect": { "result": "R7", "primary": "reconnect", "secondary": "", "bodyHas": "网络和光速雷达的服务器现在都有回应" } }]
+    },
+    {
+      "name": "R10 网页没经过线路、查不出原因",
+      "steps": [{ "rows": "net+ api+ line+ local+", "fault": "egress_mismatch",
+        "expect": { "result": "R10", "primary": "contact", "secondary": "recheck", "title": "连接没有完成" } }]
+    },
+    {
+      "name": "R7 → 照做重连还是一个字节没回 → R8 → 只点重新检查还是 R8 → 换到推荐那条还是这样 → R10",
+      "steps": [
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 1,
+          "expect": { "result": "R7", "primary": "reconnect", "secondary": "switch" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 2,
+          "expect": { "result": "R8", "primary": "switch", "secondary": "contact", "title": "美国 洛杉矶 05 现在不通" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 2,
+          "expect": { "result": "R8", "primary": "switch", "secondary": "contact" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 3,
+          "line": "美国 洛杉矶 06", "lineHost": "la06.example", "alt": "日本 东京 03",
+          "expect": { "result": "R10", "primary": "contact", "secondary": "recheck" } }
+      ]
+    },
+    {
+      "name": "R7 之后只点「重新检查」（中间没有新的连接）：还是 R7，不升成 R8",
+      "steps": [
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R7" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R7", "primary": "reconnect" } }
+      ]
+    },
+    {
+      "name": "R7 之后照做重连、不是线路不回数据那种失败，还是一样：没见过的情况（R10）",
+      "steps": [
+        { "rows": "net+ api+ line+ local+", "fault": "nodes", "attempt": 1, "expect": { "result": "R7" } },
+        { "rows": "net+ api+ line+ local+", "fault": "nodes", "attempt": 2, "expect": { "result": "R10", "primary": "contact" } }
+      ]
+    },
+    {
+      "name": "R7 之后换了一条线路再失败：不算「照做了还是不行」（R7）",
+      "steps": [
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R7" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 2, "lineHost": "la06.example", "line": "美国 洛杉矶 06",
+          "expect": { "result": "R7" } }
+      ]
+    },
+    {
+      "name": "同一个结论连着第二次（中间重连过）：联系客服升成主按钮；只点重新检查不再加次数",
+      "steps": [
+        { "rows": "net+ api+ line- local+ alt+", "fault": "dead_tunnel", "attempt": 1,
+          "expect": { "result": "R5", "primary": "switch", "secondary": "reconnect" } },
+        { "rows": "net+ api+ line- local+ alt+", "fault": "dead_tunnel", "attempt": 2,
+          "expect": { "result": "R5", "primary": "contact", "secondary": "switch", "primaryText": "联系客服" } },
+        { "rows": "net+ api+ line- local+ alt+", "fault": "dead_tunnel", "attempt": 2,
+          "expect": { "result": "R5", "primary": "contact", "secondary": "switch" } }
+      ]
+    },
+    {
+      "name": "同一个结论但只点了重新检查（中间没有新的连接）：不升客服",
+      "steps": [
+        { "rows": "net+ api+ line- local+ alt+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R5", "primary": "switch" } },
+        { "rows": "net+ api+ line- local+ alt+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R5", "primary": "switch" } }
+      ]
+    },
+    {
+      "name": "R4 连着第二次也升客服",
+      "steps": [
+        { "rows": "net+ api+ line- others- local+ alt+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R4", "primary": "switch" } },
+        { "rows": "net+ api+ line- others- local+ alt+", "fault": "dead_tunnel", "attempt": 2, "expect": { "result": "R4", "primary": "contact", "secondary": "switch" } }
+      ]
+    },
+    {
+      "name": "R6 连着第二次不换主按钮（本来就是联系客服）",
+      "steps": [
+        { "rows": "net+ api+ line- local+ alt-", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R6", "primary": "contact", "secondary": "recheck" } },
+        { "rows": "net+ api+ line- local+ alt-", "fault": "dead_tunnel", "attempt": 2, "expect": { "result": "R6", "primary": "contact", "secondary": "recheck" } }
+      ]
+    },
+    {
+      "name": "换了一条线路得出同一个结论：是另一件事，不升客服",
+      "steps": [
+        { "rows": "net+ api+ line- local+ alt+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R5", "primary": "switch" } },
+        { "rows": "net+ api+ line- local+ alt+", "fault": "dead_tunnel", "attempt": 2, "line": "美国 洛杉矶 06", "lineHost": "la06.example", "alt": "日本 东京 03",
+          "expect": { "result": "R5", "primary": "switch", "primaryText": "换到 日本 东京 03" } }
+      ]
+    },
+    {
+      "name": "R8 之后照做重连还是不回数据：还是 R8，联系客服升成主按钮（不退回「检查没发现问题」）",
+      "steps": [
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R7" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 2, "expect": { "result": "R8", "primary": "switch", "secondary": "contact" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 3, "expect": { "result": "R8", "primary": "contact", "secondary": "switch" } }
+      ]
+    },
+    {
+      "name": "R8 之后照做重连、换成别的失败原因还是一样：没见过的情况（R10）",
+      "steps": [
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R7" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 2, "expect": { "result": "R8" } },
+        { "rows": "net+ api+ line+ local+", "fault": "engine_gone", "attempt": 3, "expect": { "result": "R10", "primary": "contact" } }
+      ]
+    },
+    {
+      "name": "R8 之后他连上了、自己点进来查：不再说不通（R7）",
+      "steps": [
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R7" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 2, "expect": { "result": "R8" } },
+        { "rows": "net+ api+ line+ local+", "fault": "", "connected": true, "attempt": 3, "expect": { "result": "R7", "primary": "close" } }
+      ]
+    },
+    {
+      "name": "R8 没有可推荐的：自己选线路",
+      "steps": [
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 1, "hasAlt": false, "alt": "",
+          "expect": { "result": "R7", "primary": "reconnect", "secondary": "" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 2, "hasAlt": false, "alt": "",
+          "expect": { "result": "R8", "primary": "routes", "primaryText": "自己选线路", "secondary": "contact", "body": "它能碰到，但不给光速雷达回数据。换一条线路就能用。" } }
+      ]
+    },
+    {
+      "name": "R4 推荐那条也不通，连着第二次：联系客服当主按钮，次按钮自己选线路",
+      "steps": [
+        { "rows": "net+ api+ line- others- local+ alt-", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R4", "primary": "routes" } },
+        { "rows": "net+ api+ line- others- local+ alt-", "fault": "dead_tunnel", "attempt": 2, "expect": { "result": "R4", "primary": "contact", "secondary": "routes" } }
+      ]
+    },
+    {
+      "name": "R5 正连着（开始没有次按钮），连着第二次：联系客服当主按钮，换线降成次按钮",
+      "steps": [
+        { "rows": "net+ api+ line- local+ alt+", "connected": true, "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R5", "primary": "switch", "secondary": "" } },
+        { "rows": "net+ api+ line- local+ alt+", "connected": true, "fault": "dead_tunnel", "attempt": 2, "expect": { "result": "R5", "primary": "contact", "secondary": "switch" } }
+      ]
+    },
+    {
+      "name": "R8 之后换了线路、也没有可推荐的，还是不回数据：没见过的情况（R10）",
+      "steps": [
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 1, "expect": { "result": "R7" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 2, "expect": { "result": "R8" } },
+        { "rows": "net+ api+ line+ local+", "fault": "dead_tunnel", "attempt": 3, "line": "美国 洛杉矶 06", "lineHost": "la06.example", "hasAlt": false, "alt": "",
+          "expect": { "result": "R10", "primary": "contact", "secondary": "recheck" } }
+      ]
+    },
+    {
+      "name": "R3 Windows：网络被占用、又装着安全软件：先说占用（帮他关掉）",
+      "platforms": ["windows"],
+      "steps": [{ "rows": "net+ api+ line+ local-", "conflictText": "你的电脑上还开着 Clash，关掉它光速雷达才能连上。", "blockSoftware": "火绒",
+        "expect": { "result": "R3", "primary": "conflict", "title": "网络被其他软件占用" } }]
+    },
+    {
+      "name": "R3 Windows：被拦住比连接数用满先认",
+      "platforms": ["windows"],
+      "steps": [{ "rows": "net+ api+ line+ local-", "socketsFull": true, "canRepair": true,
+        "expect": { "result": "R3", "primary": "trust" } }]
+    },
+    {
+      "name": "R11 Windows：连接数用满比连接意外断了先认",
+      "platforms": ["windows"],
+      "steps": [{ "rows": "net+ api+ line+ local+", "socketsFull": true, "fault": "engine_gone", "canRepair": true,
+        "expect": { "result": "R11", "primary": "repair", "title": "这台电脑的网络连接数用满了" } }]
+    },
+    {
+      "name": "连接意外断了、修复帮得上：比线路出问题、网络连不上线路都先认",
+      "steps": [{ "rows": "net+ api+ line- others- local+ alt+", "fault": "engine_gone", "canRepair": true,
+        "expect": { "result": "R11", "primary": "repair", "title": "光速雷达没能启动连接" } }]
+    },
+    {
+      "name": "线路设置对不上：线路也没回应、其他人也连不上，还是先说设置对不上（R9）",
+      "steps": [{ "rows": "net+ api+ line- others- local+ alt+", "fault": "reality_mismatch",
+        "expect": { "result": "R9", "primary": "switch", "secondary": "contact" } }]
+    },
+    {
+      "name": "网页没经过线路、但这条线路没回应：说网络连不上这条（R5），不说没见过",
+      "steps": [{ "rows": "net+ api+ line- local+ alt+", "fault": "egress_mismatch",
+        "expect": { "result": "R5", "primary": "switch" } }]
+    }
+  ]
+}
