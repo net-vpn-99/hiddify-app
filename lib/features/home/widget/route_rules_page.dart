@@ -3,9 +3,8 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:hiddify/features/log/data/log_path_resolver.dart';
+import 'package:hiddify/features/log/data/log_data_providers.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
-import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/route_check_notifier.dart';
@@ -72,7 +71,7 @@ class _RouteRulesPageState extends ConsumerState<RouteRulesPage> {
         '平台：安卓 $version';
     try {
       final email = ref.read(panelAuthProvider).email ?? '';
-      final boxLog = LogPathResolver.corePath(ref.read(appDirectoriesProvider).requireValue.workingDir);
+      final boxLog = ref.read(logPathResolverProvider).coreFile().path;
       final report = '--- 最近走代理的连接（新的在前，直连的不列）---\n${await proxiedTargets(boxLog)}';
       final dio = PanelApiBase.dio(userAgent: 'OneRay-Android-Feedback');
       await dio.post<dynamic>(

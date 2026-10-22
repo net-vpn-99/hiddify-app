@@ -10,7 +10,7 @@ import 'package:hiddify/core/model/directories.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
-import 'package:hiddify/features/log/data/log_path_resolver.dart';
+import 'package:hiddify/features/log/data/log_data_providers.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/hiddifycore/core_interface/core_interface.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcommon/common.pb.dart';
@@ -146,17 +146,21 @@ class HiddifyCoreService with InfraLogger {
   /// 失败诊断、「走错了」读的都是这次的），连着时每 10 分钟看一眼，超过 16MB 也清空，免得占满手机。
   Timer? _coreLogGuard;
 
-  void _truncateCoreLog({int over = 0}) {
+  /// 超过 [over] 字节就清空（异步，不卡界面）。定时检查断开时停掉，下次连接再开。
+  Future<void> _truncateCoreLog({int over = 0}) async {
     try {
-      final f = File(LogPathResolver.corePath(ref.read(appDirectoriesProvider).requireValue.workingDir));
-      if (f.existsSync() && f.lengthSync() > over) f.writeAsBytesSync(const [], flush: true);
+      final f = ref.read(logPathResolverProvider).coreFile();
+      if (!await f.exists() || await f.length() <= over) return;
+      final raf = await f.open(mode: FileMode.append);
+      await raf.truncate(0);
+      await raf.close();
     } catch (_) {}
   }
 
   TaskEither<ConnectionFailure, Unit> start(String path, String name, bool disableMemoryLimit) {
     return TaskEither(() async {
       statusController.add(currentState = const CoreStatus.starting());
-      _truncateCoreLog();
+      await _truncateCoreLog();
       _coreLogGuard ??= Timer.periodic(const Duration(minutes: 10), (_) => _truncateCoreLog(over: 16 << 20));
       loggy.debug("starting");
       final background = await core.setupBackground(path, name);
@@ -236,6 +240,8 @@ class HiddifyCoreService with InfraLogger {
         // left("failed to stop core: $e");
       }
       if (!await core.stop()) {}
+      _coreLogGuard?.cancel();
+      _coreLogGuard = null;
       statusController.add(currentState = const CoreStatus.stopped());
       if (errMsg.isNotEmpty) return left(errMsg);
       return right(unit);

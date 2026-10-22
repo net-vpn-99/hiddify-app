@@ -1111,6 +1111,8 @@ class PanelAccount {
   /// ≥1 天「N 天」；不足 1 天「X 小时 Y 分」；不足 1 小时「N 分钟」（最少 1）。
   /// 长期或已经到期返回 null。
   String? remainingClock([DateTime? now]) {
+    // 试用还没开始算：到期时间是「要是现在开始能用到哪」，不倒计时（Windows remainingDays 同一套）。
+    if (trialPendingHours > 0) return null;
     final secs = secsLeft(now);
     if (secs == null || secs <= 0) return null;
     if (secs >= 86400) return '${daysLeft(now)} 天';

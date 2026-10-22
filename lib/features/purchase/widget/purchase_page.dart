@@ -767,6 +767,7 @@ class _AccountCard extends StatelessWidget {
   }
 
   String _expiryText(PanelAccount a) {
+    if (a.trialPendingHours > 0) return '试用 ${a.trialPendingHours} 小时，连上后开始算';
     final secs = a.secsLeft() ?? 0;
     if (secs <= 0) return '已到期';
     if (secs < 86400) return '不到 1 天到期';

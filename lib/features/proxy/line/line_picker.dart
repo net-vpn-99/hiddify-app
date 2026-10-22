@@ -693,6 +693,14 @@ String _regionLink(String subtitle) {
 /// 选线路（线路列表、主页雷达共用）：记偏好 + 立即更新首页显示；已连接时由 autoLineFixer 立刻切过去。
 /// 没连接时选了线路 = 要用这条：直接走一键连接（跟点连接按钮同一套，有进度条）。
 /// 维修中的不切换，告诉他换一条（Windows 同一句）。返回 false = 没选上。
+/// 记住选的这条线路（偏好 + 上次用的名字 / 说明）。选线路和精品体验结束换线都用它。
+/// [read] 传 ref.read（界面里的 WidgetRef、notifier 里的 Ref 都行）。
+Future<void> rememberLine(T Function<T>(ProviderListenable<T>) read, LineOption o) async {
+  await read(Preferences.preferredLineName.notifier).update(o.name);
+  await read(Preferences.lastNodeName.notifier).update(o.name);
+  await read(Preferences.lastNodeDesc.notifier).update(o.desc);
+}
+
 Future<bool> chooseLine(BuildContext context, WidgetRef ref, LineOption o) async {
   if (ref.read(panelAuthProvider).account?.isLineDown(o.name) ?? false) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -700,9 +708,7 @@ Future<bool> chooseLine(BuildContext context, WidgetRef ref, LineOption o) async
     );
     return false;
   }
-  await ref.read(Preferences.preferredLineName.notifier).update(o.name);
-  await ref.read(Preferences.lastNodeName.notifier).update(o.name);
-  await ref.read(Preferences.lastNodeDesc.notifier).update(o.desc);
+  await rememberLine(ref.read, o);
   final now = ref.read(connectionNotifierProvider);
   if (now is AsyncError || now.valueOrNull is Disconnected) {
     ref.read(connectRequestProvider.notifier).state++;
@@ -1034,8 +1040,6 @@ class _LockedProCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const label = '想晚高峰更快？';
-    const action = '升级精品版';
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: tokens.ring),
@@ -1102,7 +1106,7 @@ class _LockedProCard extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text)),
+                    child: Text('想晚高峰更快？', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text)),
                   ),
                   const Gap(8),
                   FilledButton(
@@ -1114,7 +1118,7 @@ class _LockedProCard extends StatelessWidget {
                       shape: const StadiumBorder(),
                     ),
                     onPressed: onUpgrade,
-                    child: Text(action, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefaultTextStyle.of(context).style.fontFamily)),
+                    child: Text('升级精品版', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefaultTextStyle.of(context).style.fontFamily)),
                   ),
                 ],
               ),

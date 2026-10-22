@@ -9,6 +9,7 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_isp.dart';
+import 'package:hiddify/features/proxy/line/line_picker.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/features/purchase/notifier/purchase_notifier.dart';
@@ -87,6 +88,7 @@ class LineTierNotifier extends Notifier<LineTierState> {
   Timer? _timer;
   String _prev = '';
   bool _endingNoted = false;   // 剩 5 分钟提示过了（每次体验一次）
+  bool _endSeenSent = false;   // 结束卡弹过了、服务器还没回说看过
 
   @override
   LineTierState build() {
@@ -130,6 +132,7 @@ class LineTierNotifier extends Notifier<LineTierState> {
       final seconds = data['trial_seconds'] is num ? (data['trial_seconds'] as num).toInt() : 0;
       final minutes = data['trial_minutes'] is num ? (data['trial_minutes'] as num).toInt() : 60;
       final ended = _prev == 'active' && trial == 'used';
+      if (data['trial_ended_unseen'] != true) _endSeenSent = false;
       _prev = trial;
       final up = data['upgrade'];
       // 先换好线路再更新状态：结束卡是看着 endedUnseen 弹的，那一刻就要有「换到了哪条」这句
@@ -140,7 +143,8 @@ class LineTierNotifier extends Notifier<LineTierState> {
         minutes: minutes <= 0 ? 60 : minutes,
         proLines: lines,
         trialEnded: ended || state.trialEnded,
-        endedUnseen: data['trial_ended_unseen'] == true,
+        // 弹过、告诉过服务器了，服务器还没记上（seen 在路上 / 没发出去）：别再弹（Windows m_trialEndSeenSent 同一套）。
+        endedUnseen: data['trial_ended_unseen'] == true && !_endSeenSent,
         upgrade: up is Map ? Map<String, dynamic>.from(up) : const {},
         endNote: note,
       );
@@ -184,9 +188,7 @@ class LineTierNotifier extends Notifier<LineTierState> {
       await ref.read(connectionNotifierProvider.notifier).toggleConnection();
       return '精品线路已断开。选一条标准线路就能接着用。';
     }
-    await ref.read(Preferences.preferredLineName.notifier).update(pick.name);
-    await ref.read(Preferences.lastNodeName.notifier).update(pick.name);
-    await ref.read(Preferences.lastNodeDesc.notifier).update(pick.desc);
+    await rememberLine(ref.read, pick);
     return '已经帮你换到同一个国家的标准线路「${pick.name}」，网络没断。';
   }
 
@@ -200,12 +202,17 @@ class LineTierNotifier extends Notifier<LineTierState> {
     await ref.read(sharedPreferencesProvider).valueOrNull?.setBool(_shopAskKey(), true);
   }
 
-  String _shopAskKey() => 'pro_trial_shop_asked_${(ref.read(panelAuthProvider).account?.email ?? '').toLowerCase()}';
+  // 按账号编号记（免注册号没有邮箱，按邮箱记会让这台手机上的免注册号共用一个记号；Windows takeShopTrialAsk 同一套）。
+  String _shopAskKey() {
+    final auth = ref.read(panelAuthProvider);
+    return 'pro_trial_shop_asked_${auth.accountNo ?? (auth.account?.email ?? '').toLowerCase()}';
+  }
 
   /// 体验结束卡弹过了：告诉服务器（没报上去下次刷新还会再弹一次，不要紧）。
   Future<void> markEndSeen() async {
     if (!state.endedUnseen) return;
     state = state.copyWith(endedUnseen: false);
+    _endSeenSent = true;
     final token = await ref.read(panelAuthProvider.notifier).currentToken();
     if (token == null || token.isEmpty) return;
     try {

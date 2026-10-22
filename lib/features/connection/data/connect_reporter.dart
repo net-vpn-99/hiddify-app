@@ -119,29 +119,25 @@ class ConnectReporter {
     final errno = node['errno'] as int? ?? -1;
     final msg = (node['err'] as String? ?? '').toLowerCase();
     final noAnswer = errno == 110 || errno == 113 || errno == 101 || msg.contains('timed out');
-    final api = Uri.tryParse(_primaryApiBase());
-    var apiOk = false;
-    if (api != null && api.host.isNotEmpty) {
-      final r = await _probeTcp(api.host, api.hasPort ? api.port : 443);
-      apiOk = r['ok'] == true;
-      node['api_ok'] = apiOk;
-    }
-    final online = apiOk || await _baiduUp();
-    node['online'] = online;
-    return (nodeOk: false, noAnswer: noAnswer, apiOk: apiOk, online: online, tcp: node);
+    final net = await _internet();
+    if (net.apiOk != null) node['api_ok'] = net.apiOk;
+    node['online'] = net.online;
+    return (nodeOk: false, noAnswer: noAnswer, apiOk: net.apiOk ?? false, online: net.online, tcp: node);
   }
 
   /// 这台手机自己能不能上网：直接碰接口服务器和百度（本进程不走 VPN），有一个通就算。不自己计时，等系统给结论。
   /// 判「线路断了」之前先问它：上不了网（Wi-Fi 刚断、进电梯）不是线路的事（两端统一，Windows probeInternet，E8E6-1021）。
-  Future<bool> internetUp() async {
-    final api = Uri.tryParse(_primaryApiBase());
-    if (api != null && api.host.isNotEmpty && (await _probeTcp(api.host, api.hasPort ? api.port : 443))['ok'] == true) {
-      return true;
-    }
-    return _baiduUp();
-  }
+  Future<bool> internetUp() async => (await _internet()).online;
 
-  Future<bool> _baiduUp() async => (await _probeTcp('www.baidu.com', 443))['ok'] == true;
+  /// 接口服务器和百度同时碰（真没网时只等一轮系统超时）。apiOk = null：接口地址读不出来，没碰。
+  Future<({bool online, bool? apiOk})> _internet() async {
+    final api = Uri.tryParse(_primaryApiBase());
+    final apiProbe = api != null && api.host.isNotEmpty ? _probeTcp(api.host, api.hasPort ? api.port : 443) : null;
+    final baiduProbe = _probeTcp('www.baidu.com', 443);
+    final apiOk = apiProbe == null ? null : (await apiProbe)['ok'] == true;
+    final baiduOk = (await baiduProbe)['ok'] == true;
+    return (online: (apiOk ?? false) || baiduOk, apiOk: apiOk);
+  }
 
   /// 上一条失败记录（不带诊断包），给 [amendFailure] 补直连节点的结果用。
   Map<String, dynamic>? _lastFail;
@@ -233,7 +229,7 @@ class ConnectReporter {
     final subStage = _sub.remove('_stage') as int? ?? 0;
     _reached = subStage > 0 ? subStage : stageNodesParsed;
 
-    unawaited(_flushQueue());
+    unawaited(flushQueue());
     unawaited(_sendPending());
   }
 
@@ -1010,9 +1006,10 @@ class ConnectReporter {
 
   /// 网通了（连上并确认）时补发排队的上报。以前只在下一次点连接时补，连上一次就一直用着的人永远补不上
   /// （10-21 查：有流量却一条连接记录都没有，两端统一，Windows ConnectReporter::flushQueue）。
-  Future<void> flushQueue() => _flushQueue();
-
-  Future<void> _flushQueue() async {
+  /// 上一轮还在发时这一轮不叠上去（两轮同时发会重复上报，先结束的那轮还会把文件改回它看到的样子）。
+  Future<void> flushQueue() async {
+    if (_flushing) return;
+    _flushing = true;
     try {
       final f = await _queueFile();
       if (f == null || !f.existsSync()) return;
@@ -1022,21 +1019,34 @@ class ConnectReporter {
       final token = await _panelToken();
       await PanelApiBase.resolve();
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final remaining = <dynamic>[];
+      final finished = <String>{};
       for (final entry in queue) {
         final at = ((entry as Map)['at'] as num?)?.toInt() ?? 0;
-        if (now - at > _queueTtlSecs) continue;
-        final payload = Map<String, dynamic>.from(entry['payload'] as Map);
-        final r = await _post(_primaryApiBase(), payload, token);
-        if (r == _PostResult.network) remaining.add(entry); // keep; 2xx or rejection drops it
+        if (now - at <= _queueTtlSecs) {
+          final payload = Map<String, dynamic>.from(entry['payload'] as Map);
+          final r = await _post(_primaryApiBase(), payload, token);
+          if (r == _PostResult.network) continue; // keep; 2xx or rejection drops it
+        }
+        finished.add(_queueKey(entry));
       }
-      if (remaining.isEmpty) {
+      // 按文件现在的内容删：这一轮在发的时候新排进来的留着。
+      final current = f.existsSync() ? jsonDecode(await f.readAsString()) as List<dynamic> : const <dynamic>[];
+      final keep = current.where((e) => !finished.contains(_queueKey(e as Map))).toList();
+      if (keep.isEmpty) {
         if (f.existsSync()) await f.delete();
       } else {
-        await f.writeAsString(jsonEncode(remaining));
+        await f.writeAsString(jsonEncode(keep));
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _flushing = false;
+    }
   }
+
+  bool _flushing = false;
+
+  /// 排队条目的身份：排进去的时间 + 这次连接的 attempt_id（不拿带诊断包的整条去比）。
+  static String _queueKey(Map entry) => '${entry['at']}|${(entry['payload'] as Map?)?['attempt_id']}';
 }
 
 enum _PostResult { ok, rejected, network }

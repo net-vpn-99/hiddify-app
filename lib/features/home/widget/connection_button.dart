@@ -293,11 +293,14 @@ class ConnectionButton extends HookConsumerWidget {
       final set = await ref.read(lineSetProvider.future);
       if (stopped()) return;
       final lines = set.lines;
-      // 只对真订阅比（locked = 账号用不了时的公开橱窗，不算）；精品体验结束后选的精品线路也不在订阅里，
-      // 那不是「下线」（line_tier 管），这里不拦。
-      if (!set.locked && line.isNotEmpty && lines.isNotEmpty && !lines.any((o) => o.name == line) &&
-          !ref.read(lineTierProvider).isProName(line)) {
-        failAt(3, '「$line」已下线', '请换一条线路', reportStage: 'route_gone', lineGone: true, switchTo: lines.first.name);
+      // 只对真订阅比（locked = 账号用不了时的公开橱窗，不算）。精品体验结束后选的精品线路也不在订阅里：
+      // 同样拦下（不让内核悄悄换线），只是不说「下线」（Windows statusTitle 同一句）。
+      if (!set.locked && line.isNotEmpty && lines.isNotEmpty && !lines.any((o) => o.name == line)) {
+        final acc = ref.read(panelAuthProvider).account;
+        // 换到：服务器排第一的那条；它在维修就往下找第一条没在维修的（Windows suggestedSourceIndex 同一套）。
+        final to = lines.where((o) => !(acc?.isLineDown(o.name) ?? false)).firstOrNull?.name ?? '';
+        final title = ref.read(lineTierProvider).isProName(line) ? '这条线路现在用不了' : '「$line」已下线';
+        failAt(3, title, '请换一条线路', reportStage: 'route_gone', lineGone: true, switchTo: to);
         return;
       }
       // 选的线路在维修：不去连，说清楚，让他自己换（不自动换线；Windows 同一句，route_down）。
@@ -393,9 +396,17 @@ class ConnectionButton extends HookConsumerWidget {
 
     // 选的线路下线了（第 3 步）：主按钮「换到 X」= 不再记「自己选的」，连服务器排第一的那条（auto_line_fixer 切过去），
     // 以后也跟服务器排的走（Windows switchToSuggestedRoute 同一套）。
+    // 没有可换的（全在维修）：主按钮「自己选线路」打开线路列表。
     final lineGone = radarState == RadarState.failed && shownFailed == 3 && progress.lineGone;
+    final canSwitch = lineGone && progress.switchTo.isNotEmpty;
     Future<void> switchFromGone() async {
-      await ref.read(Preferences.preferredLineName.notifier).update('');
+      if (!canSwitch) {
+        await showLinePicker(context, ref);
+        return;
+      }
+      // 换到的就是服务器排第一的 = 清掉「自己选的」跟服务器走；第一条在维修、换的是下面那条 = 记成选的那条。
+      final first = (await ref.read(lineSetProvider.future)).lines.firstOrNull?.name;
+      await ref.read(Preferences.preferredLineName.notifier).update(progress.switchTo == first ? '' : progress.switchTo);
       ref.read(connectRequestProvider.notifier).state++;
     }
 
@@ -564,13 +575,13 @@ class ConnectionButton extends HookConsumerWidget {
               AsyncData(value: Connected()) => '断开连接',
               AsyncData(value: Connecting()) => '正在连接…',
               AsyncData(value: Disconnecting()) => '正在断开…',
-              _ when lineGone => '换到 ${progress.switchTo}',
+              _ when lineGone => canSwitch ? '换到 ${progress.switchTo}' : '自己选线路',
               _ when radarState == RadarState.failed => '重新连接',
               _ => '开始连接',
             },
       buttonOutlined: busy || (connected && requiresReconnect != true) || status is Connecting || status is Disconnecting,
       showAllLines: connected,
-      secondLabel: radarState != RadarState.failed ? '' : lineGone ? '自己选线路' : '换一条线路',
+      secondLabel: radarState != RadarState.failed ? '' : !lineGone ? '换一条线路' : canSwitch ? '自己选线路' : '',
       // 没连接时最下面那行：试用中给「看套餐」，付过钱的给「换一条线路」（跟 Windows homeThird 一样）。
       linkLabel: radarState != RadarState.off
           ? ''
