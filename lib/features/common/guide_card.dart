@@ -172,6 +172,8 @@ class GuideCard extends StatelessWidget {
                         tip,
                       ],
                       const SizedBox(height: 24),
+                      // 没有主动作（连接检查查着时只有「停止检查」）就不画这颗主按钮
+                      if (actionText.isNotEmpty)
                       SizedBox(
                         width: double.infinity,
                         height: 48,
@@ -187,7 +189,7 @@ class GuideCard extends StatelessWidget {
                         ),
                       ),
                       if (secondaryText.isNotEmpty) ...[
-                        const SizedBox(height: 8),
+                        if (actionText.isNotEmpty) const SizedBox(height: 8),
                         SizedBox(
                           width: double.infinity,
                           height: 46,
@@ -382,70 +384,5 @@ Future<void> showGuideSheet(
   );
 }
 
-/// 原因不明（10-19 运营定稿，两端同一段话）：主按钮联系客服，帮我们查清后发公告鼓励 + 送会员时长。
-const unknownFaultLead = '这次的情况我们还没见过。';
-const unknownFaultThanks = '如果你愿意帮我们检查测试并解决，作为感谢我们将发公告鼓励，并赠送相应的会员时长奖励。';
-const unknownFaultCopy = '$unknownFaultLead$unknownFaultThanks';
-
 /// 从连接失败那里找客服：打开客服页，第一条消息自动带上诊断码（跟 Windows 一样）。
 void openSupportWithDiag(BuildContext context) => context.pushNamed('supportChat', queryParameters: {'diag': '1'});
-
-/// 原因不明的兜底卡：不猜原因，请他联系客服。
-Future<void> showUnknownFaultGuide(BuildContext context) {
-  return showDialog<void>(
-    context: context,
-    barrierColor: guideCanvasColor(context),
-    builder: (ctx) => GuideCard(
-      title: '连接没有完成',
-      body: '$unknownFaultLead点「联系客服」，我们帮你查。',
-      tipTitle: '你的反馈能帮我们改进光速雷达',
-      tipText: unknownFaultThanks,
-      tipIcon: LineIconName.gift,
-      tipBelow: true,
-      actionText: '联系客服',
-      onAction: () {
-        Navigator.of(ctx).pop();
-        openSupportWithDiag(context);
-      },
-      links: [GuideLink('稍后再说', () => Navigator.of(ctx).pop())],
-    ),
-  );
-}
-
-/// 「你的网络连不上我们的线路」：服务器 ✓ / 线路 ✕ 两行示意。
-Future<void> showNetBlockedGuide(BuildContext context, int tried) {
-  final t = OneRayTokens.of(context);
-  Widget row(String label, bool ok) {
-    final c = ok ? t.ok : t.fault;
-    return Row(
-      children: [
-        Text('你的手机', style: TextStyle(color: t.text, fontSize: 12)),
-        const SizedBox(width: 8),
-        Expanded(child: Container(height: 2, color: c)),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Text(ok ? '✓' : '✕', style: TextStyle(color: c, fontSize: 13, fontWeight: FontWeight.w600)),
-        ),
-        Expanded(child: Container(height: 2, color: c)),
-        const SizedBox(width: 8),
-        Text(label, style: TextStyle(color: t.text, fontSize: 12)),
-      ],
-    );
-  }
-
-  return showGuideCard(
-    context,
-    title: '你的网络连不上我们的线路',
-    body: '光速雷达的服务器能连上，但 $tried 条线路都没有回应。是你现在用的网络挡住了线路，换线路也没用。',
-    illustration: Column(
-      children: [
-        row('光速雷达的服务器', true),
-        const SizedBox(height: 10),
-        row('线路（试了 $tried 条）', false),
-      ],
-    ),
-    tipTitle: '换个网络试试',
-    tipIcon: LineIconName.wifi,
-    tipText: 'Wi-Fi 和手机流量换一个，再点「重新连接」。',
-  );
-}

@@ -41,6 +41,9 @@ bool _userAskedToConnect = false;
 /// 每次进入 Connected +1，让「判不通」认得出自己是不是还是那一次连接。
 int _connectedSerial = 0;
 
+/// 第几次连上（连接检查用：「照做了还是不行」要中间真有一次新的连接，只点「重新检查」不算）。
+int get connectedSerial => _connectedSerial;
+
 @Riverpod(keepAlive: true)
 class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   /// 判出不通时人在后台：先不断开，回到前台再判（concludeNoAnswer）。
@@ -258,7 +261,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     // 节点没认出我们（REALITY 校验失败）是线路配置的问题，不是用户的；其余只能说「节点结束了连接」，
     // 断开后直连节点的结果再细分（被挡 / 两条线都这样 = 原因不明）。
     final reality = await reporter.coreLogHas('reality verification failed');
-    ref.read(deadEvidenceProvider.notifier).state = reality ? 'reality' : 'refused';
+    ref.read(deadEvidenceProvider.notifier).state = reality ? 'reality' : '';
     // 这次真的报了失败，直连节点的结果才补进去（没报就别去改上一条不相干的记录）。
     final reported = reporter.attemptOpen;
     if (reported) {
@@ -282,8 +285,9 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     await _probeDeadLineDirect(reporter, amend: reported);
   }
 
-  /// 「这条线路现在不通」断开之后：绕开 VPN 直接碰节点 + 接口服务器，只按碰的结果下结论（10-13）。
-  /// 接口通、节点没回音 → 记下这个节点地址；攒到 2 个不同地址，首页改说「你的网络连不上我们的线路」。
+  /// 「这条线路现在不通」断开之后：绕开 VPN 直接碰节点 + 接口服务器 + 百度。只把查实的直接改过来（没上网）；
+  /// 其余（这个网络挡了线路、两条线都不回数据）不再靠「试了几条」的计数猜，交给连接检查当场查
+  /// （docs/计划/连接检查.md 第八节，Windows onNodeProbed 同一套）。直连结果照样补进刚才那条失败记录。
   Future<void> _probeDeadLineDirect(ConnectReporter reporter, {bool amend = false}) async {
     final host = reporter.lastNodeHost;
     if (host == null) return;
@@ -300,24 +304,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       if (amend) unawaited(reporter.amendFailure(r.tcp, fault: 'offline'));
       return;
     }
-    final set = {...ref.read(unreachableNodesProvider)};
-    String? fault;
-    if (r.nodeOk) {
-      set.remove(host);
-      // 节点端口是通的，节点却把连接结束了、一个字节没回：记下这条线。两条不同的线都这样 = 原因不明（主按钮联系客服）。
-      if (ref.read(deadEvidenceProvider) == 'refused') {
-        final refused = {...ref.read(refusedNodesProvider), host};
-        ref.read(refusedNodesProvider.notifier).state = refused;
-        if (refused.length >= 2) fault = 'unknown';
-      }
-    } else if (r.noAnswer && r.apiOk) {
-      set.add(host);
-      fault = 'net_blocked';
-    }
     // 直连节点的结果补进刚才那条失败记录（同一个 attempt_id，跟 Windows 一样）：失败先发、不等它。
-    if (amend) unawaited(reporter.amendFailure(r.tcp, fault: fault));
-    if (!r.nodeOk && !(r.noAnswer && r.apiOk)) return;
-    ref.read(unreachableNodesProvider.notifier).state = set;
+    if (amend) unawaited(reporter.amendFailure(r.tcp));
   }
 
   ConnectionRepository get _connectionRepo => ref.read(connectionRepositoryProvider);

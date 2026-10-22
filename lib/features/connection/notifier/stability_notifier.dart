@@ -66,16 +66,7 @@ final stabilityProvider =
 /// 下次点连接 / 换线路 / 手动关掉时清掉。
 final deadLineProvider = StateProvider<bool>((ref) => false);
 
-/// 本次运行里，断开后绕开 VPN 直接碰也没回音的不同节点地址（connection_notifier 填）。
-/// 同一时刻我们的接口服务器能连上、这里攒到 2 个 → 首页说「你的网络连不上我们的线路」，
-/// 不再叫他换线路（10-13 运营定：查实了才说，两端统一；Windows 见 ConnectionController::onNodeProbed）。
-/// 任何一次确认网通就清空。
-final unreachableNodesProvider = StateProvider<Set<String>>((ref) => const {});
-
-/// 端口通、节点却把连接结束且零字节的不同线路地址（两条都这样 = 原因不明，主按钮给联系客服）。任何一次确认网通就清空。
-final refusedNodesProvider = StateProvider<Set<String>>((ref) => const {});
-
-/// 判「不通」的正面证据：refused = 节点结束了连接、零字节；reality = 节点没认出我们（REALITY 校验失败）。
+/// 判「不通」时查到的线路配置问题：reality = 节点没认出我们（REALITY 校验失败），空 = 没有（原因交给连接检查查）。
 final deadEvidenceProvider = StateProvider<String>((ref) => '');
 
 /// 首页故障原因。空 = 没有。engine / egress / line。
@@ -334,12 +325,6 @@ class StabilityNotifier extends Notifier<StabilityState> {
       // 用着时「没回音但字节在涨」从亮绿这一刻比起（不然亮绿后第一次没回音永远算失败）。
       _downAtMiss = _down;
     }
-    if (ref.read(unreachableNodesProvider).isNotEmpty) {
-      ref.read(unreachableNodesProvider.notifier).state = const {};
-    }
-    if (ref.read(refusedNodesProvider).isNotEmpty) {
-      ref.read(refusedNodesProvider.notifier).state = const {};
-    }
     _armSteady(gen);
     _rememberedScore = 10;
     state = StabilityState(10, confirmed: true, egressAudit: audit);
@@ -498,9 +483,10 @@ class StabilityNotifier extends Notifier<StabilityState> {
       final fg = ref.read(appForegroundProvider) ? '前台' : '后台';
       unawaited(reporter.reportDrop(stage, '已连 $secs 秒｜探测：${probeLog()}｜App 在$fg'));
       final line = ref.read(Preferences.lastNodeName).trim();
+      // 说不清原因：叫他回来点「帮我查一查」（连接检查，Windows 右下角提醒同一句）
       unawaited(DropNotice.show(kind == 'egress'
-          ? '网页没有经过光速雷达的线路。打开光速雷达看看怎么办'
-          : '${line.isEmpty ? '这条线路' : line} 连不上了。换一条线路试试，或者稍后再点「连接」'));
+          ? '网页没有经过光速雷达的线路。打开光速雷达，点「帮我查一查」'
+          : '${line.isEmpty ? '这条线路' : line} 连不上了。打开光速雷达，点「帮我查一查」'));
     } else if (kind == 'egress' && reporter.attemptOpen) {
       // 还没确认网通就发现出口是国内：第 5 步失败（以前被 abortConnection 当成取消丢掉了）。
       unawaited(reporter.reportFailure('出口是国内 IP，流量没走隧道', forcedStage: 'egress_mismatch',

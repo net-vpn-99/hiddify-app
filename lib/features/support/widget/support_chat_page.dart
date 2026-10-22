@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
+import 'package:hiddify/features/connection/data/connect_check.dart';
 import 'package:hiddify/features/diagnostic/diag_service.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/support/model/support_message.dart';
@@ -103,6 +104,9 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
     var text = _input.text;
     if (text.trim().isEmpty) return;
     _input.clear();
+    // 从连接检查结果点「联系客服」进来的：检查报告（每一行查到的 + 结论）跟第一条消息一起发，客服不用再问「你那边什么情况」
+    final report = ref.read(connectCheckProvider.notifier).takeSupportReport();
+    if (report.isNotEmpty) text = '$text\n（$report）';
     if (_attachDiag) {
       if (_diagCode.isNotEmpty) {
         text = '$text（诊断码 $_diagCode）';

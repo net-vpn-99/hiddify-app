@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/common/guide_card.dart';
-import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/local_repair.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
+import 'package:hiddify/features/connection/widget/connect_check_card.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
@@ -20,12 +20,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 ///
 /// **不自动换线**：「换一条线路」只打开线路列表，让用户自己选。
 ///
-/// 按钮有主次（10-19 运营定）：第一个是主按钮。原因不明 / 线路设置对不上 / 同一种情况连着第二次（照办法做了
-/// 还不行）→ 主按钮是「联系客服」，原来的处理办法挪到后面。只说查到的事实。
-final unknownFaultStreakProvider = StateProvider<int>((ref) => 0);
-
-/// 连着判「这条线路不通」几次（确认网通就清零）。
-final deadStreakProvider = StateProvider<int>((ref) => 0);
+/// 按钮有主次（10-19 运营定）：第一个是主按钮。只说查到的事实。
+/// 说不清原因的（这条线路不通 / 连接意外断了 / 网页没经过线路）主按钮是「帮我查一查」——连接检查当场查，
+/// 查完给结论和办法（docs/计划/连接检查.md）；以前的「你的网络连不上我们的线路」「原因不明」两种判断都并进去了，
+/// 「同一种情况连着第二次就让联系客服当主按钮」也在连接检查的结论里做。线路设置对不上主按钮仍是「联系客服」。
 
 class ConnectIssueCard extends ConsumerWidget {
   const ConnectIssueCard({super.key});
@@ -35,46 +33,16 @@ class ConnectIssueCard extends ConsumerWidget {
     final status = ref.watch(connectionNotifierProvider).valueOrNull;
     final deadLine = ref.watch(deadLineProvider);
     final fault = ref.watch(homeFaultProvider);
-    final unreachable = ref.watch(unreachableNodesProvider);
-    // 连接意外断开（不是系统收回）= 原因不明：给一次「修复并重新连接」，修过还断就只剩联系客服。
+    // 连接意外断开时「修复并重新连接」帮不帮得上（修过一次还断就不再给），交给连接检查（R11）。
     final canRepair = ref.watch(repairedKindProvider) != 'engine';
-
-    ref.listen<String>(homeFaultProvider, (prev, next) {
-      if (next != 'engine' && next != 'egress') return;
-      final n = ref.read(unknownFaultStreakProvider) + 1;
-      ref.read(unknownFaultStreakProvider.notifier).state = n;
-      if (n >= 2) showUnknownFaultGuide(context);
-    });
-    ref.listen<bool>(stabilityProvider.select((s) => s.confirmed), (prev, next) {
-      if (!next) return;
-      ref.read(unknownFaultStreakProvider.notifier).state = 0;
-      ref.read(deadStreakProvider.notifier).state = 0;
-    });
-    ref.listen<bool>(deadLineProvider, (prev, next) {
-      if (next && prev != true) ref.read(deadStreakProvider.notifier).state++;
-    });
     final evidence = ref.watch(deadEvidenceProvider);
-    final refused = ref.watch(refusedNodesProvider);
-    final deadStreak = ref.watch(deadStreakProvider);
-    final lastHost = ref.read(connectReporterProvider).lastNodeHost;
-
-    // 断开后直接碰：两台不同的节点都没回音、接口服务器却通 → 自动弹一次引导卡（攒到 2 个那一刻）。
-    ref.listen<Set<String>>(unreachableNodesProvider, (prev, next) {
-      if (next.length >= 2 && (prev?.length ?? 0) < 2) {
-        showNetBlockedGuide(context, next.length);
-      }
-    });
 
     final bool dead = (deadLine || fault == 'line') && status is Disconnected;
     // 这条在维修（断开后 connection_notifier 重拉过一次账号）：说「正在维修」，只给换线路。
     final lineName = ref.watch(Preferences.lastNodeName);
     final bool lineDown = dead && ref.watch(panelAuthProvider.select((s) => s.account?.isLineDown(lineName) ?? false));
-    final bool netBlocked = dead && !lineDown && unreachable.length >= 2;
-    final bool thisLineBlocked = dead && !netBlocked && lastHost != null && unreachable.contains(lastHost);
     // 节点没认出我们（REALITY 校验失败）：线路配置的问题，不是用户的。
     final bool reality = dead && !lineDown && evidence == 'reality';
-    // 两条不同的线都是「端口通、节点却把连接结束了、一个字节没回」：原因说不清。
-    final bool unknown = dead && !lineDown && !netBlocked && !reality && refused.length >= 2;
     final bool revoked = fault == 'revoked' && status is Disconnected;
     final bool engine = (fault == 'engine' || revoked) && status is Disconnected;
     final bool gone = engine && !revoked;
@@ -85,6 +53,9 @@ class ConnectIssueCard extends ConsumerWidget {
     // 判不通后直连一查：节点、接口服务器、百度都碰不到 = 这台手机没上网（connection_notifier._probeDeadLineDirect）。
     final bool offline = fault == 'offline' && status is Disconnected;
     if (!dead && !engine && !egress && !offline) return const SizedBox.shrink();
+    // 说不清原因的：主按钮「帮我查一查」（原因已知的直接说：没网、维修中、系统收回、没后台权限、线路设置对不上）
+    final bool checkable = (dead && !lineDown && !reality && !offline) || (gone && !noBackground) || egress;
+    final String checkFault = dead ? 'dead_tunnel' : (gone ? 'engine_gone' : 'egress_mismatch');
 
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -105,31 +76,19 @@ class ConnectIssueCard extends ConsumerWidget {
       body = '光速雷达现在没有「后台运行」权限，手机省电时会停掉它的连接。点「允许后台运行」，在弹出的窗口里选「允许」，再点「重新连接」';
     } else if (engine) {
       title = '连接断了';
-      body = canRepair ? '连接意外断开了，点「修复并重新连接」恢复' : '修复后还是断开了，请联系客服，我们帮你查';
+      body = checkPrompt;
     } else if (egress) {
       title = '网页没有经过线路';
-      body = '原因还没查到，点「怎么办」';
+      body = checkPrompt;
     } else if (lineDown) {
       title = '$lineName 正在维修';
       body = '暂时连不上，请换一条线路';
-    } else if (netBlocked) {
-      title = '你的网络连不上我们的线路';
-      body = '试了 ${unreachable.length} 条线路都没有回应，换线路也没用';
     } else if (reality) {
       title = '这条线路暂时用不了';
       body = '这条线路的设置和服务器对不上，不是你的问题。请联系客服，我们来处理；你也可以先换一条线路';
-    } else if (unknown) {
-      title = '连接没有完成';
-      body = unknownFaultCopy;
-    } else if (thisLineBlocked) {
-      title = '这条线路现在不通';
-      body = '这条线路在你的网络里连不上，请换一条';
-    } else if (evidence == 'refused') {
-      title = '这条线路现在不通';
-      body = '这条线路断开了光速雷达的连接。请换一条线路';
     } else {
       title = '这条线路现在不通';
-      body = '换一条线路试试，或者稍后点「重新连接」';
+      body = checkPrompt;
     }
 
     Future<void> reconnect() async {
@@ -155,18 +114,12 @@ class ConnectIssueCard extends ConsumerWidget {
     final fixes = <(String, VoidCallback)>[
       if (noBackground) ('允许后台运行', () => ref.read(batteryOptimizationNotifierProvider.notifier).requestToIgnore()),
       if (noBackground) ('重新连接', reconnect),
-      if (gone && canRepair && !noBackground) ('修复并重新连接', () => ref.read(localRepairProvider).repairAndReconnect('engine')),
-      if (egress) ('怎么办', () => showUnknownFaultGuide(context)),
-      if (netBlocked) ('怎么办', () => showNetBlockedGuide(context, unreachable.length)),
-      if (dead && !offline && !netBlocked && !unknown) ('换一条线路', pickLine),
+      if (checkable) ('帮我查一查', () => showConnectCheck(context, ref, fault: checkFault, canRepair: gone && canRepair)),
+      if (dead && !checkable) ('换一条线路', pickLine),
       if (!gone && !lineDown) ('重新连接', reconnect),
     ];
-    // 联系客服当主按钮：原因不明 / 线路设置对不上 / 网页没走线路且查不到原因 / 修过还断 / 同一种不通连着第二次。
-    final supportFirst = unknown ||
-        reality ||
-        egress ||
-        (gone && !canRepair && !noBackground) ||
-        (dead && !offline && !lineDown && !netBlocked && deadStreak >= 2);
+    // 联系客服当主按钮：线路设置对不上（不是用户的问题，要我们处理）。
+    final supportFirst = reality;
     // 原因已知时「联系客服」也一直在（排最后），跟 Windows 失败卡下面那行「联系客服（会自动带上诊断码）」一样。
     final actions = supportFirst ? [('联系客服', support), ...fixes] : [...fixes, ('联系客服', support)];
 
@@ -227,3 +180,6 @@ class ConnectIssueCard extends ConsumerWidget {
     );
   }
 }
+
+/// 说不清原因时卡上那句（Windows describeLiveFault 同一句）。
+const checkPrompt = '点「帮我查一查」，我们帮你看看是哪里出了问题。';

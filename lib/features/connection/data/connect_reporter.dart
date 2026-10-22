@@ -4,12 +4,12 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
-import 'package:hiddify/features/log/data/log_path_resolver.dart';
 import 'package:hiddify/core/app_info/app_info_provider.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/vpn_permission.dart';
+import 'package:hiddify/features/log/data/log_path_resolver.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
@@ -98,7 +98,7 @@ class ConnectReporter {
         ),
       );
 
-  String _primaryApiBase() => PanelApiBase.current;
+  String primaryApiBase() => PanelApiBase.current;
 
   /// 最近一次连接用的节点（上报结束后 _nodeHost 会清掉，这两个留着给断开后的直接探测）。
   String? lastNodeHost;
@@ -114,7 +114,7 @@ class ConnectReporter {
     if (host == null || port == null) {
       return (nodeOk: false, noAnswer: false, apiOk: false, online: true, tcp: <String, dynamic>{});
     }
-    final node = await _probeTcp(host, port);
+    final node = await probeTcp(host, port);
     if (node['ok'] == true) return (nodeOk: true, noAnswer: false, apiOk: true, online: true, tcp: node);
     final errno = node['errno'] as int? ?? -1;
     final msg = (node['err'] as String? ?? '').toLowerCase();
@@ -131,9 +131,9 @@ class ConnectReporter {
 
   /// 接口服务器和百度同时碰（真没网时只等一轮系统超时）。apiOk = null：接口地址读不出来，没碰。
   Future<({bool online, bool? apiOk})> _internet() async {
-    final api = Uri.tryParse(_primaryApiBase());
-    final apiProbe = api != null && api.host.isNotEmpty ? _probeTcp(api.host, api.hasPort ? api.port : 443) : null;
-    final baiduProbe = _probeTcp('www.baidu.com', 443);
+    final api = Uri.tryParse(primaryApiBase());
+    final apiProbe = api != null && api.host.isNotEmpty ? probeTcp(api.host, api.hasPort ? api.port : 443) : null;
+    final baiduProbe = probeTcp('www.baidu.com', 443);
     final apiOk = apiProbe == null ? null : (await apiProbe)['ok'] == true;
     final baiduOk = (await baiduProbe)['ok'] == true;
     return (online: (apiOk ?? false) || baiduOk, apiOk: apiOk);
@@ -218,7 +218,7 @@ class ConnectReporter {
     state = '';
     code = '';
 
-    final node = await _resolveSelectedNode(preferredLine);
+    final node = await resolveNode(preferredLine);
     _nodeTag = _truncateRunes(node.tag, 64);
     _nodeHost = node.host;
     _nodePort = node.port;
@@ -240,7 +240,7 @@ class ConnectReporter {
     if (_attemptId == null) return;
     final payload = _basePayload('pending')..['reached_stage'] = _reached;
     try {
-      await _post(_primaryApiBase(), payload, await _panelToken());
+      await _post(primaryApiBase(), payload, await _panelToken());
     } catch (_) {}
   }
 
@@ -342,7 +342,7 @@ class ConnectReporter {
             failStage == 'node_tcp' ||
             failStage == 'node_tls' ||
             failStage == 'proxy_request')) {
-      _tcp = await _probeTcp(_nodeHost!, _nodePort!);
+      _tcp = await probeTcp(_nodeHost!, _nodePort!);
     }
     // 探测已经证明裸 TCP 是通的，就不能再标 node_tcp（那是"没通"的意思）——大概率是
     // 后面 TLS/urltest 那一步的超时被落到了这个格子里，改成 proxy_request 更贴近事实。
@@ -369,7 +369,7 @@ class ConnectReporter {
 
     _lastFail = Map.of(payload);
     String? bundle;
-    final sig = '$failStage|$_nodeTag|${_host(_primaryApiBase())}';
+    final sig = '$failStage|$_nodeTag|${_host(primaryApiBase())}';
     if (await _bundleRateLimitOk(sig)) {
       bundle = await _buildBundle(failStage);
     }
@@ -452,7 +452,7 @@ class ConnectReporter {
     // 前三步停下的也带诊断包（照常限流，两端统一，Windows 0.4.48 同改）：以前不带，
     // 卡在开号 / 拿线路的人服务器上只有一行字，看不到日志。
     String? bundle;
-    if (await _bundleRateLimitOk('$stage|step$step|${_host(_primaryApiBase())}')) {
+    if (await _bundleRateLimitOk('$stage|step$step|${_host(primaryApiBase())}')) {
       bundle = await _buildBundle(stage);
     }
     await _send(payload, bundle);
@@ -524,7 +524,7 @@ class ConnectReporter {
       'platform': 'android',
       'app_ver': _version(),
       'os': '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
-      'apibase': _host(_primaryApiBase()),
+      'apibase': _host(primaryApiBase()),
     };
     if ((outcome == 'ok' || outcome == 'fail') && conflictFix.isNotEmpty) {
       m['conflict_fix'] = conflictFix;
@@ -632,7 +632,7 @@ class ConnectReporter {
 
   /// Read the local profile config and work out which outbound this attempt
   /// will dial (and its host:port). Fully offline -- does not need the core.
-  Future<({String tag, String? host, int? port})> _resolveSelectedNode(String? preferred) async {
+  Future<({String tag, String? host, int? port})> resolveNode(String? preferred) async {
     final pref = (preferred ?? '').trim();
     try {
       final profile = await _ref.read(activeProfileProvider.future);
@@ -721,7 +721,7 @@ class ConnectReporter {
   /// failure. NB: with the TUN up this dials through the tunnel, so a node_tcp
   /// failure here reproduces the core's own dial -- the error code
   /// (ECONNREFUSED / ETIMEDOUT / EHOSTUNREACH) is the diagnostic value.
-  Future<Map<String, dynamic>> _probeTcp(String host, int port) async {
+  Future<Map<String, dynamic>> probeTcp(String host, int port) async {
     final dest = '$host:$port';
     final sw = Stopwatch()..start();
     try {
@@ -937,7 +937,7 @@ class ConnectReporter {
     final token = await _panelToken();
     await PanelApiBase.resolve();
 
-    final r1 = await _post(_primaryApiBase(), payload, token);
+    final r1 = await _post(primaryApiBase(), payload, token);
     if (r1 == _PostResult.ok) {
       _setState('sent', bundleGzB64 != null ? (_attemptId ?? '').substring(0, 8) : '');
       return;
@@ -1024,7 +1024,7 @@ class ConnectReporter {
         final at = ((entry as Map)['at'] as num?)?.toInt() ?? 0;
         if (now - at <= _queueTtlSecs) {
           final payload = Map<String, dynamic>.from(entry['payload'] as Map);
-          final r = await _post(_primaryApiBase(), payload, token);
+          final r = await _post(primaryApiBase(), payload, token);
           if (r == _PostResult.network) continue; // keep; 2xx or rejection drops it
         }
         finished.add(_queueKey(entry));
