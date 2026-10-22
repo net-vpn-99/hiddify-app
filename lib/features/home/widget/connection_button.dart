@@ -288,19 +288,11 @@ class ConnectionButton extends HookConsumerWidget {
       }
       if (stopped()) return;
       final line = ref.read(Preferences.preferredLineName);
-      // 选的线路不在订阅里了（下线 / 隐藏）：不去连（以前内核会悄悄走自动挑的那条），说清楚，
-      // 按钮给服务器排第一的那条，换不换他点（不自动换线；Windows 同一套，route_gone）。
-      final set = await ref.read(lineSetProvider.future);
+      // 选的线路不在订阅里了（下线 / 隐藏）：不去连（以前内核会悄悄走自动挑的那条），说清楚（lineGoneProgress）。
+      final gone = await lineGoneProgress(ref.read);
       if (stopped()) return;
-      final lines = set.lines;
-      // 只对真订阅比（locked = 账号用不了时的公开橱窗，不算）。精品体验结束后选的精品线路也不在订阅里：
-      // 同样拦下（不让内核悄悄换线），只是不说「下线」（Windows statusTitle 同一句）。
-      if (!set.locked && line.isNotEmpty && lines.isNotEmpty && !lines.any((o) => o.name == line)) {
-        final acc = ref.read(panelAuthProvider).account;
-        // 换到：服务器排第一的那条；它在维修就往下找第一条没在维修的（Windows suggestedSourceIndex 同一套）。
-        final to = lines.where((o) => !(acc?.isLineDown(o.name) ?? false)).firstOrNull?.name ?? '';
-        final title = ref.read(lineTierProvider).isProName(line) ? '这条线路现在用不了' : '「$line」已下线';
-        failAt(3, title, '请换一条线路', reportStage: 'route_gone', lineGone: true, switchTo: to);
+      if (gone != null) {
+        failAt(3, gone.title, gone.message, reportStage: 'route_gone', lineGone: true, switchTo: gone.switchTo);
         return;
       }
       // 选的线路在维修：不去连，说清楚，让他自己换（不自动换线；Windows 同一句，route_down）。

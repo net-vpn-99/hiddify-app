@@ -1,5 +1,11 @@
+import 'dart:async';
+
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/app/notifier/app_foreground.dart';
+import 'package:hiddify/features/connection/data/connect_reporter.dart';
+import 'package:hiddify/features/connection/data/drop_notice.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/home/widget/connect_progress.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
 import 'package:hiddify/features/proxy/data/proxy_repository.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
@@ -43,6 +49,12 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
       if (target != null && target.tag != group.selected) {
         await repo.selectProxy(group.tag, target.tag).run();
       }
+      // 选的线路不在订阅里了：不让内核接着用它自己挑的那条。首页按钮第 3 步已经拦过，走到这里的是
+      // 通知栏快捷开关、开机自动连这些原生直接起内核的入口——同样停下，首页停在第 3 步那张卡（换到 X / 自己选线路）。
+      if (target == null) {
+        final gone = await lineGoneProgress(ref.read);
+        if (gone != null) _stopForGoneLine(ref, gone);
+      }
       return; // 每次连接（或每次改偏好）只跑一次
     }
 
@@ -53,6 +65,17 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
     return;
   }
 });
+
+/// 断开前先把卡、上报、通知都做完：断开会让这个 provider 重跑，之后 ref 就不能用了。
+void _stopForGoneLine(Ref ref, ConnectProgress gone) {
+  ref.read(connectProgressProvider.notifier).state = gone;
+  unawaited(ref.read(connectReporterProvider).reportStepFailure(3, 'route_gone', '${gone.title}：${gone.message}'));
+  // App 在后台（快捷开关、开机时多半是）：发一条系统通知，不然他不知道为什么没连上
+  if (!ref.read(appForegroundProvider)) {
+    unawaited(DropNotice.show('打开光速雷达换一条线路', title: gone.title));
+  }
+  unawaited(ref.read(connectionNotifierProvider.notifier).abortConnection());
+}
 
 /// 服务端推荐 = 订阅第一条（real.first，负载均衡钩子按用户排在最前）。
 /// **先立刻切过去**，不等 urltest —— 否则连上后十几秒内核还在走它自己默认挑的

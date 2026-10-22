@@ -1,12 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/connection/data/connect_reporter.dart';
 import 'package:hiddify/features/connection/data/system_settings.dart';
 import 'package:hiddify/features/connection/data/vpn_permission.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/panel_auth/data/other_vpn.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/proxy/line/line_source.dart';
+import 'package:hiddify/features/proxy/line/line_tier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 一键连接的 5 步进度（两端统一，Windows 见 ConnectionController::connectStep）：
@@ -99,6 +103,30 @@ ConnectProgress _vpnDeniedProgress() {
     failedStep: 4,
     title: '需要你允许一次',
     message: '再点一下按钮，手机弹出「网络连接请求」时，请点「确定」。',
+  );
+}
+
+/// 他选的线路（preferredLineName）不在订阅里了（下线 / 隐藏 / 精品体验结束）：停在第 3 步的那张失败卡——
+/// 主按钮「换到 [ConnectProgress.switchTo]」（服务器排第一的那条，它在维修就往下找第一条没在维修的），
+/// 换不换他点（不自动换线）。还在 / 没选过 / 拿不到清单 = null。
+/// 所有连接入口共用这一处（Windows advanceIntent 的 route_gone 同一套）：首页一键连接第 3 步，
+/// 和连上后的选线 auto_line_fixer（通知栏快捷开关、开机自动连这些不经过首页按钮的入口）。
+/// [read] 传 ref.read（界面里的 WidgetRef、provider 里的 Ref 都行）。
+Future<ConnectProgress?> lineGoneProgress(T Function<T>(ProviderListenable<T>) read) async {
+  final line = read(Preferences.preferredLineName);
+  if (line.isEmpty) return null;
+  final set = await read(lineSetProvider.future);
+  // 只对真订阅比（locked = 账号用不了时的公开橱窗，不算）。
+  if (set.locked || set.lines.isEmpty || set.lines.any((o) => o.name == line)) return null;
+  final acc = read(panelAuthProvider).account;
+  final to = set.lines.where((o) => !(acc?.isLineDown(o.name) ?? false)).firstOrNull?.name ?? '';
+  return ConnectProgress(
+    failedStep: 3,
+    // 精品体验结束后选的精品线路也不在订阅里：那不是「下线」（Windows statusTitle 同一句）
+    title: read(lineTierProvider).isProName(line) ? '这条线路现在用不了' : '「$line」已下线',
+    message: '请换一条线路',
+    lineGone: true,
+    switchTo: to,
   );
 }
 
