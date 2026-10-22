@@ -17,7 +17,6 @@ import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
-import 'package:hiddify/features/proxy/line/line_speed.dart';
 import 'package:hiddify/features/proxy/line/line_tier.dart';
 import 'package:hiddify/features/proxy/line/region_vote.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
@@ -38,11 +37,6 @@ class _Tier extends LineTierNotifier {
   final LineTierState s;
   @override
   LineTierState build() => s;
-}
-
-class _Speed extends LineSpeedNotifier {
-  @override
-  LineSpeedState build() => const LineSpeedState();
 }
 
 class _Region extends RegionVoteNotifier {
@@ -123,7 +117,6 @@ Future<void> _shot(
         lineTierProvider.overrideWith(
           () => _Tier(LineTierState(trial: trial, proLines: [for (final p in pro) ProLine(name: p, country: '')])),
         ),
-        lineSpeedProvider.overrideWith(_Speed.new),
         regionVoteProvider.overrideWith(_Region.new),
         connectionNotifierProvider.overrideWith(() => _Conn(connected)),
         lineSetProvider.overrideWith(

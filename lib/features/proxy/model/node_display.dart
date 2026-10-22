@@ -76,7 +76,7 @@ const kAutoGroupTags = {'select', 'balance', 'lowest', 'auto', 'url-test', 'urlt
 bool isAutoGroupTag(String tag) => kAutoGroupTags.contains(tag.trim().toLowerCase());
 
 /// 拆好的线路名。
-///  - name：第一段去掉「⭐精品」，全 App 拿它当线路的名字（偏好、维修中、测速都按它对）；
+///  - name：第一段去掉「⭐精品」，全 App 拿它当线路的名字（偏好、维修中、雷达远近都按它对）；
 ///  - desc：说明（新格式是第三段；老名字是第二段以后）；
 ///  - isps：第二段写的适合哪几家宽带（顺序固定电信→联通→移动）。空列表 = 「暂不推荐」/ 空段，
 ///    null = 没有这一段（只有一段的名字、老名字）。两种都不放 LOGO、不写任何字（10-17 运营定）；

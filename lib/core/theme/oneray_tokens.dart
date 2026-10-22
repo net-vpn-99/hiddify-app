@@ -25,8 +25,6 @@ class OneRayTokens {
     required this.faultSoft,
     required this.scrim,
     required this.line,
-    required this.warn,
-    required this.warnInk,
     required this.radarCard,
   });
 
@@ -84,10 +82,6 @@ class OneRayTokens {
   /// 只给「断开 / 取消」按钮描边
   final Color line;
 
-  /// 测速「有波动」的小圆点 / 那个词（浅色底上要够深）。Windows Theme.warn / warnInk。
-  final Color warn;
-  final Color warnInk;
-
   /// 雷达后面那块圆角淡卡（左上 → 中 → 右下渐变）。Windows Theme.radarCard*。
   final List<Color> radarCard;
 
@@ -116,8 +110,6 @@ class OneRayTokens {
     faultSoft: Color(0xFFFDECEC),
     scrim: Color(0x47191C2E),
     line: Color(0xFFD6D9E6),
-    warn: Color(0xFFC98A16),
-    warnInk: Color(0xFF8A5D0B),
     radarCard: [Color(0xFFEEF2FF), Color(0xFFFFFFFF), Color(0xFFFFF1EC)],
   );
 
@@ -141,8 +133,6 @@ class OneRayTokens {
     faultSoft: Color(0x24FF5D73),
     scrim: Color(0x8C05080F),
     line: Color(0xFF2A3452),
-    warn: Color(0xFFE5B04A),
-    warnInk: Color(0xFFE5B04A),
     radarCard: [Color(0xFF16203A), Color(0xFF121A2E), Color(0xFF1E1A26)],
   );
 

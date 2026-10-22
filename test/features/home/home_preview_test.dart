@@ -11,27 +11,46 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/theme/app_theme.dart';
 import 'package:hiddify/core/theme/app_theme_mode.dart';
+import 'package:hiddify/features/connection/model/connection_status.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/home/widget/home_radar.dart';
+import 'package:hiddify/features/panel_auth/data/panel_api.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
+import 'package:hiddify/features/proxy/line/line_latency.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
-import 'package:hiddify/features/proxy/line/line_speed.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const shotDir = String.fromEnvironment('SHOT_DIR');
 
-class _Speed extends LineSpeedNotifier {
+class _Auth extends PanelAuthNotifier {
   @override
-  LineSpeedState build() => const LineSpeedState(grades: {
-        '日本 东京 03': SpeedGrade(level: 1, word: '稳定', ms: 48),
-        '香港 01': SpeedGrade(level: 1, word: '稳定', ms: 38),
-        '日本 大阪 01': SpeedGrade(level: 2, word: '有波动', ms: 62),
-        '韩国 首尔 03': SpeedGrade(level: 1, word: '稳定', ms: 55),
-        '新加坡 02': SpeedGrade(level: 2, word: '有波动', ms: 88),
-        '美国 洛杉矶 05': SpeedGrade(level: 3, word: '容易卡', ms: 152),
-        '美国 洛杉矶 01': SpeedGrade(level: 3, word: '容易卡', ms: 168),
+  PanelAuthState build() => const PanelAuthState(account: PanelAccount(planName: '标准版'));
+}
+
+class _Conn extends ConnectionNotifier {
+  @override
+  Stream<ConnectionStatus> build() async* {
+    yield const ConnectionStatus.disconnected();
+  }
+}
+
+class _Latency extends LineLatencyNotifier {
+  @override
+  LineLatencyState build() => const LineLatencyState(levels: {
+        '日本 东京 03': 2,
+        '香港 01': 1,
+        '日本 大阪 01': 2,
+        '韩国 首尔 03': 2,
+        '新加坡 02': 3,
+        '美国 洛杉矶 05': 4,
+        '美国 洛杉矶 01': 4,
       });
+
+  @override
+  Future<void> ensure({bool tick = false}) async {}
 }
 
 const lines = [
@@ -65,7 +84,9 @@ Future<void> _shot(
     ProviderScope(
       overrides: [
         sharedPreferencesProvider.overrideWith((ref) => prefs),
-        lineSpeedProvider.overrideWith(_Speed.new),
+        panelAuthProvider.overrideWith(_Auth.new),
+        connectionNotifierProvider.overrideWith(_Conn.new),
+        lineLatencyProvider.overrideWith(_Latency.new),
         lineSetProvider.overrideWith((ref) => LineSet(lines: [for (final n in lines) splitNodeName(n)], locked: false)),
       ],
       child: RepaintBoundary(

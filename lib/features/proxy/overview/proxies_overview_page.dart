@@ -106,7 +106,7 @@ class _DisconnectedHint extends StatelessWidget {
             Text('连接后才能查看和切换线路', style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
             const Gap(8),
             Text(
-              '线路信息由已连接的服务实时提供。连上后回到这里即可切换、测速。',
+              '线路信息由已连接的服务实时提供。连上后回到这里即可切换。',
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),

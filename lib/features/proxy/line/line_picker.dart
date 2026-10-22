@@ -16,7 +16,6 @@ import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_isp.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
-import 'package:hiddify/features/proxy/line/line_speed.dart';
 import 'package:hiddify/features/proxy/line/line_tier.dart';
 import 'package:hiddify/features/proxy/line/region_vote.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
@@ -31,7 +30,7 @@ export 'package:hiddify/features/proxy/line/line_source.dart' show LineOption, a
 ///
 /// 功能不变，只改摆法：
 ///  - 正在用的那条固定在最上面（精品、标准都一样），下面的列表里不再重复；
-///  - 一行：国旗 +「国家 · 城市」，第二行说明 + 测速结果；右边最多一个标记
+///  - 一行：国旗 +「国家 · 城市」，第二行说明；右边最多一个标记
 ///    （使用中 > 维修中 > 推荐 > 精品/标准 > 适合 X）；
 ///  - 宽带只看他自己那家：一组全适合就都不标，只有一部分适合才给那几条挂「适合 X」；
 ///  - 标准线路收成一张卡，点进去单独一页；精品锁着时是一张带锁的卡；最后两张卡（投票 / 定制）。
@@ -116,7 +115,6 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     // 没账号 / 到期：这是只能看的公开清单。
     final preview = value?.locked ?? false;
     final tiers = ref.watch(lineTierProvider);
-    final speed = ref.watch(lineSpeedProvider);
     final downLines = account?.downLines ?? const <String>{};
     final busyLines = account?.busyLines ?? const <String>{};
     // 同国家里适合他宽带的在前、繁忙和维修中的最后（两端统一）。
@@ -153,7 +151,6 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     }) {
       final down = !preview && downLines.contains(o.name);
       final busy = !preview && !down && busyLines.contains(o.name);
-      final grade = down ? null : speed.grades[o.name];
       final code = countryCodeFromLineName(o.name);
       final tag = RemoteSiteConfig.aiTipTag;
       return _LineRow(
@@ -169,8 +166,6 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
         recommended: !preview && pickedName.isEmpty && o.name == firstName,
         down: down,
         busy: busy,
-        grade: grade,
-        best: !down && speed.bestName == o.name && grade != null && grade.level <= 2,
         aiTip: tag != null && code != null && RemoteSiteConfig.aiTipRegions.contains(code) ? tag : '',
         onTap: () {
           if (preview) {
@@ -397,8 +392,6 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                 ),
               Text(_stdPage ? '标准线路' : '全部线路',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: tokens.text)),
-              const Spacer(),
-              if (!preview) _SpeedButton(tokens: tokens),
             ],
           ),
         ),
@@ -778,8 +771,6 @@ class _LineRow extends StatelessWidget {
     required this.recommended,
     required this.down,
     required this.busy,
-    required this.grade,
-    required this.best,
     required this.aiTip,
     required this.onTap,
   });
@@ -797,8 +788,6 @@ class _LineRow extends StatelessWidget {
   final bool recommended;
   final bool down;
   final bool busy;
-  final SpeedGrade? grade;
-  final bool best;
   final String aiTip;
   final VoidCallback onTap;
 
@@ -821,8 +810,7 @@ class _LineRow extends StatelessWidget {
                         ? ('适合$isp', 1)
                         : null;
     final sub = TextStyle(fontSize: 12, color: tokens.sub);
-    final g = grade;
-    // 第二行几段用「 · 」隔开（哪段没有就不留空隔点）：精品/标准 · 说明 · 测速 · AI 提示；维修中只说一句。
+    // 第二行几段用「 · 」隔开（哪段没有就不留空隔点）：精品/标准 · 说明 · AI 提示；维修中只说一句。
     final groups = <List<InlineSpan>>[
       if (showKind)
         [
@@ -833,19 +821,6 @@ class _LineRow extends StatelessWidget {
         ],
       if (down) [const TextSpan(text: '暂时连不上，修好会自动恢复')],
       if (!down && option.desc.isNotEmpty) [TextSpan(text: option.desc)],
-      if (!down && g != null && g.level > 0)
-        [
-          WidgetSpan(
-            alignment: PlaceholderAlignment.middle,
-            child: Container(
-              width: 7,
-              height: 7,
-              margin: const EdgeInsets.only(right: 5),
-              decoration: BoxDecoration(color: _speedDot(g.level), shape: BoxShape.circle),
-            ),
-          ),
-          TextSpan(text: g.word + (best ? ' · 最稳' : ''), style: TextStyle(color: _speedInk(g.level))),
-        ],
       if (!down && aiTip.isNotEmpty) [TextSpan(text: aiTip)],
     ];
     final second = <InlineSpan>[
@@ -908,21 +883,6 @@ class _LineRow extends StatelessWidget {
     );
     return down ? Opacity(opacity: 0.55, child: row) : row;
   }
-
-  Color _speedDot(int level) => switch (level) {
-        1 => tokens.ok,
-        2 => tokens.warn,
-        3 => tokens.dim,
-        4 => tokens.fault,
-        _ => tokens.sub,
-      };
-
-  Color _speedInk(int level) => switch (level) {
-        1 => tokens.ok,
-        2 => tokens.warnInk,
-        4 => tokens.fault,
-        _ => tokens.sub,
-      };
 }
 
 /// 右边的小标记：kind 2 = 实心主题色，1 = 浅主题色，0 = 灰。
@@ -1267,40 +1227,6 @@ class _FootTile extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _SpeedButton extends ConsumerWidget {
-  const _SpeedButton({required this.tokens});
-
-  final OneRayTokens tokens;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final speed = ref.watch(lineSpeedProvider);
-    final label = speed.running ? '测速中 ${speed.done}/${speed.total}' : '测速';
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (speed.stamp.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Text(speed.stamp, style: TextStyle(fontSize: 12, color: tokens.dim)),
-          ),
-        OutlinedButton.icon(
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size(0, 36),
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            foregroundColor: tokens.text,
-            side: BorderSide(color: tokens.line),
-            shape: const StadiumBorder(),
-          ),
-          onPressed: speed.running ? null : () => ref.read(lineSpeedProvider.notifier).start(),
-          icon: LineIcon(LineIconName.gauge, color: speed.running ? tokens.sub : tokens.text, size: 14),
-          label: Text(label, style: const TextStyle(fontSize: 13)),
-        ),
-      ],
     );
   }
 }

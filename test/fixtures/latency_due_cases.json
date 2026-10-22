@@ -1,0 +1,22 @@
+{
+  "说明": "雷达测延迟该不该测（Windows ui/one-ray/src/latencyrule.h、安卓 lib/features/proxy/line/line_latency.dart）。两端各一份，内容必须一模一样。时间单位毫秒，-1 = 没有。",
+  "due": [
+    {"name": "第一次测", "same": false, "measuredAgo": -1, "misses": 0, "missedAgo": -1, "due": true},
+    {"name": "换了网络或线路清单", "same": false, "measuredAgo": 1000, "misses": 0, "missedAgo": -1, "due": true},
+    {"name": "同网络测到过，不到 12 分钟", "same": true, "measuredAgo": 719999, "misses": 0, "missedAgo": -1, "due": false},
+    {"name": "同网络测到过，满 12 分钟", "same": true, "measuredAgo": 720000, "misses": 0, "missedAgo": -1, "due": true},
+    {"name": "同网络还没有任何记录", "same": true, "measuredAgo": -1, "misses": 0, "missedAgo": -1, "due": true},
+    {"name": "没测到 1 轮，不到 30 秒", "same": true, "measuredAgo": -1, "misses": 1, "missedAgo": 29999, "due": false},
+    {"name": "没测到 1 轮，满 30 秒", "same": true, "measuredAgo": -1, "misses": 1, "missedAgo": 30000, "due": true},
+    {"name": "没测到 2 轮，满 30 秒", "same": true, "measuredAgo": -1, "misses": 2, "missedAgo": 30000, "due": true},
+    {"name": "连着 3 轮没测到，满 30 秒也不测", "same": true, "measuredAgo": -1, "misses": 3, "missedAgo": 30000, "due": false},
+    {"name": "连着 3 轮没测到，满 12 分钟", "same": true, "measuredAgo": -1, "misses": 3, "missedAgo": 720000, "due": true},
+    {"name": "连着 3 轮没测到，换了网络马上测", "same": false, "measuredAgo": -1, "misses": 3, "missedAgo": 1000, "due": true}
+  ],
+  "misses": [
+    {"name": "测到了清零", "any": true, "sameNet": true, "lastHadResult": false, "misses": 2, "next": 0},
+    {"name": "同网络接着没测到", "any": false, "sameNet": true, "lastHadResult": false, "misses": 2, "next": 3},
+    {"name": "换了网络没测到，从 1 数", "any": false, "sameNet": false, "lastHadResult": false, "misses": 3, "next": 1},
+    {"name": "上一轮测到过、这一轮没测到，从 1 数", "any": false, "sameNet": true, "lastHadResult": true, "misses": 0, "next": 1}
+  ]
+}
