@@ -17,7 +17,6 @@ import 'package:hiddify/features/home/widget/connection_button.dart';
 import 'package:hiddify/features/home/widget/home_radar.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
-import 'package:hiddify/features/proxy/line/line_latency.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -37,22 +36,6 @@ class _Conn extends ConnectionNotifier {
   }
 }
 
-class _Latency extends LineLatencyNotifier {
-  @override
-  LineLatencyState build() => const LineLatencyState(levels: {
-        '日本 东京 03': 2,
-        '香港 01': 1,
-        '日本 大阪 01': 2,
-        '韩国 首尔 03': 2,
-        '新加坡 02': 3,
-        '美国 洛杉矶 05': 4,
-        '美国 洛杉矶 01': 4,
-      });
-
-  @override
-  Future<void> ensure({bool tick = false}) async {}
-}
-
 const lines = [
   '日本 东京 03 ⭐精品 | 电信 联通 移动 | 晚高峰稳',
   '香港 01 | 电信 联通',
@@ -64,7 +47,8 @@ const lines = [
 ];
 
 Future<void> _fonts() async {
-  final cjk = FontLoader('Deng')..addFont(Future.value(ByteData.sublistView(File(r'C:\Windows\Fonts\Deng.ttf').readAsBytesSync())));
+  final cjk = FontLoader('Deng')
+    ..addFont(Future.value(ByteData.sublistView(File(r'C:\Windows\Fonts\Deng.ttf').readAsBytesSync())));
   await cjk.load();
 }
 
@@ -86,7 +70,6 @@ Future<void> _shot(
         sharedPreferencesProvider.overrideWith((ref) => prefs),
         panelAuthProvider.overrideWith(_Auth.new),
         connectionNotifierProvider.overrideWith(_Conn.new),
-        lineLatencyProvider.overrideWith(_Latency.new),
         lineSetProvider.overrideWith((ref) => LineSet(lines: [for (final n in lines) splitNodeName(n)], locked: false)),
       ],
       child: RepaintBoundary(
@@ -99,7 +82,9 @@ Future<void> _shot(
           home: Scaffold(
             body: Padding(
               padding: const EdgeInsets.only(bottom: 24),
-              child: panel((size) => HomeRadar(size: size, state: state, isp: '电信', step: 0, dimmed: false, onPick: (_) {})),
+              child: panel(
+                (size) => HomeRadar(size: size, state: state, isp: '电信', step: 0, dimmed: false, onPick: (_) {}),
+              ),
             ),
           ),
         ),
@@ -123,25 +108,74 @@ Future<void> _shot(
 void main() {
   testWidgets('主页截图（10-18 配色）', (tester) async {
     await tester.runAsync(_fonts);
-    await _shot(tester, 'H1-没连接.png', state: RadarState.off, panel: (radar) => HomeConnectPanel(
-      radar: radar, onTap: () {}, enabled: true,
-      kicker: '未连接 · 上次用的线路', title: '东京 03', sub: '日本 · 精品线路 · 晚高峰稳',
-      buttonLabel: '开始连接', linkLabel: '换一条线路',
-    ));
-    await _shot(tester, 'H2-已连接.png', state: RadarState.connected, panel: (radar) => HomeConnectPanel(
-      radar: radar, onTap: () {}, enabled: true, connectedDot: true,
-      kicker: '', title: '东京 03', sub: '↓ 2.4 MB/s · 晚高峰稳',
-      buttonLabel: '断开连接', buttonOutlined: true, showAllLines: true, onAllLines: () {},
-    ));
-    await _shot(tester, 'H4-已连接-深色.png', dark: true, state: RadarState.connected, panel: (radar) => HomeConnectPanel(
-      radar: radar, onTap: () {}, enabled: true, connectedDot: true,
-      kicker: '', title: '东京 03', sub: '↓ 2.4 MB/s · 晚高峰稳',
-      buttonLabel: '断开连接', buttonOutlined: true, showAllLines: true, onAllLines: () {},
-    ));
-    await _shot(tester, 'H3-连接失败.png', state: RadarState.failed, panel: (radar) => HomeConnectPanel(
-      radar: radar, onTap: () {}, enabled: true, faultTag: '连接失败',
-      kicker: '', title: '东京 03 现在连不上', sub: '可能是这条线路临时波动。换一条线路试试，或者稍后点「重新连接」。',
-      buttonLabel: '换一条线路', secondLabel: '重新连接', onAllLines: () {},
-    ));
+    await _shot(
+      tester,
+      'H1-没连接.png',
+      state: RadarState.off,
+      panel: (radar) => HomeConnectPanel(
+        radar: radar,
+        onTap: () {},
+        enabled: true,
+        kicker: '未连接 · 上次用的线路',
+        title: '东京 03',
+        sub: '日本 · 精品线路 · 晚高峰稳',
+        buttonLabel: '开始连接',
+        linkLabel: '换一条线路',
+      ),
+    );
+    await _shot(
+      tester,
+      'H2-已连接.png',
+      state: RadarState.connected,
+      panel: (radar) => HomeConnectPanel(
+        radar: radar,
+        onTap: () {},
+        enabled: true,
+        connectedDot: true,
+        kicker: '',
+        title: '东京 03',
+        sub: '↓ 2.4 MB/s · 晚高峰稳',
+        buttonLabel: '断开连接',
+        buttonOutlined: true,
+        showAllLines: true,
+        onAllLines: () {},
+      ),
+    );
+    await _shot(
+      tester,
+      'H4-已连接-深色.png',
+      dark: true,
+      state: RadarState.connected,
+      panel: (radar) => HomeConnectPanel(
+        radar: radar,
+        onTap: () {},
+        enabled: true,
+        connectedDot: true,
+        kicker: '',
+        title: '东京 03',
+        sub: '↓ 2.4 MB/s · 晚高峰稳',
+        buttonLabel: '断开连接',
+        buttonOutlined: true,
+        showAllLines: true,
+        onAllLines: () {},
+      ),
+    );
+    await _shot(
+      tester,
+      'H3-连接失败.png',
+      state: RadarState.failed,
+      panel: (radar) => HomeConnectPanel(
+        radar: radar,
+        onTap: () {},
+        enabled: true,
+        faultTag: '连接失败',
+        kicker: '',
+        title: '东京 03 现在连不上',
+        sub: '可能是这条线路临时波动。换一条线路试试，或者稍后点「重新连接」。',
+        buttonLabel: '换一条线路',
+        secondLabel: '重新连接',
+        onAllLines: () {},
+      ),
+    );
   }, skip: shotDir.isEmpty);
 }

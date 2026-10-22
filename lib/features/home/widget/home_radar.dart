@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -6,7 +5,6 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/proxy/line/line_isp.dart';
-import 'package:hiddify/features/proxy/line/line_latency.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -14,9 +12,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 enum RadarState { off, connecting, connected, failed }
 
 /// 主页雷达（B 夜航 §3.5，跟 Windows `RadarScope.qml` 同一套规矩）：
-/// 每个光点是一条线路，按远近三圈摆（line_latency 的分级：1 最快、2 较快 → 内圈，3 一般 → 中圈，
-/// 4 偏慢 / 没测到 → 外圈），不按毫秒精确摆。角度按线路名算，同一条线永远在同一个方向。
-/// 最多 8 个光点：正在用的 → 适合他宽带的 → 最快的，维修中的不放（正在用的那条除外，调淡）。
+/// 每个光点是一条线路，只是装饰，不表示远近快慢（10-23 运营：又不是地图要定位，不测网络）。
+/// 哪一圈、哪个方向都按线路名算，看着随机，但同一条线永远在同一个位置。
+/// 最多 8 个光点：正在用的 → 适合他宽带的 → 其余，维修中的不放（正在用的那条除外，调淡）。
 /// 点光点 = 在线路列表里点它（onPick）。
 class HomeRadar extends HookConsumerWidget {
   const HomeRadar({
@@ -42,18 +40,12 @@ class HomeRadar extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tk = OneRayTokens.of(context);
     final lines = ref.watch(lineSetProvider).valueOrNull?.lines ?? const <LineOption>[];
-    final levels = ref.watch(lineLatencyProvider.select((s) => s.levels));
     final down = ref.watch(panelAuthProvider.select((s) => s.account?.downLines)) ?? const <String>{};
     final current = ref.watch(homeLineProvider)?.line.name ?? '';
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final sweep = useAnimationController(duration: const Duration(milliseconds: 2400));
     final blink = useAnimationController(duration: const Duration(milliseconds: 900));
     final connecting = state == RadarState.connecting && !reduceMotion;
-    // 线路刷新、连上 / 断开时叫一次，12 分钟内测过就不再测（Windows 每次刷新订阅都叫 measureLatencies）。
-    useEffect(() {
-      unawaited(ref.read(lineLatencyProvider.notifier).ensure());
-      return null;
-    }, [lines, state]);
     useEffect(() {
       if (connecting) {
         sweep.repeat();
@@ -67,7 +59,7 @@ class HomeRadar extends HookConsumerWidget {
     }, [connecting]);
 
     final k = size / 400;
-    final blips = _blips(lines, levels, down, current, k);
+    final blips = _blips(lines, down, current, k);
     _Blip? cur;
     for (final b in blips) {
       if (b.current) cur = b;
@@ -111,11 +103,7 @@ class HomeRadar extends HookConsumerWidget {
 
   Widget _blipWidget(BuildContext context, OneRayTokens tk, _Blip b, double k, bool hollow, AnimationController blink) {
     final dot = b.current ? (hollow ? 12.0 : 14.0) : 9.0;
-    final ink = !b.measured && !b.current
-        ? tk.dim
-        : b.current
-        ? (state == RadarState.failed ? tk.fault : tk.acc)
-        : tk.blip;
+    final ink = b.current ? (state == RadarState.failed ? tk.fault : tk.acc) : tk.blip;
     final labelLeft = b.labelLeft;
     final label = Text(
       b.line.name,
@@ -168,9 +156,7 @@ class HomeRadar extends HookConsumerWidget {
     );
   }
 
-  List<_Blip> _blips(List<LineOption> lines, Map<String, int> levels, Set<String> down, String current, double k) {
-    int level(LineOption l) => levels[l.name] ?? 0;
-    int score(LineOption l) => level(l) > 0 ? level(l) : 9;
+  List<_Blip> _blips(List<LineOption> lines, Set<String> down, String current, double k) {
     final picked = <LineOption>[];
     void take(LineOption l) {
       if (picked.length < 8 && !picked.contains(l)) picked.add(l);
@@ -178,8 +164,8 @@ class HomeRadar extends HookConsumerWidget {
 
     lines.where((l) => l.name == current).forEach(take);
     final up = lines.where((l) => !down.contains(l.name));
-    (up.where((l) => lineFitsIsp(l, isp)).toList()..sort((a, b) => score(a) - score(b))).forEach(take);
-    (up.toList()..sort((a, b) => score(a) - score(b))).forEach(take);
+    up.where((l) => lineFitsIsp(l, isp)).forEach(take);
+    up.forEach(take);
 
     // 一条条摆（正在用的先摆）：在自己那一圈上从固定角度起左右各挪 15° 试，名字放右边或左边；
     // 光点 + 名字这一块不能跟已经摆好的、中心点叠上，也不能伸出雷达卡。都不行就放回原位。
@@ -188,8 +174,7 @@ class HomeRadar extends HookConsumerWidget {
     return [
       for (final l in picked)
         () {
-          final lv = level(l);
-          final ring = lv == 1 || lv == 2 ? 0 : (lv == 3 ? 1 : 2);
+          final ring = _hashOf(l.name) ~/ 360 % 3;
           final cur = l.name == current;
           final dot = (cur ? 14.0 : 9.0) / k;
           final w = dot + (5 + _textWidth(l.name, cur ? 12 : 11)) / k;
@@ -223,16 +208,7 @@ class HomeRadar extends HookConsumerWidget {
               taken.add(Rect.fromCenter(center: Offset(200 + (x - 200) * t, 200 + (y - 200) * t), width: 8, height: 8));
             }
           }
-          return _Blip(
-            line: l,
-            current: cur,
-            measured: lv > 0,
-            available: !down.contains(l.name),
-            deg: deg,
-            x: x,
-            y: y,
-            labelLeft: left,
-          );
+          return _Blip(line: l, current: cur, available: !down.contains(l.name), deg: deg, x: x, y: y, labelLeft: left);
         }(),
     ];
   }
@@ -240,20 +216,21 @@ class HomeRadar extends HookConsumerWidget {
   // 估一段字的宽度（像素）：汉字算一个字号宽，其余算 0.56 个。只用来避让，不求准。
   static double _textWidth(String s, double px) => s.runes.fold(0.0, (w, r) => w + (r > 0x2e80 ? px : px * 0.56));
 
-  static double _angleOf(String id) {
+  static int _hashOf(String id) {
     var h = 7;
     for (final c in id.codeUnits) {
       h = (h * 31 + c) % 3607;
     }
-    return (h % 360) - 180.0;
+    return h;
   }
+
+  static double _angleOf(String id) => (_hashOf(id) % 360) - 180.0;
 }
 
 class _Blip {
   const _Blip({
     required this.line,
     required this.current,
-    required this.measured,
     required this.available,
     required this.deg,
     required this.x,
@@ -263,7 +240,6 @@ class _Blip {
 
   final LineOption line;
   final bool current;
-  final bool measured;
   final bool available;
   final double deg;
   final double x;
@@ -294,7 +270,7 @@ class _ScopePainter extends CustomPainter {
           colors: tk.radarCard,
         ).createShader(card),
     );
-    // 快 / 中 / 慢三圈不画线、不画十字：三块越往里越深的极淡强调色（10-18 雷达方案④，线条显廉价）。
+    // 三圈不画线、不画十字：三块越往里越深的极淡强调色（10-18 雷达方案④，线条显廉价）。
     for (final (r, a) in [(190.0, .025), (130.0, .035), (70.0, .05)]) {
       canvas.drawCircle(
         c,
