@@ -128,6 +128,8 @@ abstract class Preferences {
   // OneRay: 上次连接的线路名 / 说明，断开时也能在首页显示"当前线路"
   static final lastNodeName = PreferencesNotifier.create<String, String>("last_node_name", "");
   static final lastNodeDesc = PreferencesNotifier.create<String, String>("last_node_desc", "");
+  // OneRay: 上面这些线路记录（上次用的、自己选的）属于哪个号（账号编号）。换了号就清掉（Windows 按账号分开记）。
+  static final lineOwner = PreferencesNotifier.create<String, String>("line_owner", "");
 
   // OneRay: 用户在首页线路选择器里选的线路名（splitNodeName 后的 name 段）。
   // 断开时也能选；连接后由 autoLineFixer 按名字匹配到真实出站并切过去。空 = 不指定。

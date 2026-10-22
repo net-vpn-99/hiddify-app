@@ -362,23 +362,38 @@ class HiddifyCoreService with InfraLogger {
   /// （selector 的 interrupt_exist_connections），判通据此认出「检测连接是被切线路结束的、没到节点」。
   int lineSwitches = 0;
 
+  /// 正在切线路（切的请求发出去了、内核还没回话）：这时候被结束的检测连接，计数可能还没变（内核先掐连接、
+  /// 后回话），也是被切线路结束的。
+  bool get switchingLine => _selecting > 0;
+  int _selecting = 0;
+
+  /// 最近一次切线路做完（内核回话或出错）。被切断的检测连接等它再重问，不在切的过程中连着重问。
+  Future<void> get lineSettled => _settled;
+  Future<void> _settled = Future.value();
+
   TaskEither<String, Unit> selectOutbound(String groupTag, String outboundTag) {
     return TaskEither(() async {
       loggy.debug("selecting outbound");
       lineSwitches++;
+      _selecting++;
+      final done = Completer<void>();
+      _settled = done.future;
       try {
         final res = await core.bgClient.selectOutbound(
           SelectOutboundRequest(groupTag: groupTag, outboundTag: outboundTag),
           options: CallOptions(timeout: const Duration(seconds: 1)),
         );
-        // 内核切完再加一次：切的这一会儿里发出去的检测连接也会被结束，它们记的是第一次加之后的数，也要认得出来
-        lineSwitches++;
         if (res.code != ResponseCode.OK) return left("${res.code} ${res.message}");
 
         return right(unit);
       } catch (e) {
         loggy.error("error selecting outbound: $e");
         rethrow;
+      } finally {
+        // 内核切完（或出错）再加一次：切的这一会儿里发出去的检测连接也会被结束，它们记的是第一次加之后的数，也要认得出来
+        lineSwitches++;
+        _selecting--;
+        done.complete();
       }
     });
   }

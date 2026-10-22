@@ -97,6 +97,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
   int _zeroEnds = 0;
   final List<String> _zeroWhy = [];
   final Set<HttpClient> _warmClients = {};
+  // 每个检测网址因为切线路被重问了几次（一次连接里）。封顶：一直在切（不该有）时不无限重问，照常算结束。
+  final Map<String, int> _cutAsks = {};
 
   /// 第 5 步取消 / 失败时记进上报：节点回了多少字节、几条检测连接被结束（两端统一）。
   String byteDetail() => '节点回了 ${_down ?? 0} 字节，$_zeroEnds 个检测连接被结束';
@@ -170,6 +172,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _downAtMiss = null;
     _zeroEnds = 0;
     _zeroWhy.clear();
+    _cutAsks.clear();
     _closeWarmClients();
     // 有上次的分数就先照着显示，探完再更新；没有才是「测量中」。
     state = StabilityState(_rememberedScore);
@@ -268,8 +271,13 @@ class StabilityNotifier extends Notifier<StabilityState> {
     if (!answered) {
       // 发出后 App 切过线路（连上后 auto_line_fixer 切到偏好 / 推荐那条，或用户自己点）：这条是被切线路结束的，
       // 没到节点，不是证据，重问。1.1.67 的 24 份 dead_tunnel 包全是这样（三条同一毫秒结束，离连上 13～50 毫秒）。
-      if (core.lineSwitches != switches) {
+      final cuts = _cutAsks[url] ?? 0;
+      if ((core.lineSwitches != switches || core.switchingLine) && cuts < 3) {
+        _cutAsks[url] = cuts + 1;
         ConnectFlowClock.log?.call('probe cut by line switch, ask again: ${Uri.parse(url).host}');
+        // 等这次切线路做完再问（切的过程中重问还会被掐）
+        await core.lineSettled;
+        if (gen != _gen || !_running || _confirmed) return;
         unawaited(_warmAsk(gen, url));
         return;
       }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/utils/device_id.dart';
@@ -143,6 +145,14 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
 
   @override
   PanelAuthState build() {
+    // 账号一变（登别的号 / 开号 / 找回 / 令牌失效后换了号）就看线路记录是不是这个号的：不是就清掉，
+    // 新号从「跟服务器走」开始；同一个号退出再登录照旧（Windows 按账号分开记，同一套）。按账号编号认，
+    // 不按邮箱（绑邮箱、改邮箱还是同一个号）。
+    listenSelf((prev, next) {
+      final no = next.accountNo;
+      // 一次只认一个（两次叠着读写会记错主人）
+      if (no != null && no != prev?.accountNo) _claiming = _claiming.then((_) => _claimLines(no)).catchError((_) {});
+    });
     // 异步补上已保存的邮箱（不阻塞首帧）。
     _secureStorage.read(key: _kEmailKey).then((email) {
       if (email != null && email.isNotEmpty && !state.loggedIn) {
@@ -163,6 +173,21 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
   }
 
   Future<String?> currentToken() => _secureStorage.read(key: _kTokenKey);
+
+  Future<void> _claiming = Future.value();
+
+  Future<void> _claimLines(String no) async {
+    if (state.accountNo != no) return; // 排队时又换了号：交给后面那次
+    final owner = ref.read(Preferences.lineOwner);
+    if (owner == no) return;
+    // 升级上来第一次（还没记过是谁的）：当成这个号的，不清
+    if (owner.isNotEmpty) {
+      await ref.read(Preferences.preferredLineName.notifier).update('');
+      await ref.read(Preferences.lastNodeName.notifier).update('');
+      await ref.read(Preferences.lastNodeDesc.notifier).update('');
+    }
+    await ref.read(Preferences.lineOwner.notifier).update(no);
+  }
 
   Future<PanelLoginResult> _finishToken(String token, String fallbackEmail) async {
     final sub = await _api.getSubscribe(token);

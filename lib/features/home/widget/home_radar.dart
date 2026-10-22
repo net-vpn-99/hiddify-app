@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/proxy/line/line_isp.dart';
 import 'package:hiddify/features/proxy/line/line_source.dart';
@@ -41,7 +40,7 @@ class HomeRadar extends HookConsumerWidget {
     final tk = OneRayTokens.of(context);
     final lines = ref.watch(lineSetProvider).valueOrNull?.lines ?? const <LineOption>[];
     final grades = ref.watch(lineSpeedProvider.select((s) => s.grades));
-    final current = ref.watch(Preferences.lastNodeName);
+    final current = ref.watch(homeLineProvider)?.line.name ?? '';
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final sweep = useAnimationController(duration: const Duration(milliseconds: 2400));
     final blink = useAnimationController(duration: const Duration(milliseconds: 900));
@@ -144,7 +143,7 @@ class HomeRadar extends HookConsumerWidget {
       top: b.y * k - 22,
       child: Semantics(
         button: true,
-        label: b.current ? '${b.line.name}，正在用' : '换到 ${b.line.name}',
+        label: b.current ? (state == RadarState.connected ? '${b.line.name}，正在用' : '${b.line.name}，已选中') : '换到 ${b.line.name}',
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => onPick(b.line),

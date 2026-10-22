@@ -1,4 +1,6 @@
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
@@ -41,6 +43,35 @@ final lineSetProvider = FutureProvider<LineSet>((ref) async {
 
   final names = await ref.watch(publicNodesProvider.future);
   return LineSet(lines: [for (final n in names) splitNodeName(n)], locked: true);
+});
+
+/// 首页写哪条线路（标题、提示行、雷达高亮、连接检查查哪条共用）= 点连接会连的那条：
+///  - 自己选过线路：选的那条（auto_line_fixer 按偏好切过去）；
+///  - 没自己选过 = 跟服务器走：订阅里排第一的（fixer 没偏好时切到它），[recommended] 为 true，
+///    跟线路列表里标「推荐」的是同一条。跟 Windows 一样（没自己选过时首页是服务器排第一的，followServer）；
+///  - 连上并确认通了：正在用的那条；
+///  - 线路清单还没读出来 / 锁着：上次用的那条（不算推荐）。都没有给 null。
+typedef HomeLine = ({LineOption line, bool recommended});
+
+final homeLineProvider = Provider<HomeLine?>((ref) {
+  final set = ref.watch(lineSetProvider).valueOrNull;
+  final lines = set == null || set.locked ? const <LineOption>[] : set.lines;
+  final last = ref.watch(Preferences.lastNodeName);
+  final lastDesc = ref.watch(Preferences.lastNodeDesc);
+  final preferred = ref.watch(Preferences.preferredLineName);
+  LineOption named(String name) =>
+      lines.where((o) => o.name == name).firstOrNull ??
+      (name: name, desc: name == last ? lastDesc : '', isps: null, pro: false);
+  final first = lines.firstOrNull;
+  final connected = ref.watch(connectionNotifierProvider.select((s) => s.valueOrNull?.isConnected ?? false));
+  // 还没确认通时内核可能先恢复上一次的选择、lastNodeName 闪成旧的那条，fixer 马上切走：这时照「会连哪条」写
+  if (connected && last.isNotEmpty && ref.watch(stabilityProvider.select((s) => s.confirmed))) {
+    return (line: named(last), recommended: preferred.isEmpty && first?.name == last);
+  }
+  if (preferred.isNotEmpty) return (line: named(preferred), recommended: false);
+  if (first != null) return (line: first, recommended: true);
+  // 清单还在读（冷启动那一下）：跟服务器走的人先写上次那条，提示行照样是「推荐线路」，读出来不跳字
+  return last.isEmpty ? null : (line: named(last), recommended: set == null);
 });
 
 /// 当前订阅里的线路列表，从本地 profile 文件离线读出来（不用连接）。

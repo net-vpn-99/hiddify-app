@@ -290,10 +290,16 @@ class ConnectionButton extends HookConsumerWidget {
         return;
       }
       if (stopped()) return;
-      final line = ref.read(Preferences.preferredLineName);
       // 选的线路不在订阅里了（下线 / 隐藏）：不去连（以前内核会悄悄走自动挑的那条），说清楚（lineGoneProgress）。
       final gone = await lineGoneProgress(ref.read);
       if (stopped()) return;
+      // 点连接会连的那条（自己选的，或跟服务器走时服务器排第一的；首页写的同一条，Windows requestedRouteDown 同一套）。
+      // 先等线路清单读完（冷启动还没读出来 / 第 2 步刚换过订阅正在重算时，homeLine 还是上次那条或旧清单的第一条）
+      try {
+        await ref.read(lineSetProvider.future);
+      } catch (_) {}
+      if (stopped()) return;
+      final line = ref.read(homeLineProvider)?.line.name ?? '';
       if (gone != null) {
         failAt(3, gone.title, gone.message, reportStage: 'route_gone', lineGone: true, switchTo: gone.switchTo);
         return;
@@ -351,8 +357,9 @@ class ConnectionButton extends HookConsumerWidget {
       if (now is AsyncError || now.valueOrNull is Disconnected) guard(connectFlow)();
     });
 
-    final lineName = ref.watch(Preferences.lastNodeName);
-    final lineDesc = ref.watch(Preferences.lastNodeDesc);
+    final homeLine = ref.watch(homeLineProvider);
+    final lineName = homeLine?.line.name ?? '';
+    final lineDesc = homeLine?.line.desc ?? '';
     final connected = status is Connected;
     // 免费试用中或精品体验中：没连接时说「免费试用中」、底下给「看套餐」（跟 Windows homeKicker / homeThird 一样）。
     final freeTrial = ref.watch(panelAuthProvider.select((s) => s.freeTrial));
@@ -542,6 +549,11 @@ class ConnectionButton extends HookConsumerWidget {
           ? ''
           : trialing
           ? '未连接 · 免费试用中'
+          : lineName.isEmpty
+          ? '未连接'
+          // 没自己选过 = 跟服务器走，写的是服务器排第一的那条（线路列表里标「推荐」的同一条，两端统一）
+          : homeLine!.recommended
+          ? '未连接 · 推荐线路'
           : '未连接 · 上次用的线路',
       connectedDot: connected && confirmed,
       faultTag: radarState == RadarState.failed ? '连接失败' : '',

@@ -90,19 +90,64 @@ class LineTierNotifier extends Notifier<LineTierState> {
   String _prev = '';
   bool _endingNoted = false;   // 剩 5 分钟提示过了（每次体验一次）
   bool _endSeenSent = false;   // 结束卡弹过了、服务器还没回说看过
+  Future<void>? _running;
+  String _token = '';
+  bool _refreshAgain = false;
 
   @override
   LineTierState build() {
     ref.onDispose(() => _timer?.cancel());
     ref.listen(connectionNotifierProvider, (_, _) => _clearIfStdConnected());
+    // 账号信息每刷一次（登录、换号、买了套餐、启动刷订阅）就跟着重拿（Windows 跟账号快照一起拿，同一套）。
+    // 以前只在第一次用到时拿一次：刚装好那一刻还没开号，拿到空的，线路页就不分精品 / 标准，要重开 App 才好。
+    // 只看账号、套餐、到期这几样（账号信息连着时每 45 秒刷一次流量，不跟着那个刷）。
+    ref.listen(
+      panelAuthProvider.select((s) => (s.account?.email, s.account?.planName, s.account?.expiredAt)),
+      (_, _) => refresh(),
+    );
     Future.microtask(refresh);
     return const LineTierState();
   }
 
-  Future<void> refresh() async {
+  /// 同一时间只跑一次：两次叠着跑，体验结束那一下会被算两次、换两次线路。跑着时又要刷，跑完再来一遍；
+  /// 返回的 Future 等最后那一遍跑完（领完体验要等拿到新的状态再弹卡）。
+  Future<void> refresh() {
+    final running = _running;
+    if (running != null) {
+      _refreshAgain = true;
+      return running;
+    }
+    return _running = () async {
+      try {
+        do {
+          _refreshAgain = false;
+          await _refreshOnce();
+        } while (_refreshAgain);
+      } finally {
+        _running = null;
+      }
+    }();
+  }
+
+  Future<void> _refreshOnce() async {
     final token = await ref.read(panelAuthProvider.notifier).currentToken();
+    // 换了号（按令牌认：登录时先写新令牌、过一会儿账号信息才到，按账号认会把新号的 used 跟旧号的 active 比）：
+    // 上一个号的「体验中」不能拿来跟这个号比（不然这个号是 used 就算成「刚结束」、对他换线弹结束卡）
+    if (token != null && token.isNotEmpty && token != _token) {
+      if (_token.isNotEmpty) {
+        _prev = '';
+        _endingNoted = false;
+        _endSeenSent = false;
+        // 上一个号的「体验已结束」、结束卡那句话、补差价也不能留给这个号（首页提示、购买页默认档、线路页都看它）
+        state = const LineTierState();
+      }
+      _token = token;
+    }
     if (token == null || token.isEmpty) {
-      state = state.copyWith(trial: '', proLines: const [], seconds: 0);
+      _timer?.cancel();
+      _prev = '';
+      _endingNoted = false;
+      state = const LineTierState();
       return;
     }
     try {

@@ -147,8 +147,10 @@ class ConnectCheckNotifier extends Notifier<ConnectCheckState> {
     _probe(gen, 'api', api?.host ?? '', api != null && api.hasPort ? api.port : 443);
     unawaited(_checkLocal(gen));
 
-    // 线路名和地址从同一份订阅里按名字找（找不到就不查这一行，不拿别的线路顶）
-    final lineName = ref.read(Preferences.lastNodeName);
+    // 查首页写的那条（= 点连接会连的那条，Windows 查当前线路同一套）。线路名和地址从同一份订阅里按名字找
+    // （找不到就不查这一行，不拿别的线路顶）
+    final String last = ref.read(Preferences.lastNodeName);
+    final lineName = ref.read(homeLineProvider)?.line.name ?? last;
     final nodes = await _reporter.configNodes();
     if (gen != _gen) return;
     ({String tag, String? host, int? port})? find(String name) =>

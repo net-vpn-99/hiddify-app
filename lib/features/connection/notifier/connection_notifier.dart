@@ -21,6 +21,7 @@ import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/profile/notifier/profiles_update_notifier.dart';
+import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/settings/notifier/battery_optimization/battery_optimizations_notifier.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/hiddifycore/init_signal.dart';
@@ -311,7 +312,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     try {
       await ref.read(panelAuthProvider.notifier).syncAccountQuietly();
     } catch (_) {}
-    if (ref.read(panelAuthProvider).account?.isLineDown(ref.read(Preferences.lastNodeName)) ?? false) return;
+    // 看首页写的那条（失败卡、连接检查看的同一条；断开后就是点连接会连的那条）
+    if (ref.read(panelAuthProvider).account?.isLineDown(ref.read(homeLineProvider)?.line.name ?? '') ?? false) return;
     final r = await reporter.probeLastNodeDirect();
     // 节点和接口服务器、百度都碰不到：是这台手机没上网，不是这条线路的事（两端统一，Windows onNodeProbed）。
     if (!r.nodeOk && !r.online) {

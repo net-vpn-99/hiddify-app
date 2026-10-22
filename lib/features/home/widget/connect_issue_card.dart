@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/connection/data/connect_check_verdict.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
@@ -9,6 +8,7 @@ import 'package:hiddify/features/connection/widget/connect_check_card.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/proxy/line/line_picker.dart';
+import 'package:hiddify/features/proxy/line/line_source.dart';
 import 'package:hiddify/features/settings/notifier/battery_optimization/battery_optimizations_notifier.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -37,7 +37,8 @@ class ConnectIssueCard extends ConsumerWidget {
 
     final bool dead = (deadLine || fault == 'line') && status is Disconnected;
     // 这条在维修（断开后 connection_notifier 重拉过一次账号）：说「正在维修」，只给换线路。
-    final lineName = ref.watch(Preferences.lastNodeName);
+    // 首页写的那条（连接检查查的也是它，Windows 失败卡和检查都看当前线路，同一套）
+    final lineName = ref.watch(homeLineProvider)?.line.name ?? '';
     final bool lineDown = dead && ref.watch(panelAuthProvider.select((s) => s.account?.isLineDown(lineName) ?? false));
     // 节点没认出我们（REALITY 校验失败）：线路配置的问题，不是用户的。
     final bool reality = dead && !lineDown && realityFailed;
