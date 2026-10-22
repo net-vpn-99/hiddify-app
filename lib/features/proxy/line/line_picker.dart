@@ -511,42 +511,45 @@ List<String> _countries(List<LineOption> lines) {
 /// 问他要不要先免费试精品线路（他自己表现出想用精品了才问：点了锁着的精品线路 / 购买页看了精品没买，运营 10-20）。
 /// Windows 同款：HelpGuides.qml 的 proTrialOfferCard。领到了弹「体验已开始」那张。
 /// [onUpgrade]：「直接升级精品版」做什么，不给就去购买页选好精品版（已经在购买页里时给一个只关卡片的）。
-Future<void> offerProTrial(BuildContext context, WidgetRef ref, String why, {VoidCallback? onUpgrade}) {
+/// 返回的 Future 等整件事做完才结束（选了免费试 = 领完、提示或「体验已开始」那张也关了）：
+/// 购买页等它结束才关自己，不然领的结果没处显示（领到了不弹卡、领不到不说原因）。
+Future<void> offerProTrial(BuildContext context, WidgetRef ref, String why, {VoidCallback? onUpgrade}) async {
   final tiers = ref.read(lineTierProvider);
   final span = tiers.minutes == 60 ? '1 小时' : '${tiers.minutes} 分钟';
-  return showDialog<void>(
+  final pick = await showDialog<String>(
     context: context,
     barrierColor: guideCanvasColor(context),
     builder: (ctx) => GuideCard(
       title: '先免费试$span精品线路？',
       body: '精品线路晚高峰也稳。免费试 $span，到时间自动结束。',
       actionText: '免费试 $span',
-      onAction: () async {
-        Navigator.of(ctx).pop();
-        final msg = await ref.read(lineTierProvider.notifier).claim(why);
-        if (!context.mounted) return;
-        if (msg != null) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-          return;
-        }
-        final isp = ref.read(panelAuthProvider).account?.isp ?? '';
-        await showProTrialGuide(context, ref.read(lineTierProvider), isp);
-      },
+      onAction: () => Navigator.of(ctx).pop('try'),
       secondaryText: '直接升级精品版',
-      onSecondary: () {
-        Navigator.of(ctx).pop();
-        // 他选了升级：之后关购买页就别再问「先免费试」
-        unawaited(ref.read(lineTierProvider.notifier).markShopAsked());
-        if (onUpgrade != null) {
-          onUpgrade();
-          return;
-        }
-        ref.read(purchasePreferTierProvider.notifier).state = 'pro';
-        context.pushNamed('purchase');
-      },
+      onSecondary: () => Navigator.of(ctx).pop('upgrade'),
       links: [GuideLink('不用了', () => Navigator.of(ctx).pop())],
     ),
   );
+  if (!context.mounted) return;
+  if (pick == 'upgrade') {
+    // 他选了升级：之后关购买页就别再问「先免费试」
+    unawaited(ref.read(lineTierProvider.notifier).markShopAsked());
+    if (onUpgrade != null) {
+      onUpgrade();
+      return;
+    }
+    ref.read(purchasePreferTierProvider.notifier).state = 'pro';
+    unawaited(context.pushNamed('purchase'));
+    return;
+  }
+  if (pick != 'try') return;
+  final msg = await ref.read(lineTierProvider.notifier).claim(why);
+  if (!context.mounted) return;
+  if (msg != null) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    return;
+  }
+  final isp = ref.read(panelAuthProvider).account?.isp ?? '';
+  await showProTrialGuide(context, ref.read(lineTierProvider), isp);
 }
 
 /// 体验结束卡：写明升级精品版要补多少（会员按标准版剩下的天数抵，送的天数接在精品后面，运营 10-20）。
