@@ -69,9 +69,10 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
     // Dedicated downloaders and BitTorrent apps. Traffic from these never
     // enters the tunnel, so it uses the phone's own network. Browsers are not
     // listed. Missing packages throw NameNotFoundException and are ignored.
+    // PikPak (com.pikcloud.pikpak) stays in the tunnel: its share pages reject
+    // mainland IPs, and excluding the app made a connected VPN still look like China.
     private val downloaderPackages = listOf(
         "com.xunlei.downloadprovider",
-        "com.pikcloud.pikpak",
         "com.dv.adm",
         "com.dv.adm.pay",
         "idm.internet.download.manager",
