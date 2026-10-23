@@ -34,8 +34,9 @@ class PanelApiBase {
   static final List<String> _rescue = [];
   static bool _ownConfigValid = false;
 
-  static String? _avoidedBase;
-  static DateTime? _avoidedUntil;
+  // 每个连不上的入口各记一个「到什么时候前别用」（跟 Windows skipUntil_ 一样）。以前只记一个，
+  // 第二个入口一失败就把第一个忘了，换入口重发会绕回刚失败的那个。
+  static final Map<String, DateTime> _avoidedUntil = {};
   static const _avoidWindow = Duration(minutes: 2);
   static const _avoidExtend = Duration(minutes: 10);
   static DateTime? _lastFailbackAt;
@@ -86,7 +87,8 @@ class PanelApiBase {
         _cached != null &&
         _lastAttemptAt != null &&
         DateTime.now().difference(_lastAttemptAt!) < _retryCooldown &&
-        _cachedAt == null) {
+        _cachedAt == null &&
+        !_skipped(_cached!)) {
       return Future.value(_cached!);
     }
     return _inflight ??= _resolve(force: force).whenComplete(() => _inflight = null);
@@ -114,29 +116,74 @@ class PanelApiBase {
   /// 回前台时补一次：系统冻结期间错过的回切在这里补。
   static Future<void> onForeground() => resolve(force: false);
 
+  /// 写请求重发无害时（登录、按订单号结账 / 取消）放进 `Options.extra`：用 [replaySafeExtra]。
+  static const replaySafe = 'gsl_replay_safe';
+  static const replaySafeExtra = <String, dynamic>{replaySafe: true};
+  static const _attemptKey = 'gsl_api_attempt';
+  static const _failedKey = 'gsl_api_failed';
+
+  /// 请求肯定没送到服务器：连不上、连接超时、证书不对（被中间人换了证书），或 Cloudflare 说源站连不上 / 握手失败。
+  /// 这几种重发写请求也不会重复。收发超时不算 —— 服务器可能已经收到了。
+  static bool _notDelivered({int? status, DioExceptionType? type}) =>
+      status == 521 ||
+      status == 525 ||
+      type == DioExceptionType.connectionError ||
+      type == DioExceptionType.connectionTimeout ||
+      type == DioExceptionType.badCertificate;
+
+  /// 这个入口连不上：没送到的那几种，加上 502/503/504 和收发超时（跟 Windows IsUnreachableCode 一致）。
+  static bool _unreachable({int? status, DioExceptionType? type}) =>
+      _notDelivered(status: status, type: type) ||
+      status == 502 ||
+      status == 503 ||
+      status == 504 ||
+      type == DioExceptionType.receiveTimeout ||
+      type == DioExceptionType.sendTimeout;
+
+  /// 这次请求连不上，换下一个入口重发（跟 Windows panelRequestVia 同一套规矩）：
+  /// GET 都重发；写请求只在「肯定没送到」或标了 [replaySafe] 时重发 —— 下单超时了不重发，免得两单。
+  /// 返回 null = 不重发（不该重发 / 入口都试过了 / 没有别的入口可换）。
+  static Future<RequestOptions?> _retryOptions(RequestOptions o, {int? status, DioExceptionType? type}) async {
+    if (!_unreachable(status: status, type: type)) return null;
+    final attempt = (o.extra[_attemptKey] as int?) ?? 0;
+    if (attempt + 1 >= _probeOrder().length) return null;
+    final method = o.method.toUpperCase();
+    final safe = method == 'GET' || method == 'HEAD' || o.extra[replaySafe] == true || _notDelivered(status: status, type: type);
+    if (!safe) return null;
+    // 选回来的还是这一圈失败过的入口 = 没有别的可换了，再发只是再等一个超时（跟 Windows failedHere 一样）。
+    final failed = <String>{...?(o.extra[_failedKey] as Set<String>?), o.baseUrl};
+    final next = await resolve();
+    if (failed.contains(next)) return null;
+    final data = o.data;
+    return o.copyWith(
+      baseUrl: next,
+      data: data is FormData ? data.clone() : data,
+      extra: {...o.extra, _attemptKey: attempt + 1, _failedKey: failed},
+    );
+  }
+
+  /// 记下这个入口连不上，能重发就换入口重发一次；不该重发返回 null。重发也失败会抛 [DioException]。
+  static Future<Response<dynamic>?> _refetchElsewhere(Dio client, RequestOptions o,
+      {int? status, DioExceptionType? type}) async {
+    // 写死整条地址的请求（设备闸 www.<域名>/claim）没走入口：它连不上不怪入口，换入口也没用。
+    if (o.path.startsWith('http://') || o.path.startsWith('https://')) return null;
+    noteFailure(o.baseUrl, status: status, type: type);
+    final retry = await _retryOptions(o, status: status, type: type);
+    return retry == null ? null : client.fetch<dynamic>(retry);
+  }
+
   /// [usedBase] 必须是这次实际发出请求的地址，不能用之后已经切走的 current。
   static void noteFailure(String usedBase, {int? status, DioExceptionType? type}) {
-    if (status != null || type != null) {
-      const connectionErrors = {
-        DioExceptionType.connectionError,
-        DioExceptionType.connectionTimeout,
-        DioExceptionType.receiveTimeout,
-        DioExceptionType.sendTimeout,
-      };
-      final gateway = status == 502 || status == 503 || status == 504 || status == 521 || status == 525;
-      final transport = type != null && connectionErrors.contains(type);
-      if (!gateway && !transport) return;
-    }
+    if ((status != null || type != null) && !_unreachable(status: status, type: type)) return;
     final u = _normalize(usedBase);
     if (u == null) return;
-    _avoidedBase = u;
     var window = _avoidWindow;
     if (_lastFailbackBase == u &&
         _lastFailbackAt != null &&
         DateTime.now().difference(_lastFailbackAt!) < _avoidExtend) {
       window = _avoidExtend;
     }
-    _avoidedUntil = DateTime.now().add(window);
+    _avoidedUntil[u] = DateTime.now().add(window);
     if (_cached == u) _cachedAt = null;
   }
 
@@ -153,6 +200,8 @@ class PanelApiBase {
     client.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          // 换入口重发的那次，地址 _retryOptions 刚选好，别再选一遍。
+          if (options.extra.containsKey(_attemptKey)) return handler.next(options);
           if (_cached != null && _cachedAt != null && !_skipped(_cached!)) {
             options.baseUrl = _cached!;
             unawaited(resolve());
@@ -162,16 +211,27 @@ class PanelApiBase {
           options.baseUrl = await resolve();
           handler.next(options);
         },
-        onResponse: (res, handler) {
-          final code = res.statusCode ?? 0;
-          if (code == 502 || code == 503 || code == 504 || code == 521 || code == 525) {
-            noteFailure(res.requestOptions.baseUrl, status: code);
+        onResponse: (res, handler) async {
+          final code = res.statusCode;
+          if (code == null || !_unreachable(status: code)) return handler.next(res);
+          try {
+            final again = await _refetchElsewhere(client, res.requestOptions, status: code);
+            again == null ? handler.next(res) : handler.resolve(again);
+          } on DioException catch (e) {
+            handler.reject(e);
+          } catch (_) {
+            handler.next(res);   // 选地址时出了别的错（比如读不了本地设置）：照原样交回，别让请求挂住
           }
-          handler.next(res);
         },
-        onError: (e, handler) {
-          noteFailure(e.requestOptions.baseUrl, status: e.response?.statusCode, type: e.type);
-          handler.next(e);
+        onError: (e, handler) async {
+          try {
+            final again = await _refetchElsewhere(client, e.requestOptions, status: e.response?.statusCode, type: e.type);
+            again == null ? handler.next(e) : handler.resolve(again);
+          } on DioException catch (e2) {
+            handler.next(e2);
+          } catch (_) {
+            handler.next(e);
+          }
         },
       ),
     );
@@ -186,7 +246,7 @@ class PanelApiBase {
   }
 
   static bool _skipped(String base) =>
-      _avoidedBase == base && _avoidedUntil != null && DateTime.now().isBefore(_avoidedUntil!);
+      _avoidedUntil[base]?.isAfter(DateTime.now()) ?? false;
 
   static Future<String> _resolve({required bool force}) async {
     final sw = Stopwatch()..start();
@@ -432,6 +492,7 @@ class PanelApiBase {
   static Future<void> _latch(SharedPreferences prefs, String base) async {
     _cached = base;
     _cachedAt = DateTime.now();
+    _avoidedUntil.remove(base);   // 刚探通，证明它好了；留在名单里会让之后每个请求都重新探一轮
     await prefs.setString(_prefKey, base);
     await _persistConfig();
     await _maybeBeaconFailover(prefs, base);

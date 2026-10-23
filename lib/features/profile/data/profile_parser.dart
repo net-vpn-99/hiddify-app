@@ -176,24 +176,28 @@ class ProfileParser {
       );
     }
 
+    // 自家订阅地址连不上：记下这个入口、重新选一个，换过去再下（体检修复 R4；10-23 起跟其他接口、跟 Windows
+    // 一样一直换到入口都试过，以前只换一次）。选回来的还是这一圈失败过的入口就停，免得白等一个超时。
     Response<dynamic> rs;
-    try {
-      rs = await fetch(url);
-    } on DioException catch (err) {
-      noteFailed(err, url);
-      if (!looksLikeOwnPanelSubscribe(url) || !isKnownPanelHost(url)) rethrow;
-      // 自家订阅地址连不上：记下这个地址、重新选一个，换过去再下一次（体检修复 R4）。以前直接失败，
-      // 首次打开要等两次 15 秒超时（10-17 体检 uid 1863：首启到能连用了 191 秒）。
-      final origin = originOf(url);
-      PanelApiBase.noteFailure(origin, status: err.response?.statusCode, type: err.type);
-      final next = await PanelApiBase.resolve();
-      if (next == origin || !url.trim().startsWith(origin)) rethrow;
-      final retryUrl = next + url.trim().substring(origin.length);
+    var tryUrl = url.trim();
+    final failedHere = <String>{};
+    while (true) {
       try {
-        rs = await fetch(retryUrl);
-      } on DioException catch (retryErr) {
-        noteFailed(retryErr, retryUrl);
-        rethrow;
+        rs = await fetch(tryUrl);
+        break;
+      } on DioException catch (err) {
+        noteFailed(err, tryUrl);
+        if (!looksLikeOwnPanelSubscribe(tryUrl) || !isKnownPanelHost(tryUrl)) rethrow;
+        // 认出这条地址用的是哪个入口（入口可能带端口 / 路径前缀，取最长匹配；都不匹配就退回 scheme+host）。
+        var entry = originOf(tryUrl);
+        for (final h in PanelApiBase.configHosts) {
+          if (tryUrl.startsWith(h) && h.length > entry.length) entry = h;
+        }
+        failedHere.add(entry);
+        PanelApiBase.noteFailure(entry, status: err.response?.statusCode, type: err.type);
+        final next = await PanelApiBase.resolve();
+        if (failedHere.contains(next)) rethrow;
+        tryUrl = next + tryUrl.substring(entry.length);
       }
     }
     await expandRemoteLinesInParallel(

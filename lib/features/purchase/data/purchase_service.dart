@@ -14,7 +14,11 @@ class PurchaseService {
 
   final Dio _dio;
 
-  Options _opt(String token) => Options(headers: {'auth_data': token, 'Authorization': token});
+  /// [replaySafe]：按订单号结账 / 取消重发无害，入口连不上可以换一个重发（下单不行，见 PanelApiBase.replaySafe）。
+  Options _opt(String token, {bool replaySafe = false}) => Options(
+        headers: {'auth_data': token, 'Authorization': token},
+        extra: replaySafe ? PanelApiBase.replaySafeExtra : null,
+      );
 
   Map<String, dynamic>? _data(dynamic body) =>
       (body is Map && body['data'] is Map) ? (body['data'] as Map).cast<String, dynamic>() : null;
@@ -162,7 +166,7 @@ class PurchaseService {
       await _dio.post<dynamic>(
         '/api/v1/user/order/cancel',
         data: {'trade_no': tradeNo},
-        options: _opt(token),
+        options: _opt(token, replaySafe: true),
       );
     } catch (_) {}
   }
@@ -222,7 +226,7 @@ class PurchaseService {
     final res = await _dio.post<dynamic>(
       '/api/v1/user/order/checkout',
       data: {'trade_no': tradeNo, if (methodId != null && methodId > 0) 'method': methodId},
-      options: _opt(token),
+      options: _opt(token, replaySafe: true),
     );
     final body = res.data;
     if (res.statusCode != 200) {

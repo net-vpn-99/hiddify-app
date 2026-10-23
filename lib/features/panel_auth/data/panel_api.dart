@@ -43,6 +43,7 @@ class PanelApi {
       res = await _dio.post<dynamic>(
         '/api/v1/passport/auth/login',
         data: {'email': email, 'password': password},
+        options: Options(extra: PanelApiBase.replaySafeExtra),
       );
     } on DioException catch (e) {
       throw PanelApiException.network(e, _networkMessage(e));
@@ -64,6 +65,7 @@ class PanelApi {
       res = await _dio.post<dynamic>(
         '/api/v1/guest/gsl_guest/login-by-no',
         data: {'account_no': accountNo, 'password': password},
+        options: Options(extra: PanelApiBase.replaySafeExtra),
       );
     } on DioException catch (e) {
       throw PanelApiException.network(e, _networkMessage(e));
@@ -475,6 +477,8 @@ class PanelApi {
           if (inviteCode != null && inviteCode.trim().isNotEmpty) 'invite_code': inviteCode.trim(),
           if (altcha != null && altcha.isNotEmpty) 'altcha': altcha,
         },
+        // 服务端按设备号去重，同一台设备重发拿回同一个号。
+        options: Options(extra: PanelApiBase.replaySafeExtra),
       );
     }
 
@@ -621,6 +625,7 @@ class PanelApi {
           'platform': 'android',
           'probe': true,
         },
+        options: Options(extra: PanelApiBase.replaySafeExtra),
       );
     } on DioException catch (e) {
       throw PanelApiException.network(e, _networkMessage(e));

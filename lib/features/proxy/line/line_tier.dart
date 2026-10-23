@@ -269,7 +269,10 @@ class LineTierNotifier extends Notifier<LineTierState> {
     try {
       await PanelApiBase.dio().post<dynamic>(
         '/api/v1/gsl_shop/pro_trial/seen',
-        options: Options(headers: {'auth_data': token, 'Authorization': token}),
+        options: Options(
+          headers: {'auth_data': token, 'Authorization': token},
+          extra: PanelApiBase.replaySafeExtra,
+        ),
       );
     } catch (_) {}
   }
