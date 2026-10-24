@@ -70,7 +70,7 @@ class RegionBoard {
     this.canCreate = false,
     this.voter = '',
     this.isPro = false,
-    this.threshold = 20,
+    this.threshold = 5,
     this.promiseDays = 3,
     this.regions = const [],
     this.suggest = const [],
@@ -162,7 +162,7 @@ class RegionBoard {
 }
 
 String regionEntrySubtitle(RegionBoard board) {
-  final need = board.threshold > 0 ? board.threshold : 20;
+  final need = board.threshold > 0 ? board.threshold : 5;
   final regions = board.regions;
   if (regions.isEmpty) return '会员投票，够 $need 票就开';
   RegionItem? earliest;
@@ -335,7 +335,7 @@ class RegionVoteNotifier extends Notifier<RegionBoard> {
       return;
     }
     final name = '${body['name'] ?? ''}';
-    final need = next.threshold > 0 ? next.threshold : 20;
+    final need = next.threshold > 0 ? next.threshold : 5;
     if (body['reached_now'] == true) {
       _flash(next, '$name够 $need 票了，我们会在 ${body['promise'] ?? ''} 前开通', ok: true, seconds: 5);
       return;
@@ -384,7 +384,7 @@ RegionBoard _boardFrom(dynamic body, RegionBoard prev) {
     canCreate: member && data['can_create'] != false,
     voter: voter.isEmpty ? (member ? 'member' : 'guest') : voter,
     isPro: data['is_pro'] == true,
-    threshold: threshold > 0 ? threshold : 20,
+    threshold: threshold > 0 ? threshold : 5,
     promiseDays: days > 0 ? days : 3,
     regions: regions,
     lastCreated: last,
