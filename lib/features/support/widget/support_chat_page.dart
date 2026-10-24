@@ -13,7 +13,9 @@ import 'package:hiddify/features/support/widget/support_image_viewer.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class SupportChatPage extends ConsumerStatefulWidget {
-  /// [attachDiag]：从连接失败那里点进来的。打开就传一份诊断，第一条消息自动带上诊断码（跟 Windows 一样）。
+  /// 不管从哪进来，打开就传一份诊断，第一条消息自动带上诊断码（10-24 起；以前只有从连接失败点进来才带，
+  /// 「线路通、某个 App 用不了」的客户连检查都显示没问题，没处传诊断，AFAA-1024）。
+  /// [attachDiag] 只剩路由参数兼容，不再影响行为。
   const SupportChatPage({super.key, this.attachDiag = false});
 
   final bool attachDiag;
@@ -23,6 +25,10 @@ class SupportChatPage extends ConsumerStatefulWidget {
 }
 
 class _SupportChatPageState extends ConsumerState<SupportChatPage> {
+  // 3 分钟内反复开关客服页就沿用上一个诊断码：服务器同一 IP 一小时超过 20 份会被当刷接口封掉。
+  static String _recentCode = '';
+  static DateTime _recentAt = DateTime(2000);
+
   final _input = TextEditingController();
   final _scroll = ScrollController();
   int _lastCount = 0;
@@ -50,21 +56,24 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
       if (acc?.planName != null) notifier.bindIdentity(plan: acc!.planName);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => notifier.openChat());
-    if (widget.attachDiag) {
-      _attachDiag = true;
-      uploadDiagnostics(ref).then((r) {
-        final code = r.code ?? '';
-        if (code.isEmpty || !_attachDiag) return;
-        _diagCode = code;
-        // 从连接检查点进来的：诊断码补到服务器那条检查记录上（后台「连接检查 · 未知情况」靠它找诊断包）
-        _check.attachDiagCode(code);
-        // 他已经发了消息、诊断码才传好：单独补一条。
-        if (_sentBeforeCode) {
-          _notifier.sendText('（诊断码 $code）');
-          _attachDiag = false;
-        }
-      });
-    }
+    _attachDiag = true;
+    final reuse = _recentCode.isNotEmpty && DateTime.now().difference(_recentAt) < const Duration(minutes: 3);
+    (reuse ? Future.value(_recentCode) : uploadDiagnostics(ref).then((r) => r.code ?? '')).then((code) {
+      if (code.isEmpty) return;
+      if (!reuse) {
+        _recentCode = code;
+        _recentAt = DateTime.now();
+      }
+      if (!_attachDiag) return;
+      _diagCode = code;
+      // 从连接检查点进来的：诊断码补到服务器那条检查记录上（后台「连接检查 · 未知情况」靠它找诊断包）
+      _check.attachDiagCode(code);
+      // 他已经发了消息、诊断码才传好：单独补一条。
+      if (_sentBeforeCode) {
+        _notifier.sendText('（诊断码 $code）');
+        _attachDiag = false;
+      }
+    });
   }
 
   @override
