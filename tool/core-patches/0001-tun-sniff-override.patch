@@ -1,0 +1,19 @@
+diff --git a/v2/config/builder.go b/v2/config/builder.go
+index f80ccb4..9f36653 100644
+--- a/v2/config/builder.go
++++ b/v2/config/builder.go
+@@ -445,6 +445,14 @@ func setInbound(options *option.Options, hopt *HiddifyOptions) {
+ 			MTU:         hopt.MTU,
+ 			AutoRoute:   true,
+ 			StrictRoute: hopt.StrictRoute,
++			// OneRay: replace an IP destination with the sniffed domain (TLS SNI / HTTP Host) so the
++			// node resolves it. HarmonyOS HTTPDNS bypasses our DNS and hands apps GFW-poisoned IPs;
++			// without this the node dials the poisoned IP and the app gets a foreign certificate.
++			// Legacy inbound field, still honoured by sing-box 1.13 route.go.
++			InboundOptions: option.InboundOptions{
++				SniffEnabled:             true,
++				SniffOverrideDestination: true,
++			},
+ 
+ 			// EndpointIndependentNat: true,
+ 			// GSO:                    runtime.GOOS != "windows",

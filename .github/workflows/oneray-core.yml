@@ -1,0 +1,89 @@
+name: OneRay Core
+
+# 自己编 hiddify-core 安卓库（上游 v4.1.0 源码 + tool/core-patches/*.patch），发到本仓库的 Release，
+# OneRay APK 工作流从那里下载，不再用上游预编译的 hiddify-next-core。
+# 为什么要自己编：上游给 TUN 写死了不拿识别出的域名替换目的地址，华为鸿蒙的系统 DNS 绕过我们拿到
+# 被污染的 IP，节点照着连到 Facebook（VPN 仓库 docs/客户端.md「安卓 ChatGPT App 报 SSL 证书」）。
+# 改补丁或升上游版本时，把 CORE_TAG 的序号加一，再把 oneray-apk.yml 里的 CORE_URL 指过来。
+
+on:
+  push:
+    branches: [oneray-rel]
+    paths:
+      - "tool/core-patches/**"
+      - ".github/workflows/oneray-core.yml"
+  workflow_dispatch:
+
+env:
+  UPSTREAM_TAG: v4.1.0
+  CORE_TAG: core-v4.1.0-oneray1
+
+permissions:
+  contents: write
+
+jobs:
+  build-core:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: app
+
+      - name: Checkout hiddify-core ${{ env.UPSTREAM_TAG }}
+        run: |
+          # ray2sing 子模块写的是 git@github.com，跑机没有 SSH 钥匙
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git clone --depth 1 -b "$UPSTREAM_TAG" https://github.com/hiddify/hiddify-core core
+          cd core
+          git submodule update --init --recursive --depth 1
+          echo "hiddify-core $(git rev-parse --short HEAD), sing-box $(git -C hiddify-sing-box describe --tags --always)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply OneRay patches
+        working-directory: core
+        run: |
+          for p in ../app/tool/core-patches/*.patch; do
+            echo "apply $p"
+            git apply --verbose "$p"
+          done
+          git diff --stat
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: core/go.mod
+          check-latest: false
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: "17"
+
+      - uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r28
+
+      - name: Build Android library
+        working-directory: core
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          SB=$(git -C hiddify-sing-box describe --tags --always)
+          export CODE_VERSION="-X github.com/hiddify/hiddify-core/v2/hcommon/constants.Version=${UPSTREAM_TAG#v} -X github.com/sagernet/sing-box/constant.Version=${SB#v}"
+          make android
+          ls -la bin
+
+      - name: Package (same layout as upstream hiddify-lib-android.tar.gz)
+        working-directory: core/bin
+        run: |
+          tar -czvf hiddify-lib-android.tar.gz hiddify-core.aar
+          sha256sum hiddify-lib-android.tar.gz hiddify-core.aar | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish release ${{ env.CORE_TAG }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "$CORE_TAG" -R "$GITHUB_REPOSITORY" -y --cleanup-tag 2>/dev/null || true
+          gh release create "$CORE_TAG" core/bin/hiddify-lib-android.tar.gz -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --prerelease \
+            --title "$CORE_TAG" \
+            --notes "hiddify-core $UPSTREAM_TAG + app/tool/core-patches (commit ${GITHUB_SHA::7})"
