@@ -164,6 +164,7 @@ flutter:
     # brand_mark = 主图标（珊瑚底 + 白图形），32 像素及以下用 _small；
     # mark_on_dark / light_small = 透明底小标志（深色白图形、浅色黑图形，珊瑚点），顶栏用。
     - assets/images/brand_mark.svg
+    - assets/split/
     - assets/images/brand_mark_small.svg
     - assets/images/mark_on_dark_small.svg
     - assets/images/mark_on_light_small.svg

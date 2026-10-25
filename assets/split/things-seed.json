@@ -1,0 +1,39 @@
+{
+  "version": 20261025,
+  "things": [
+    { "id": "google", "name": "谷歌", "domains": ["google.com", "google.com.hk", "googleusercontent.com", "ggpht.com", "gvt1.com", "gvt2.com"], "lock": "proxy" },
+    { "id": "youtube", "name": "YouTube", "domains": ["youtube.com", "youtu.be", "ytimg.com", "googlevideo.com"], "lock": "proxy" },
+    { "id": "claude", "name": "Claude", "domains": ["claude.ai", "claude.com", "anthropic.com"], "lock": "proxy", "apps": ["claude"] },
+    { "id": "cursor", "name": "Cursor", "domains": ["cursor.com", "cursor.sh", "cursorapi.com"], "lock": "proxy", "apps": ["cursor"] },
+    { "id": "openai", "name": "ChatGPT", "domains": ["openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com"], "lock": "proxy", "apps": ["chatgpt"] },
+    { "id": "telegram", "name": "Telegram", "domains": ["telegram.org", "t.me"], "lock": "proxy", "apps": ["telegram"] },
+    { "id": "x", "name": "X（推特）", "domains": ["x.com", "twitter.com", "twimg.com"], "lock": "proxy" },
+
+    { "id": "wechat", "name": "微信", "domains": ["weixin.qq.com", "wechat.com", "servicewechat.com"], "lock": "direct", "apps": ["weixin", "wechat", "wechatappex"] },
+    { "id": "alipay", "name": "支付宝", "domains": ["alipay.com", "alipayobjects.com"], "lock": "direct" },
+    { "id": "12306", "name": "12306", "domains": ["12306.cn"], "lock": "direct" },
+    { "id": "icbc", "name": "中国工商银行", "domains": ["icbc.com.cn"], "lock": "direct" },
+    { "id": "ccb", "name": "中国建设银行", "domains": ["ccb.com"], "lock": "direct" },
+    { "id": "boc", "name": "中国银行", "domains": ["boc.cn", "bankofchina.com"], "lock": "direct" },
+    { "id": "abc", "name": "中国农业银行", "domains": ["abchina.com"], "lock": "direct" },
+    { "id": "cmb", "name": "招商银行", "domains": ["cmbchina.com"], "lock": "direct" },
+
+    { "id": "bilibili", "name": "哔哩哔哩", "domains": ["bilibili.com", "hdslb.com", "bilivideo.com", "biliapi.net", "biligame.com"], "lock": "" },
+    { "id": "taobao", "name": "淘宝", "domains": ["taobao.com", "tmall.com", "alicdn.com", "tbcdn.cn"], "lock": "" },
+    { "id": "jd", "name": "京东", "domains": ["jd.com", "360buyimg.com"], "lock": "" },
+    { "id": "baidu", "name": "百度", "domains": ["baidu.com", "bdimg.com", "bdstatic.com", "baidustatic.com"], "lock": "" },
+    { "id": "zhihu", "name": "知乎", "domains": ["zhihu.com", "zhimg.com"], "lock": "" },
+    { "id": "weibo", "name": "微博", "domains": ["weibo.com", "weibo.cn", "sinaimg.cn"], "lock": "" },
+    { "id": "douyin", "name": "抖音", "domains": ["douyin.com", "douyinpic.com", "douyinvod.com", "douyinstatic.com"], "lock": "" },
+    { "id": "163music", "name": "网易云音乐", "domains": ["music.163.com", "music.126.net"], "lock": "" },
+    { "id": "iqiyi", "name": "爱奇艺", "domains": ["iqiyi.com", "iqiyipic.com", "qy.net"], "lock": "" },
+    { "id": "qqvideo", "name": "腾讯视频", "domains": ["v.qq.com", "video.qq.com"], "lock": "" }
+  ],
+  "shared": [
+    "jsdelivr.net", "cdnjs.cloudflare.com", "unpkg.com", "bootcdn.net", "staticfile.org", "apps.bdimg.com",
+    "googleapis.com", "gstatic.com", "recaptcha.net", "hcaptcha.com", "challenges.cloudflare.com",
+    "google-analytics.com", "googletagmanager.com", "doubleclick.net", "cloudflareinsights.com",
+    "cloudflare-ech.com", "nel.cloudflare.com",
+    "phantom.app", "fastly-edge.com", "facebook.net"
+  ]
+}
