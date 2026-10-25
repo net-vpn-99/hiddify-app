@@ -2,14 +2,19 @@ import 'dart:io';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/model/directories.dart';
+import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
+import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/data/profile_path_resolver.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/notifier/warp_option/warp_option_notifier.dart';
+import 'package:hiddify/features/smart_split/data/route_api.dart';
+import 'package:hiddify/features/smart_split/data/route_writer.dart';
+import 'package:hiddify/features/smart_split/data/things_store.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service.dart';
 import 'package:hiddify/singbox/model/core_status.dart';
 import 'package:hiddify/singbox/model/singbox_config_option.dart';
@@ -84,6 +89,7 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
     (_) =>
         TaskEither<ConnectionFailure, Unit>.tryCatch(() async {
               await _ensureLocalPortsFree();
+              await prepareSplit();
               return unit;
             }, (err, st) => ConnectionFailure.unexpected(err, st))
             .flatMap((_) => applyConfigOption(activeProfile))
@@ -151,9 +157,29 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
   @override
   TaskEither<ConnectionFailure, Unit> disconnect() => singbox.stop().mapLeft(UnexpectedConnectionFailure.new);
 
+  /// 智能分流：连之前拉账号里的网站和服务器默认，写给内核和 VPNService（最多等 3 秒，出错照常连）。
+  Future<void> prepareSplit() async {
+    try {
+      final token = await ref.read(panelAuthProvider.notifier).currentToken();
+      final prefs = ref.read(sharedPreferencesProvider).requireValue;
+      await prepareSplitRoutes(
+        baseDir: directories.baseDir,
+        workingDir: directories.workingDir,
+        api: RouteApi.panel(token: token),
+        things: await loadThings(directories.baseDir),
+        savePref: (key, json) => prefs.setString(key, json),
+      );
+    } catch (e) {
+      loggy.warning('智能分流规则没写成：$e');
+    }
+  }
+
   @override
   TaskEither<ConnectionFailure, Unit> reconnect(ProfileEntity activeProfile, bool disableMemoryLimit) =>
-      applyConfigOption(activeProfile).flatMap(
+      TaskEither<ConnectionFailure, Unit>.tryCatch(() async {
+        await prepareSplit();
+        return unit;
+      }, (err, st) => ConnectionFailure.unexpected(err, st)).flatMap((_) => applyConfigOption(activeProfile)).flatMap(
         (_) => singbox
             .restart(profilePathResolver.file(activeProfile.id).path, activeProfile.name, disableMemoryLimit)
             .mapLeft(UnexpectedConnectionFailure.new),
