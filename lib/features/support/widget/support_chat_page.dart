@@ -13,9 +13,10 @@ import 'package:hiddify/features/support/widget/support_image_viewer.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class SupportChatPage extends ConsumerStatefulWidget {
-  /// 不管从哪进来，打开就传一份诊断，第一条消息自动带上诊断码（10-24 起；以前只有从连接失败点进来才带，
+  /// 不管从哪进来，第一条消息都带诊断码（10-24 起；以前只有从连接失败点进来才带，
   /// 「线路通、某个 App 用不了」的客户连检查都显示没问题，没处传诊断，AFAA-1024）。
-  /// [attachDiag] 只剩路由参数兼容，不再影响行为。
+  /// [attachDiag]：从连接失败 / 连接检查点进来的，出事就在刚才，每次都传一份新的；
+  /// 从「我的 → 联系客服」进来的，30 分钟内沿用上一份，已经带过的码不再重复带（10-25 运营：每条消息一个新码太乱）。
   const SupportChatPage({super.key, this.attachDiag = false});
 
   final bool attachDiag;
@@ -25,9 +26,11 @@ class SupportChatPage extends ConsumerStatefulWidget {
 }
 
 class _SupportChatPageState extends ConsumerState<SupportChatPage> {
-  // 3 分钟内反复开关客服页就沿用上一个诊断码：服务器同一 IP 一小时超过 20 份会被当刷接口封掉。
+  // 上一份诊断码、什么时候传的、有没有已经跟着消息发出去过（App 进程内有效）。
+  // 也护着服务器：同一 IP 一小时超过 20 份会被当刷接口封掉。
   static String _recentCode = '';
   static DateTime _recentAt = DateTime(2000);
+  static String _sentCode = '';
 
   final _input = TextEditingController();
   final _scroll = ScrollController();
@@ -56,8 +59,10 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
       if (acc?.planName != null) notifier.bindIdentity(plan: acc!.planName);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => notifier.openChat());
-    _attachDiag = true;
-    final reuse = _recentCode.isNotEmpty && DateTime.now().difference(_recentAt) < const Duration(minutes: 3);
+    final reuse = !widget.attachDiag && _recentCode.isNotEmpty && DateTime.now().difference(_recentAt) < const Duration(minutes: 30);
+    // 沿用的那份已经跟着消息发过了：这次不带，客服往上翻就能看到。
+    _attachDiag = !(reuse && _sentCode == _recentCode);
+    if (!_attachDiag) return;
     (reuse ? Future.value(_recentCode) : uploadDiagnostics(ref).then((r) => r.code ?? '')).then((code) {
       if (code.isEmpty) return;
       if (!reuse) {
@@ -71,6 +76,7 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
       // 他已经发了消息、诊断码才传好：单独补一条。
       if (_sentBeforeCode) {
         _notifier.sendText('（诊断码 $code）');
+        _sentCode = code;
         _attachDiag = false;
       }
     });
@@ -125,6 +131,7 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
     if (_attachDiag) {
       if (_diagCode.isNotEmpty) {
         text = '$text（诊断码 $_diagCode）';
+        _sentCode = _diagCode;
         _attachDiag = false;
       } else {
         _sentBeforeCode = true;
