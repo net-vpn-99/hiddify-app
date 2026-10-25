@@ -12,8 +12,10 @@ const _idleCloseMaxBytes = 1000 * 1000;
 ({String base, String secret})? readClashApi(String configJson) {
   try {
     final root = jsonDecode(configJson);
-    final api = (root as Map)['experimental']?['clash_api'];
-    final ctrl = api?['external_controller'];
+    final exp = root is Map ? root['experimental'] : null;
+    final api = exp is Map ? exp['clash_api'] : null;
+    if (api is! Map) return null;
+    final ctrl = api['external_controller'];
     if (ctrl is! String || ctrl.isEmpty) return null;
     final secret = api['secret'];
     return (base: 'http://$ctrl', secret: secret is String ? secret : '');
