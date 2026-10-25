@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/region.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
-import 'package:hiddify/features/per_app_proxy/model/per_app_proxy_mode.dart';
 import 'package:hiddify/features/per_app_proxy/overview/per_app_proxy_notifier.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/widget/preference_tile.dart';
@@ -17,30 +15,11 @@ class RouteOptionsPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(translationsProvider).requireValue;
-    final perAppProxy = ref.watch(Preferences.perAppProxyMode).enabled;
     return Scaffold(
       appBar: AppBar(title: Text(t.pages.settings.routing.title)),
       body: ListView(
         children: [
-          if (PlatformUtils.isAndroid)
-            ListTile(
-              title: Text(t.pages.settings.routing.perAppProxy.title),
-              leading: const Icon(Icons.apps_rounded),
-              trailing: Switch(
-                value: perAppProxy,
-                onChanged: (value) async {
-                  final newMode = perAppProxy ? PerAppProxyMode.off : PerAppProxyMode.exclude;
-                  await ref.read(Preferences.perAppProxyMode.notifier).update(newMode);
-                  if (!perAppProxy && context.mounted) context.goNamed('perAppProxy');
-                },
-              ),
-              onTap: () async {
-                if (!perAppProxy) {
-                  await ref.read(Preferences.perAppProxyMode.notifier).update(PerAppProxyMode.exclude);
-                }
-                if (context.mounted) context.goNamed('perAppProxy');
-              },
-            ),
+          // 「分应用代理」入口去掉（10-25 计划 3）：跟智能分流的「App 整个走本地」改的是同一份系统排除名单，两处改会打架。
           ChoicePreferenceWidget(
             selected: ref.watch(ConfigOptions.region),
             preferences: ref.watch(ConfigOptions.region.notifier),

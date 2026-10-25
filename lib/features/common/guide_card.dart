@@ -386,3 +386,6 @@ Future<void> showGuideSheet(
 
 /// 从连接失败那里找客服：打开客服页，第一条消息自动带上诊断码（跟 Windows 一样）。
 void openSupportWithDiag(BuildContext context) => context.pushNamed('supportChat', queryParameters: {'diag': '1'});
+
+/// 打开客服页，输入框里先填好 [text]（他能接着写、能改）。诊断码照「我的 → 联系客服」那样带。
+void openSupportWithText(BuildContext context, String text) => context.pushNamed('supportChat', queryParameters: {'text': text});

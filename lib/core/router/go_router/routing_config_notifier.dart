@@ -8,7 +8,6 @@ import 'package:hiddify/core/router/go_router/helper/custom_transition.dart';
 import 'package:hiddify/core/router/go_router/refresh_listenable.dart';
 import 'package:hiddify/features/about/widget/about_page.dart';
 import 'package:hiddify/features/home/widget/home_page.dart';
-import 'package:hiddify/features/home/widget/route_rules_page.dart';
 import 'package:hiddify/features/log/overview/logs_page.dart';
 import 'package:hiddify/features/panel_auth/widget/account_page.dart';
 import 'package:hiddify/features/panel_auth/widget/add_device_page.dart';
@@ -31,6 +30,7 @@ import 'package:hiddify/features/settings/overview/sections/route_options_page.d
 import 'package:hiddify/features/settings/overview/sections/tls_tricks_page.dart';
 import 'package:hiddify/features/settings/overview/sections/warp_options_page.dart';
 import 'package:hiddify/features/settings/overview/settings_page.dart';
+import 'package:hiddify/features/smart_split/widget/smart_split_page.dart';
 import 'package:hiddify/features/support/widget/support_chat_page.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -128,7 +128,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                       name: 'routeRules',
                       path: '/route-rules',
                       pageBuilder: (_, state) =>
-                          customTransition(TransitionType.slide, state.pageKey, const RouteRulesPage()),
+                          customTransition(TransitionType.slide, state.pageKey, const SmartSplitPage()),
                     ),
                     if (isMobileBreakpoint)
                       GoRoute(
@@ -293,7 +293,10 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
         GoRoute(
           name: 'supportChat',
           path: '/support-chat',
-          builder: (_, state) => SupportChatPage(attachDiag: state.uri.queryParameters['diag'] == '1'),
+          builder: (_, state) => SupportChatPage(
+            attachDiag: state.uri.queryParameters['diag'] == '1',
+            initialText: state.uri.queryParameters['text'] ?? '',
+          ),
         ),
         GoRoute(
           name: 'resetPassword',

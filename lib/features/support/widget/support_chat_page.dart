@@ -17,9 +17,12 @@ class SupportChatPage extends ConsumerStatefulWidget {
   /// 「线路通、某个 App 用不了」的客户连检查都显示没问题，没处传诊断，AFAA-1024）。
   /// [attachDiag]：从连接失败 / 连接检查点进来的，出事就在刚才，每次都传一份新的；
   /// 从「我的 → 联系客服」进来的，30 分钟内沿用上一份，已经带过的码不再重复带（10-25 运营：每条消息一个新码太乱）。
-  const SupportChatPage({super.key, this.attachDiag = false});
+  const SupportChatPage({super.key, this.attachDiag = false, this.initialText = ''});
 
   final bool attachDiag;
+
+  /// 进来先填进输入框的话（智能分流「有打不开的？告诉我们」填「智能分流：」），他能接着写、能改。
+  final String initialText;
 
   @override
   ConsumerState<SupportChatPage> createState() => _SupportChatPageState();
@@ -49,6 +52,7 @@ class _SupportChatPageState extends ConsumerState<SupportChatPage> {
   void initState() {
     super.initState();
     final notifier = _notifier = ref.read(supportChatNotifierProvider.notifier);
+    if (widget.initialText.isNotEmpty) _input.text = widget.initialText;
     _check = ref.read(connectCheckProvider.notifier);
     notifier.bindIdentity(
       email: ref.read(panelAuthProvider).email,

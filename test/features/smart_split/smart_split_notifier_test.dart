@@ -1,0 +1,183 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hiddify/features/smart_split/data/route_api.dart';
+import 'package:hiddify/features/smart_split/model/public_suffix.dart';
+import 'package:hiddify/features/smart_split/model/thing_list.dart';
+import 'package:hiddify/features/smart_split/notifier/smart_split_controller.dart';
+
+/// 智能分流页的逻辑（采集、选、存账号、重连、清空）。跑法：flutter test test/features/smart_split
+void main() {
+  final psl = PublicSuffix.parse(File('assets/split/public_suffix_list.dat').readAsStringSync());
+  final things = ThingList.parse(jsonEncode({
+    'version': 1,
+    'things': [
+      {'id': 'google', 'name': '谷歌', 'domains': ['google.com'], 'lock': 'proxy'},
+    ],
+  }))!;
+
+  late Directory base;
+  late Directory work;
+  late File log;
+  late List<String> calls;
+  late int reconnects;
+  late bool setOk;
+  late Completer<void>? holdReconnect;
+
+  setUp(() {
+    base = Directory.systemTemp.createTempSync('ss-base');
+    work = Directory.systemTemp.createTempSync('ss-work');
+    log = File('${work.path}/box.log')..writeAsStringSync('');
+    calls = [];
+    reconnects = 0;
+    setOk = true;
+    holdReconnect = null;
+  });
+  tearDown(() {
+    base.deleteSync(recursive: true);
+    work.deleteSync(recursive: true);
+  });
+
+  SmartSplitController make() => SmartSplitController(SmartSplitDeps(
+    baseDir: base,
+    boxLog: log,
+    currentConfigPath: '${work.path}/data/current-config.json',
+    psl: psl,
+    loadThings: () async => things,
+    saveThings: (_) async {},
+    api: () => RouteApi((m, p, {data}) async {
+      calls.add('$m $p');
+      if (p.endsWith('/set')) return setOk ? (200, '{"data":true}') : (500, '');
+      if (p.endsWith('/list')) return (200, '{"data":{"items":[]}}');
+      return (200, '{"data":true}');
+    }),
+    reconnect: () async {
+      reconnects++;
+      if (holdReconnect != null) await holdReconnect!.future;
+      return true;
+    },
+    loggedIn: () => true,
+    appName: (p) => p,
+    appVer: '1.1.73',
+    deviceId: 'dev',
+  ));
+
+  void browse(int id, String host) => log.writeAsStringSync(
+    'INFO [$id 1ms] router: found package name: com.android.chrome\n'
+    'INFO [$id 9ms] outbound/vless[x]: outbound connection to $host:443\n',
+    mode: FileMode.append,
+  );
+
+  Future<SmartSplitController> collecting() async {
+    final c = make();
+    await c.open(connected: true);
+    await c.startCollect();
+    browse(1, 'www.btsj6.com');
+    browse(2, 'imgb.anycip.com');
+    c.tick();
+    return c;
+  }
+
+  test('采到 btsj6 一行，能选；谷歌进不能改', () async {
+    final c = await collecting();
+    browse(3, 'www.google.com');
+    c.tick();
+    expect(c.state.pickable.single.key, 'site:btsj6.com');
+    expect(c.state.pickable.single.now, 'proxy');
+    expect(c.state.fixed.single.name, '谷歌');
+  });
+
+  test('testDisconnectClears：断开后列表清空、不在采集', () async {
+    final c = await collecting();
+    expect(c.state.pickable, isNotEmpty);
+    c.onConnection(connected: false);
+    expect(c.state.collecting, isFalse);
+    expect(c.state.pickable, isEmpty);
+  });
+
+  test('testLeaveClears：离开这页再进来是空的', () async {
+    final c = await collecting();
+    c.leave();
+    expect(c.state.collecting, isFalse);
+    expect(c.state.pickable, isEmpty);
+  });
+
+  test('testChooseNotes：选了先「会断开一下」，连回来变「改好了」，存账号、记下改之前走哪边', () async {
+    final c = await collecting();
+    holdReconnect = Completer<void>();
+    final f = c.choose('site:btsj6.com', 'direct');
+    await Future<void>.delayed(Duration.zero);
+    expect(c.state.rowNote['site:btsj6.com'], 'reconnecting');
+    // 重连中断开那一下不清空
+    c.onConnection(connected: false);
+    expect(c.state.collecting, isTrue);
+    holdReconnect!.complete();
+    await f;
+    c.onConnection(connected: true);
+    expect(c.state.rowNote['site:btsj6.com'], 'done');
+    expect(reconnects, 1);
+    expect(calls, contains('POST /api/v1/user/gsl_route/set'));
+    expect(c.state.mine.single.choice, 'direct');
+    expect(c.state.mine.single.was, 'proxy');
+    expect(c.state.pickable.single.now, 'direct');
+  });
+
+  test('选回原来那边 = 改回默认，账号里删掉', () async {
+    final c = await collecting();
+    await c.choose('site:btsj6.com', 'direct');
+    await c.choose('site:btsj6.com', 'proxy');
+    expect(c.state.mine, isEmpty);
+    expect(calls, contains('POST /api/v1/user/gsl_route/del'));
+  });
+
+  test('testSaveFailRetry：存账号失败「没存上」，本机照样生效', () async {
+    setOk = false;
+    final c = await collecting();
+    await c.choose('site:btsj6.com', 'direct');
+    expect(c.state.mineNote['site:btsj6.com'], 'retry');
+    expect(c.state.mine.single.choice, 'direct');
+    expect(reconnects, 1);
+    setOk = true;
+    await c.retrySync('site:btsj6.com');
+    expect(c.state.mineNote['site:btsj6.com'], isNull);
+  });
+
+  test('testFull：第 51 组不生效、不重连', () async {
+    final c = make();
+    await c.open(connected: true);
+    for (var i = 0; i < 50; i++) {
+      c.debugAddSite('s$i.com', 'direct');
+    }
+    await c.startCollect();
+    browse(1, 'www.btsj6.com');
+    c.tick();
+    await c.choose('site:btsj6.com', 'direct');
+    expect(c.state.rowNote['site:btsj6.com'], 'full');
+    expect(reconnects, 0);
+  });
+
+  test('testResetAll：全部改回默认，账号里一起删，重连一次', () async {
+    final c = await collecting();
+    await c.choose('site:btsj6.com', 'direct');
+    await c.resetAll();
+    expect(c.state.mine, isEmpty);
+    expect(calls, contains('POST /api/v1/user/gsl_route/reset'));
+    expect(reconnects, 2);
+  });
+
+  test('没连上不能开始采集', () async {
+    final c = make();
+    await c.open(connected: false);
+    await c.startCollect();
+    expect(c.state.collecting, isFalse);
+  });
+
+  test('关联网址取消勾选：存进去的不带它', () async {
+    final c = await collecting();
+    c.setDomainIncluded('site:btsj6.com', 'anycip.com', included: false);
+    await c.choose('site:btsj6.com', 'direct');
+    expect(c.state.mine.single.domains, ['btsj6.com']);
+  });
+}
