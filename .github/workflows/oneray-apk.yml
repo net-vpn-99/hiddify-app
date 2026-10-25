@@ -66,7 +66,7 @@ jobs:
       # 核心用自己编的（oneray-core.yml 发到本仓库 Release；上游 v4.1.0 + tool/core-patches），
       # 不再下上游 hiddify-next-core。换核心版本时改这里的 tag。
       - name: Prepare (pub get / codegen / download core .aar)
-        run: make android-apk-prepare CORE_URL=https://github.com/${{ github.repository }}/releases/download/core-v4.1.0-oneray1
+        run: make android-apk-prepare CORE_URL=https://github.com/${{ github.repository }}/releases/download/core-v4.1.0-oneray2
 
       # 连接检查结论表（docs/计划/连接检查.md，VPN 仓库）：情况表里每一种情况都要对，不对就不出包。
       - name: Test connect-check verdicts (连接检查结论表)

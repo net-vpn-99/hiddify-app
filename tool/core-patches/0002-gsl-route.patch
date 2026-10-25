@@ -1,0 +1,256 @@
+diff --git a/v2/config/builder.go b/v2/config/builder.go
+index 9f36653..0597caf 100644
+--- a/v2/config/builder.go
++++ b/v2/config/builder.go
+@@ -693,6 +693,11 @@ func setRoutingOptions(options *option.Options, hopt *HiddifyOptions) error {
+ 		)
+ 	}
+ 
++	// OneRay：智能分流（用户自己改的 + 服务器默认），插在国内名单前面
++	gslDNS, gslRules := gslRouteRulesFromFile(hopt)
++	dnsRules = append(dnsRules, gslDNS...)
++	routeRules = append(routeRules, gslRules...)
++
+ 	// for _, rule := range opt.Rules {
+ 	// 	routeRule := rule.MakeRule()
+ 	// 	switch rule.Outbound {
+diff --git a/v2/config/gsl_route.go b/v2/config/gsl_route.go
+new file mode 100644
+index 0000000..30be8e0
+--- /dev/null
++++ b/v2/config/gsl_route.go
+@@ -0,0 +1,129 @@
++package config
++
++// OneRay 智能分流（VPN 仓库 docs/计划/智能分流-实施计划-3-安卓.md 任务 1）：
++// App 每次连接前把用户自己改的网站和服务器下发的默认写进工作目录的 gsl-route.json，
++// 这里把四份网址后缀拼成路由规则，插在国内名单前面。文件没有、坏了、太大，一律跳过，照常连。
++
++import (
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io/fs"
++	"net/netip"
++	"os"
++	"regexp"
++	"strings"
++
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/option"
++)
++
++const (
++	gslRouteFile = "gsl-route.json" // 内核启动时已经 chdir 到工作目录
++	// 一份超过这么多整份不收，跟服务器 MAX_LOCKED_DOMAINS、Windows kMaxDefaultSiteDomains 一样
++	gslMaxDomains = 5000
++)
++
++var gslDomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
++
++type gslRoutes struct {
++	UserDirect   []string `json:"user_direct"`
++	UserProxy    []string `json:"user_proxy"`
++	ServerDirect []string `json:"server_direct"`
++	ServerProxy  []string `json:"server_proxy"`
++}
++
++func (r gslRoutes) empty() bool {
++	return len(r.UserDirect)+len(r.UserProxy)+len(r.ServerDirect)+len(r.ServerProxy) == 0
++}
++
++// 没有文件不算错；读不了、不是 JSON 返回空和错误（调用方打一行日志）。坏网址丢掉，一份超上限整份不收。
++func loadGslRoutes(path string) (gslRoutes, error) {
++	data, err := os.ReadFile(path)
++	if errors.Is(err, fs.ErrNotExist) {
++		return gslRoutes{}, nil
++	}
++	if err != nil {
++		return gslRoutes{}, err
++	}
++	var r gslRoutes
++	if err := json.Unmarshal(data, &r); err != nil {
++		return gslRoutes{}, err
++	}
++	r.UserDirect = gslClean(r.UserDirect)
++	r.UserProxy = gslClean(r.UserProxy)
++	r.ServerDirect = gslClean(r.ServerDirect)
++	r.ServerProxy = gslClean(r.ServerProxy)
++	return r, nil
++}
++
++func gslClean(in []string) []string {
++	if len(in) > gslMaxDomains {
++		return nil
++	}
++	out := make([]string, 0, len(in))
++	seen := map[string]bool{}
++	for _, d := range in {
++		d = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(d)), ".")
++		if !gslDomainRe.MatchString(d) || seen[d] {
++			continue
++		}
++		if _, err := netip.ParseAddr(d); err == nil {
++			continue
++		}
++		seen[d] = true
++		out = append(out, d)
++	}
++	return out
++}
++
++// 路由：用户·走本地 → 用户·走光速雷达 → 服务器·走本地 → 服务器·走光速雷达（跟 Windows 同一顺序）。
++// DNS：只给两份走本地的加国内 DNS（拿真 IP，不进假 DNS）；走光速雷达的不加，节点按域名自己解析。
++func gslRouteRules(r gslRoutes, hopt *HiddifyOptions) ([]option.DefaultDNSRule, []option.Rule) {
++	var dns []option.DefaultDNSRule
++	var rules []option.Rule
++	add := func(domains []string, outbound string) {
++		if len(domains) == 0 {
++			return
++		}
++		rules = append(rules, option.Rule{
++			Type: C.RuleTypeDefault,
++			DefaultOptions: option.DefaultRule{
++				RawDefaultRule: option.RawDefaultRule{DomainSuffix: domains},
++				RuleAction: option.RuleAction{
++					Action:       C.RuleActionTypeRoute,
++					RouteOptions: option.RouteActionOptions{Outbound: outbound},
++				},
++			},
++		})
++		if outbound != OutboundDirectTag {
++			return
++		}
++		dns = append(dns, option.DefaultDNSRule{
++			RawDefaultDNSRule: option.RawDefaultDNSRule{DomainSuffix: domains},
++			DNSRuleAction: option.DNSRuleAction{
++				Action: C.RuleActionTypeRoute,
++				RouteOptions: option.DNSRouteActionOptions{
++					Server:     DNSMultiDirectTag,
++					Strategy:   hopt.DirectDnsDomainStrategy,
++					RewriteTTL: &DEFAULT_DNS_TTL,
++				},
++			},
++		})
++	}
++	add(r.UserDirect, OutboundDirectTag)
++	add(r.UserProxy, OutboundMainDetour)
++	add(r.ServerDirect, OutboundDirectTag)
++	add(r.ServerProxy, OutboundMainDetour)
++	return dns, rules
++}
++
++// setRoutingOptions 里调：读不到就当没有。
++func gslRouteRulesFromFile(hopt *HiddifyOptions) ([]option.DefaultDNSRule, []option.Rule) {
++	r, err := loadGslRoutes(gslRouteFile)
++	if err != nil {
++		fmt.Printf("[gsl-route] skip %s: %v\n", gslRouteFile, err)
++		return nil, nil
++	}
++	return gslRouteRules(r, hopt)
++}
+diff --git a/v2/config/gsl_route_test.go b/v2/config/gsl_route_test.go
+new file mode 100644
+index 0000000..a2a6616
+--- /dev/null
++++ b/v2/config/gsl_route_test.go
+@@ -0,0 +1,99 @@
++package config
++
++import (
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	C "github.com/sagernet/sing-box/constant"
++)
++
++func writeGsl(t *testing.T, body string) string {
++	t.Helper()
++	p := filepath.Join(t.TempDir(), "gsl-route.json")
++	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	return p
++}
++
++func TestGslLoadMissing(t *testing.T) {
++	r, err := loadGslRoutes(filepath.Join(t.TempDir(), "nope.json"))
++	if err != nil || !r.empty() {
++		t.Fatalf("missing file: got %+v, %v", r, err)
++	}
++}
++
++func TestGslLoadBad(t *testing.T) {
++	r, err := loadGslRoutes(writeGsl(t, "{not json"))
++	if err == nil || !r.empty() {
++		t.Fatalf("bad json: got %+v, %v", r, err)
++	}
++}
++
++func TestGslDropBadDomains(t *testing.T) {
++	r, _ := loadGslRoutes(writeGsl(t, `{"user_direct":["BTSJ6.com","a b","","*.x.com","1.2.3.4/8",".anycip.com"]}`))
++	got := strings.Join(r.UserDirect, ",")
++	if got != "btsj6.com,anycip.com" {
++		t.Fatalf("user_direct = %q", got)
++	}
++}
++
++func TestGslCap(t *testing.T) {
++	var b strings.Builder
++	b.WriteString(`{"server_proxy":[`)
++	for i := 0; i <= gslMaxDomains; i++ {
++		if i > 0 {
++			b.WriteString(",")
++		}
++		b.WriteString(`"d` + strings.Repeat("x", i%5) + `.example` + string(rune('a'+i%26)) + `.com"`)
++	}
++	b.WriteString(`],"user_direct":["btsj6.com"]}`)
++	r, _ := loadGslRoutes(writeGsl(t, b.String()))
++	if len(r.ServerProxy) != 0 {
++		t.Fatalf("over cap should drop the whole list, got %d", len(r.ServerProxy))
++	}
++	if len(r.UserDirect) != 1 {
++		t.Fatalf("other lists untouched, got %v", r.UserDirect)
++	}
++}
++
++func TestGslRulesOrder(t *testing.T) {
++	r := gslRoutes{
++		UserDirect:   []string{"a.com"},
++		UserProxy:    []string{"b.com"},
++		ServerDirect: []string{"c.com"},
++		ServerProxy:  []string{"d.com"},
++	}
++	_, rules := gslRouteRules(r, &HiddifyOptions{})
++	want := []struct{ dom, out string }{{"a.com", OutboundDirectTag}, {"b.com", OutboundMainDetour}, {"c.com", OutboundDirectTag}, {"d.com", OutboundMainDetour}}
++	if len(rules) != len(want) {
++		t.Fatalf("got %d rules", len(rules))
++	}
++	for i, w := range want {
++		d := rules[i].DefaultOptions
++		if d.DomainSuffix[0] != w.dom || d.RouteOptions.Outbound != w.out || d.Action != C.RuleActionTypeRoute {
++			t.Fatalf("rule %d = %v -> %s", i, d.DomainSuffix, d.RouteOptions.Outbound)
++		}
++	}
++	_, none := gslRouteRules(gslRoutes{UserProxy: []string{"b.com"}}, &HiddifyOptions{})
++	if len(none) != 1 {
++		t.Fatalf("empty lists make no rules, got %d", len(none))
++	}
++}
++
++// 走本地的两份给国内 DNS（拿真 IP，不进假 DNS）；走光速雷达的不加 DNS 规则：
++// 开着假 DNS，节点那头按域名自己解析（补丁 0001 把目的地址换成了域名）。
++func TestGslDnsRules(t *testing.T) {
++	r := gslRoutes{UserDirect: []string{"a.com"}, UserProxy: []string{"b.com"}, ServerDirect: []string{"c.com"}, ServerProxy: []string{"d.com"}}
++	dns, _ := gslRouteRules(r, &HiddifyOptions{})
++	if len(dns) != 2 {
++		t.Fatalf("got %d dns rules", len(dns))
++	}
++	for i, dom := range []string{"a.com", "c.com"} {
++		if dns[i].DomainSuffix[0] != dom || dns[i].RouteOptions.Server != DNSMultiDirectTag {
++			t.Fatalf("dns %d = %v -> %s", i, dns[i].DomainSuffix, dns[i].RouteOptions.Server)
++		}
++	}
++}

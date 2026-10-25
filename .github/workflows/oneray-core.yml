@@ -16,7 +16,7 @@ on:
 
 env:
   UPSTREAM_TAG: v4.1.0
-  CORE_TAG: core-v4.1.0-oneray1
+  CORE_TAG: core-v4.1.0-oneray2
 
 permissions:
   contents: write
@@ -51,6 +51,12 @@ jobs:
         with:
           go-version-file: core/go.mod
           check-latest: false
+
+      - name: Test OneRay patches
+        working-directory: core
+        run: |
+          # 0002 智能分流读 gsl-route.json 的测试；过不了不编
+          go test -count=1 -ldflags=-checklinkname=0             -tags with_gvisor,with_quic,with_wireguard,with_utls,with_clash_api,with_grpc,with_awg,tfogo_checklinkname0,with_conntrack             ./v2/config/ -run Gsl -v
 
       - uses: actions/setup-java@v5
         with:
