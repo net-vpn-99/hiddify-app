@@ -7,6 +7,7 @@ import com.hiddify.hiddify.bg.VPNService
 import com.hiddify.hiddify.constant.PerAppProxyMode
 import com.hiddify.hiddify.constant.ServiceMode
 import com.hiddify.hiddify.constant.SettingsKey
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -45,6 +46,21 @@ object Settings {
                 emptyList()
             }
         }
+
+    // 智能分流：用户选「整个走本地」的 App（含服务器默认的），读不懂当空
+    val gslDirectApps: List<String>
+        get() = jsonList(SettingsKey.GSL_DIRECT_APPS)
+
+    // 智能分流：用户把普通下载器改成「智能分流」的，不再整个排除
+    val gslSplitDownloaders: List<String>
+        get() = jsonList(SettingsKey.GSL_SPLIT_DOWNLOADERS)
+
+    private fun jsonList(key: String): List<String> = try {
+        val arr = JSONArray(preferences.getString(key, "[]") ?: "[]")
+        (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }
+    } catch (e: Exception) {
+        emptyList()
+    }
 
     private fun decodeListString(listString: String): List<String> {
         val stream = ObjectInputStream(ByteArrayInputStream(Base64.decode(listString, 0)))

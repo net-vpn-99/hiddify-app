@@ -66,28 +66,45 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
         }
     }
 
-    // Dedicated downloaders and BitTorrent apps. Traffic from these never
-    // enters the tunnel, so it uses the phone's own network. Browsers are not
-    // listed. Missing packages throw NameNotFoundException and are ignored.
-    // PikPak (com.pikcloud.pikpak) stays in the tunnel: its share pages reject
-    // mainland IPs, and excluding the app made a connected VPN still look like China.
-    private val downloaderPackages = listOf(
+    // Downloaders never enter the tunnel, so they use the phone's own network.
+    // Two lists (VPN repo docs/计划/智能分流-自己改网站.md 三.2); when adding a
+    // downloader, decide which one it belongs to first:
+    //  - btPackages: BitTorrent / Xunlei. Always excluded; the smart-split page
+    //    shows them as locked ("下载软件，只能走本地"). Proxying them risks
+    //    copyright complaints and burns traffic.
+    //  - plainDownloaderPackages: plain downloaders. Excluded by default; the user
+    //    can switch one to "智能分流" (Settings.gslSplitDownloaders), then it is
+    //    routed per site like any other app.
+    // Browsers are not listed. Missing packages throw NameNotFoundException and
+    // are ignored. PikPak (com.pikcloud.pikpak) stays in the tunnel: its share
+    // pages reject mainland IPs.
+    private val btPackages = listOf(
         "com.xunlei.downloadprovider",
-        "com.dv.adm",
-        "com.dv.adm.pay",
-        "idm.internet.download.manager",
-        "idm.internet.download.manager.plus",
         "com.bittorrent.client",
         "com.utorrent.client",
         "org.proninyaroslav.libretorrent",
         "com.frostwire.android",
         "com.biglybt.android.client",
+    )
+    private val plainDownloaderPackages = listOf(
+        "com.dv.adm",
+        "com.dv.adm.pay",
+        "idm.internet.download.manager",
+        "idm.internet.download.manager.plus",
         "com.gopeed.gopeed",
     )
 
+    // Everything kept out of the tunnel for smart split: BT apps, plain
+    // downloaders the user did not switch, and apps the user (or the server
+    // default) set to "整个走本地". Never our own package.
+    private fun excludedForSplit(): List<String> =
+        (btPackages + (plainDownloaderPackages - Settings.gslSplitDownloaders.toSet()) + Settings.gslDirectApps)
+            .distinct()
+            .filter { it != packageName }
+
     private fun excludeDownloaders(builder: Builder) {
-        downloaderPackages.forEach { pkg ->
-            Log.d("VpnService", "Excluding downloader $pkg")
+        excludedForSplit().forEach { pkg ->
+            Log.d("VpnService", "Excluding for split $pkg")
             addExcludePackage(builder, pkg)
         }
     }
@@ -191,7 +208,8 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
                 if (Settings.perAppProxyMode == PerAppProxyMode.INCLUDE) {
                     // Cannot mix allow and disallow. Drop downloaders from the
                     // allow-list instead of calling addDisallowedApplication.
-                    appList.filter { it !in downloaderPackages }.forEach {
+                    val excluded = excludedForSplit().toSet()
+                    appList.filter { it !in excluded }.forEach {
                         addIncludePackage(builder,it)
                     }
 //                    addIncludePackage(builder,packageName)
@@ -205,9 +223,10 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
             } else {
                 val includePackage = options.includePackage
                 if (includePackage.hasNext()) {
+                    val excluded = excludedForSplit().toSet()
                     while (includePackage.hasNext()) {
                         val pkg = includePackage.next()
-                        if (pkg !in downloaderPackages) {
+                        if (pkg !in excluded) {
                             addIncludePackage(builder, pkg)
                         }
                     }

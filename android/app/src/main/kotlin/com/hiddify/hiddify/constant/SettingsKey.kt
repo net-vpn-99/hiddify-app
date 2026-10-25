@@ -10,6 +10,9 @@ object SettingsKey {
     const val PER_APP_PROXY_MODE = "${KEY_PREFIX}per_app_proxy_mode"
     const val PER_APP_PROXY_INCLUDE_LIST = "${KEY_PREFIX}per_app_proxy_include_list"
     const val PER_APP_PROXY_EXCLUDE_LIST = "${KEY_PREFIX}per_app_proxy_exclude_list"
+    // 智能分流（Dart 每次连接前写，JSON 字符串数组）：App 整个走本地、普通下载器改成按网站分
+    const val GSL_DIRECT_APPS = "${KEY_PREFIX}gsl_direct_apps"
+    const val GSL_SPLIT_DOWNLOADERS = "${KEY_PREFIX}gsl_split_downloaders"
 
     const val DEBUG_MODE = "${KEY_PREFIX}debug_mode"
     const val DISABLE_MEMORY_LIMIT = "${KEY_PREFIX}disable_memory_limit"
