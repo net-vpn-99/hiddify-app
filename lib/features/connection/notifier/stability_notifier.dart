@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:hiddify/core/http_client/http_client_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/app/notifier/app_foreground.dart';
@@ -194,12 +195,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _ifaceTimer = Timer.periodic(const Duration(seconds: 5), (_) => _watchIfaces(gen));
   }
 
-  void _closeWarmClients() {
-    for (final c in _warmClients) {
-      c.close(force: true);
-    }
-    _warmClients.clear();
-  }
+  void _closeWarmClients() => closeAllWarm<HttpClient>(_warmClients, (c) => c.close(force: true));
 
   /// 读一次经节点回来的字节。还没确认通、比起点多：线路是通的，亮绿。
   /// 同一次连接里同一时间只读一份；换了连接（gen 变了）不能拿上一次连接那份当这次的读数。
@@ -640,4 +636,16 @@ String _countryCode(String line) {
     if (word.startsWith(entry.key)) return entry.value;
   }
   return '';
+}
+
+/// 关掉全部检测连接、清空集合。先拷一份再清空再关：关一个连接可能同步跑完它那次请求的 finally、
+/// 从集合里删掉自己，直接遍历集合会抛 Concurrent modification，`_confirm` 走不完，首页停在「第 5/5 步」
+/// （10-25 诊断 75AA-1025）。
+@visibleForTesting
+void closeAllWarm<T>(Set<T> clients, void Function(T) close) {
+  final all = clients.toList();
+  clients.clear();
+  for (final c in all) {
+    close(c);
+  }
 }
