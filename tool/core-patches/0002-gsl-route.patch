@@ -144,7 +144,7 @@ index 0000000..30be8e0
 +func gslRouteRulesFromFile(hopt *HiddifyOptions) ([]option.DefaultDNSRule, []option.Rule) {
 +	r, err := loadGslRoutes(gslRouteFile)
 +	if err != nil {
-+		fmt.Printf("[gsl-route] skip %s: %v\n", gslRouteFile, err)
++		fmt.Fprintf(os.Stderr, "[gsl-route] skip %s: %v\n", gslRouteFile, err) // 安卓 stdout 没人收，stderr 进工作目录 stderr.log
 +		return nil, nil
 +	}
 +	return gslRouteRules(r, hopt)

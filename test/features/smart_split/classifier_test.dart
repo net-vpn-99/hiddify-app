@@ -29,6 +29,14 @@ void main() {
 
   Conn c(String pkg, String host, [String out = 'proxy']) => Conn(id: host, pkg: pkg, host: host, outbound: out);
 
+  test('Via / Firefox Focus 打开的网页按网站列，不是整个浏览器一行（审查补的浏览器名单）', () {
+    for (final pkg in ['mark.via', 'org.mozilla.focus', 'com.duckduckgo.mobile.android', 'com.kiwibrowser.browser']) {
+      final t = run([c(pkg, 'www.btsj6.com')]).single;
+      expect(t.kind, 'site', reason: pkg);
+      expect(t.key, 'site:btsj6.com', reason: pkg);
+    }
+  });
+
   test('Chrome 打开 btsj6：主网址一组，图片网址归进去，现在走光速雷达', () {
     final r = run([c('com.android.chrome', 'www.btsj6.com'), c('com.android.chrome', 'imgb.anycip.com')]);
     final t = r.single;

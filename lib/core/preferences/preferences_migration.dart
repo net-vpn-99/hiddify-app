@@ -14,6 +14,7 @@ class PreferencesMigration with InfraLogger {
     final List<PreferencesMigrationStep> migrationSteps = [
       PreferencesVersion1Migration(sharedPreferences),
       OneRayRegionCnMigration(sharedPreferences),
+      OneRayPerAppProxyOffMigration(sharedPreferences),
     ];
 
     if (currentVersion == migrationSteps.length) {
@@ -127,6 +128,21 @@ class OneRayRegionCnMigration extends PreferencesMigrationStep with InfraLogger 
     if (current != "cn") {
       loggy.debug("changing region from [$current] to [cn]");
       await sharedPreferences.setString("region", "cn");
+    }
+  }
+}
+
+/// OneRay（1.1.73 起）：「分应用代理」入口去掉了（智能分流的「App 整个走本地」改同一份系统名单，两处改会打架），
+/// 老用户开着的关掉，不然再也关不了；「只让选中的 App 走代理」时选中的全改成走本地，名单空了反而整台手机都走代理。
+class OneRayPerAppProxyOffMigration extends PreferencesMigrationStep with InfraLogger {
+  OneRayPerAppProxyOffMigration(super.sharedPreferences);
+
+  @override
+  Future<void> migrate() async {
+    final current = sharedPreferences.getString("per_app_proxy_mode");
+    if (current != null && current != "off") {
+      loggy.debug("changing per_app_proxy_mode from [$current] to [off]");
+      await sharedPreferences.setString("per_app_proxy_mode", "off");
     }
   }
 }

@@ -85,6 +85,9 @@ class SplitChoices {
   final List<SplitChoice> _items = [];
   final List<String> _pendingDeletes = [];
 
+  /// 网站那部分是哪个账号的（账号编号）；空 = 还不知道（老文件、没登录过）。
+  String owner = '';
+
   List<SplitChoice> get items => List.unmodifiable(_items);
 
   /// 删掉的网站 key：账号里删成了再去掉；下次拉列表不会把它拉回来。
@@ -114,6 +117,7 @@ class SplitChoices {
         out._items.add(c);
       }
       out._pendingDeletes.addAll([for (final k in root['deleted'] as List? ?? const []) if (k is String) k]);
+      out.owner = root['owner'] is String ? root['owner'] as String : '';
       return out;
     } catch (_) {
       return null;
@@ -123,6 +127,7 @@ class SplitChoices {
   String toJson() => jsonEncode({
     'items': [for (final c in _items) c.toJson()],
     if (_pendingDeletes.isNotEmpty) 'deleted': _pendingDeletes,
+    if (owner.isNotEmpty) 'owner': owner,
   });
 
   /// choice：default / direct / proxy / split。default（下载器的 direct 也是）= 删掉。
@@ -197,6 +202,18 @@ class SplitChoices {
   String wasFor(String key) => _items.where((c) => c.key == key).firstOrNull?.was ?? '';
 }
 
+/// 跟账号对之前调：换了账号，上个号的网站（含没存上的、没删成的）不带到新号里，App 是这台手机的照留。
+/// [account] 空 = 还不知道是哪个号，不动。
+void adoptOwner(SplitChoices c, String account) {
+  if (account.isEmpty) return;
+  if (c.owner.isNotEmpty && c.owner != account) {
+    c
+      ..setItems([for (final x in c.items) if (x.kind != 'site') x])
+      ..setPendingDeletes(const []);
+  }
+  c.owner = account;
+}
+
 class MergeResult {
   MergeResult(this.items, this.resend, this.redelete);
 
@@ -242,18 +259,17 @@ MergeResult mergeAccountSites(SplitChoices local, List<SplitChoice> server) {
   return MergeResult(items, resend, [for (final k in local.pendingDeletes) if (onServer.contains(k)) k]);
 }
 
-/// 新名单里锁住的：返回本机要删掉的 key（网站按网址命中锁住的东西或网址级「必须」；App 按包名命中锁）。
-List<String> dropLocked(SplitChoices local, ThingList things) {
-  final out = <String>[];
-  for (final c in local.items) {
-    final locked = c.kind == 'site'
-        ? things.mustLock(c.host).isNotEmpty || c.domains.any((d) => things.match(d)?.lock.isNotEmpty ?? false)
-        // BT / 迅雷类本来就锁死走本地（审查 5）
-        : btPackages.contains(c.pkg) || (things.matchApp(c.pkg)?.lock.isNotEmpty ?? false);
-    if (locked) out.add(c.key);
-  }
-  return out;
-}
+/// 这一项被新名单锁住了没有：网站看主网址是不是网址级「必须」、有没有网址命中锁住的东西；App 按包名命中锁。
+/// 「我改过的」里删不删、写规则时用不用都按这一个（以前两处口径不一，留在「我改过的」里却不生效）。
+/// 跟 Windows DropLocked 一样。
+bool choiceLocked(SplitChoice c, ThingList things) => c.kind == 'site'
+    ? things.mustLock(c.host).isNotEmpty || c.domains.any((d) => things.match(d)?.lock.isNotEmpty ?? false)
+    // BT / 迅雷类本来就锁死走本地（审查 5）
+    : btPackages.contains(c.pkg) || (things.matchApp(c.pkg)?.lock.isNotEmpty ?? false);
+
+/// 新名单里锁住的：返回本机要删掉的 key。
+List<String> dropLocked(SplitChoices local, ThingList things) =>
+    [for (final c in local.items) if (choiceLocked(c, things)) c.key];
 
 /// 服务器 list 的 data.items → 网站（synced=true）。坏 JSON 返回 null，跟空列表分开；坏网址、选项不认识的项跳过。
 List<SplitChoice>? parseAccountList(String body) {
@@ -317,7 +333,8 @@ class RouteDefaults {
   String toJson() => jsonEncode({'data': {'direct': direct, 'proxy': proxy, 'apps_direct': appsDirect}});
 }
 
-final _appNameRe = RegExp(r'^[a-z0-9._ -]{1,64}$');
+// 安卓包名分大小写（com.UCMobile），原样留着；电脑软件名服务器本来就是小写
+final _appNameRe = RegExp(r'^[A-Za-z0-9._ -]{1,64}$');
 
 /// 读不懂返回 null。
 RouteDefaults? parseRouteDefaults(String body) {
@@ -327,8 +344,7 @@ RouteDefaults? parseRouteDefaults(String body) {
     final apps = <String>[];
     for (final a in data['apps_direct'] is List ? data['apps_direct'] as List : const []) {
       if (a is! String) continue;
-      final l = a.toLowerCase();
-      if (_appNameRe.hasMatch(l) && !apps.contains(l)) apps.add(l);
+      if (_appNameRe.hasMatch(a) && !apps.contains(a)) apps.add(a);
     }
     return RouteDefaults(direct: validDomains(data['direct'] as List), proxy: validDomains(data['proxy'] as List), appsDirect: apps);
   } catch (_) {

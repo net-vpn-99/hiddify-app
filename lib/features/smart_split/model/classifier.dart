@@ -45,12 +45,20 @@ const browserPackages = {
   'com.hihonor.baidu.browser', 'com.mi.globalbrowser', 'com.android.browser', 'com.vivo.browser',
   'com.heytap.browser', 'com.coloros.browser', 'com.opera.browser', 'com.brave.browser',
   'com.tencent.mtt', 'sogou.mobile.explorer', 'com.qihoo.browser',
+  // 审查补的：不在名单里的浏览器会整个当成一个 App，选「整个走本地」就把整个浏览器排除了
+  'mark.via', 'mark.via.gp', 'org.mozilla.focus', 'org.mozilla.klar', 'org.mozilla.firefox_beta',
+  'com.duckduckgo.mobile.android', 'com.opera.mini.native', 'com.opera.gx', 'com.kiwibrowser.browser',
+  'com.chrome.dev', 'com.chrome.canary', 'com.microsoft.emmx.beta', 'com.yandex.browser', 'com.vivaldi.browser',
 };
 
 /// 浏览器自己后台连的（Edge 的微软、必应）：用户没打开它们，不列出。谷歌是锁着的，列在「不能改」里不碍事。
 const _browserOwnThings = {
   'com.microsoft.emmx': {'microsoft', 'bing'},
   'org.mozilla.firefox': {'mozilla'},
+  'org.mozilla.firefox_beta': {'mozilla'},
+  'org.mozilla.focus': {'mozilla'},
+  'org.mozilla.klar': {'mozilla'},
+  'com.microsoft.emmx.beta': {'microsoft', 'bing'},
   'com.sec.android.app.sbrowser': {'samsung'},
   'com.huawei.browser': {'huawei'},
   'com.mi.globalbrowser': {'xiaomi'},

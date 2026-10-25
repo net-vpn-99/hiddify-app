@@ -25,7 +25,9 @@ class SmartSplitDeps {
     required this.appName,
     required this.appVer,
     required this.deviceId,
+    this.accountId,
     this.ownDomains = const [],
+    this.panelWait = const Duration(seconds: 3),
   });
 
   final Directory baseDir;
@@ -43,8 +45,14 @@ class SmartSplitDeps {
   final String appVer;
   final String deviceId;
 
+  /// 账号编号（换账号时丢掉上个号的网站）；还不知道回空。
+  final String Function()? accountId;
+
   /// 我们的面板 / 下载域名，采集里不列出。
   final List<String> ownDomains;
+
+  /// 「开始采集」时拉名单最多等这么久，拉不到用手上的。
+  final Duration panelWait;
 }
 
 /// 采集结果里的一行 + 页面上该亮哪个。
@@ -122,15 +130,20 @@ class SmartSplitController {
   var _again = false;
   final _waitingRows = <String>{};
   var _connected = false;
+  var _starting = false;
+  var _left = false; // 离开这页以后：还在路上的异步步骤不再开始采集、不再补发
 
   /// 打开这页：读本机的、拉新名单、跟账号对一下（补发没存上的、再删没删成的）。
   Future<void> open({required bool connected}) async {
     _connected = connected;
     _choices = loadChoices(deps.baseDir);
+    adoptOwner(_choices, deps.accountId?.call() ?? '');
     _defaults = loadDefaults(deps.baseDir);
     _things = await deps.loadThings();
+    if (_left) return;
     _emit();
     await _refreshThings();
+    if (_left) return;
     await _syncAccount();
     _emit();
   }
@@ -152,7 +165,7 @@ class SmartSplitController {
   Future<void> _syncAccount() async {
     final api = deps.api();
     final server = await api.list();
-    if (server == null) return;
+    if (server == null || _left) return;
     final merged = mergeAccountSites(_choices, server);
     _choices
       ..setItems(merged.items)
@@ -170,9 +183,16 @@ class SmartSplitController {
   }
 
   Future<void> startCollect() async {
-    if (!_connected || _state.collecting) return;
-    await _refreshThings();
-    await closeBrowserConns(deps.currentConfigPath, browserPackages);
+    if (!_connected || _state.collecting || _starting) return;
+    _starting = true; // 连点两下只开一次
+    try {
+      // 面板慢时最多等 panelWait，拉不到用手上的名单（以前跟着 dio 15～20 秒超时卡在这里）
+      await _refreshThings().timeout(deps.panelWait, onTimeout: () {});
+      await closeBrowserConns(deps.currentConfigPath, browserPackages);
+    } finally {
+      _starting = false;
+    }
+    if (_left || !_connected) return;
     _collector.start();
     _last = [];
     _defaultNow.clear();
@@ -185,7 +205,10 @@ class SmartSplitController {
   void stopCollect() => _clear();
 
   /// 返回键离开这页。
-  void leave() => _clear();
+  void leave() {
+    _left = true;
+    _clear();
+  }
 
   void _clear() {
     _collector.stop();

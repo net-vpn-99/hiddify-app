@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/features/smart_split/data/route_api.dart';
+import 'package:hiddify/features/smart_split/model/classifier.dart';
 import 'package:hiddify/features/smart_split/model/public_suffix.dart';
 import 'package:hiddify/features/smart_split/model/split_choices.dart';
 import 'package:hiddify/features/smart_split/model/thing_list.dart';
@@ -27,6 +28,8 @@ void main() {
   late bool setOk;
   late Completer<void>? holdReconnect;
   late bool reconnectOk;
+  late Completer<void>? holdThings;
+  late String account;
 
   setUp(() {
     base = Directory.systemTemp.createTempSync('ss-base');
@@ -37,6 +40,8 @@ void main() {
     setOk = true;
     holdReconnect = null;
     reconnectOk = true;
+    holdThings = null;
+    account = '';
   });
   tearDown(() {
     base.deleteSync(recursive: true);
@@ -52,6 +57,8 @@ void main() {
     saveThings: (_) async {},
     api: () => RouteApi((m, p, {data}) async {
       calls.add('$m $p');
+      final hold = holdThings;
+      if (p.contains('/things') && hold != null) await hold.future;
       if (p.endsWith('/set')) return setOk ? (200, '{"data":true}') : (500, '');
       if (p.endsWith('/list')) return (200, '{"data":{"items":[]}}');
       return (200, '{"data":true}');
@@ -66,6 +73,8 @@ void main() {
     appName: (p) => p,
     appVer: '1.1.73',
     deviceId: 'dev',
+    accountId: () => account,
+    panelWait: const Duration(milliseconds: 200),
   ));
 
   void browse(int id, String host) => log.writeAsStringSync(
@@ -255,6 +264,55 @@ void main() {
     expect(c.state.mine, isEmpty);
     expect(calls, contains('POST /api/v1/user/gsl_route/reset'));
     expect(reconnects, 2);
+  });
+
+  test('开始采集：面板慢最多等一会儿，连点两下只开一次', () async {
+    final c = make();
+    await c.open(connected: true);
+    calls.clear();
+    holdThings = Completer<void>();
+    final sw = Stopwatch()..start();
+    final a = c.startCollect();
+    final b = c.startCollect();
+    await Future.wait([a, b]);
+    expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+    expect(c.state.collecting, isTrue);
+    expect(calls.where((x) => x.contains('/things')).length, 1);
+    holdThings!.complete();
+  });
+
+  test('开始采集还在等名单时离开这页：不再开始采集', () async {
+    final c = make();
+    await c.open(connected: true);
+    holdThings = Completer<void>();
+    final f = c.startCollect();
+    c.leave();
+    await f;
+    expect(c.state.collecting, isFalse);
+    holdThings!.complete();
+  });
+
+  test('换账号：上个号的网站（含没存上的）不补发给新号，App 选择留着', () async {
+    account = 'aaaa1111';
+    final c = await collecting();
+    setOk = false;
+    await c.choose('site:btsj6.com', 'direct');
+    c.leave();
+    final saved = SplitChoices.fromJson(File('${base.path}/split-choices.json').readAsStringSync())!;
+    expect(saved.owner, 'aaaa1111');
+    saved.set(SplitThing(key: 'app:com.example.game')
+      ..kind = 'app'
+      ..name = 'game'
+      ..pkg = 'com.example.game', 'direct');
+    File('${base.path}/split-choices.json').writeAsStringSync(saved.toJson());
+    account = 'bbbb2222';
+    setOk = true;
+    calls.clear();
+    final c2 = make();
+    await c2.open(connected: true);
+    expect(calls, isNot(contains('POST /api/v1/user/gsl_route/set')));
+    expect(calls, isNot(contains('POST /api/v1/user/gsl_route/del')));
+    expect(c2.state.mine.map((m) => m.key), ['app:com.example.game']);
   });
 
   test('没连上不能开始采集', () async {

@@ -13,6 +13,7 @@ import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/smart_split/data/route_api.dart';
+import 'package:hiddify/features/smart_split/data/route_writer.dart';
 import 'package:hiddify/features/smart_split/data/things_store.dart';
 import 'package:hiddify/features/smart_split/model/public_suffix.dart';
 import 'package:hiddify/features/smart_split/notifier/smart_split_controller.dart';
@@ -39,6 +40,7 @@ class SmartSplitNotifier extends AutoDisposeNotifier<SmartSplitState> implements
   Timer? _timer;
   final _names = <String, String>{};
   final _asking = <String>{};
+  var _disposed = false;
 
   /// App 图标（包名 → PNG），取不到为 null。页面用来画 App 那一行。
   @override
@@ -47,6 +49,7 @@ class SmartSplitNotifier extends AutoDisposeNotifier<SmartSplitState> implements
   @override
   SmartSplitState build() {
     ref.onDispose(() {
+      _disposed = true;
       _timer?.cancel();
       _c?.leave();
     });
@@ -55,13 +58,16 @@ class SmartSplitNotifier extends AutoDisposeNotifier<SmartSplitState> implements
     return const SmartSplitState();
   }
 
-  bool get _connected => ref.read(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
+  bool get _connected => !_disposed && (ref.read(connectionNotifierProvider).valueOrNull?.isConnected ?? false);
 
+  /// 每个 await 之后都看一下：页面在初始化完之前就离开了，不再 ref.read（会抛）、不再去跟账号对。
   Future<void> _init() async {
     final dirs = await ref.read(appDirectoriesProvider.future);
+    if (_disposed) return;
     final psl = PublicSuffix.parse(await rootBundle.loadString('assets/split/public_suffix_list.dat'));
-    final token = await ref.read(panelAuthProvider.notifier).currentToken();
     final deviceId = await DeviceId.read() ?? '';
+    if (_disposed) return;
+    final auth = ref.read(panelAuthProvider.notifier);
     final c = SmartSplitController(SmartSplitDeps(
       baseDir: dirs.baseDir,
       boxLog: File(LogPathResolver.corePath(dirs.workingDir)),
@@ -69,15 +75,17 @@ class SmartSplitNotifier extends AutoDisposeNotifier<SmartSplitState> implements
       psl: psl,
       loadThings: () => loadThings(dirs.baseDir),
       saveThings: (json) => saveThings(dirs.baseDir, json),
-      api: () => RouteApi.panel(token: token),
+      api: () => RouteApi.panel(tokenOf: auth.currentToken),
       reconnect: _reconnect,
-      loggedIn: () => ref.read(panelAuthProvider).loggedIn,
+      loggedIn: () => !_disposed && ref.read(panelAuthProvider).loggedIn,
+      accountId: () => _disposed ? '' : splitAccountId(ref.read(panelAuthProvider).account?.uuid),
       appName: _appName,
       appVer: ref.read(appInfoProvider).valueOrNull?.version ?? '',
       deviceId: deviceId,
       ownDomains: _ownDomains(psl),
     ));
     c.onChange = (s) {
+      if (_disposed) return;
       state = s;
       _syncTimer(s.collecting);
     };

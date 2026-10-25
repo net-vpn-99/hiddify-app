@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -41,6 +42,24 @@ void main() {
     expect(r['server_proxy'], ['openai.com']);
   });
 
+  test('testRoutesSameAsDropLocked：留在「我改过的」里的都生效；组里个别「必须」网址只去掉那一个', () {
+    final page = SplitThing(key: 'site:news.com')
+      ..kind = 'site'
+      ..name = 'news.com'
+      ..host = 'news.com'
+      ..domains = ['news.com', 'cdn.blocked.com', 'img-news.com'];
+    final c = SplitChoices()..set(page, 'direct');
+    expect(dropLocked(c, things), isEmpty);
+    expect(buildGslRoutes(c, const RouteDefaults(), things)['user_direct'], ['img-news.com', 'news.com']);
+  });
+
+  test('testAppListsKeepCase：服务器默认的包名大小写原样比（com.UCMobile）', () {
+    final d = parseRouteDefaults(jsonEncode({'data': {'direct': [], 'proxy': [], 'apps_direct': ['com.UCMobile']}}))!;
+    expect(buildAppLists(SplitChoices(), d).directApps, ['com.UCMobile']);
+    final c = SplitChoices()..set(app('com.UCMobile'), 'split');
+    expect(buildAppLists(c, d).directApps, isEmpty);
+  });
+
   test('testAppListsSubtract：服务器默认走本地的 App 用户改回智能分流就不排除', () {
     final c = SplitChoices()
       ..set(app('com.example.mine'), 'direct')
@@ -71,13 +90,14 @@ void main() {
     });
 
     String? savedThings;
-    Future<void> run(RouteApi api, {Duration timeout = const Duration(seconds: 3)}) => prepareSplitRoutes(
+    Future<void> run(RouteApi api, {Duration? timeout = const Duration(seconds: 3), String account = ''}) => prepareSplitRoutes(
       baseDir: base,
       workingDir: work,
       api: api,
       things: things,
       saveThings: (json) async => savedThings = json,
       savePref: (k, v) async => prefs[k] = v,
+      account: account,
       timeout: timeout,
     );
 
@@ -139,6 +159,47 @@ void main() {
       await run(api, timeout: const Duration(milliseconds: 300));
       expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
       expect(routes()['server_direct'], ['cached.cn']);
+    });
+
+    test('有缓存只等 1 秒；没等到的请求取消（不把好好的入口记成连不上）', () async {
+      File('${base.path}/split-defaults.json').writeAsStringSync(const RouteDefaults(direct: ['cached.cn']).toJson());
+      var cancelled = false;
+      final api = RouteApi((m, p, {data}) async {
+        await Future<void>.delayed(const Duration(seconds: 5));
+        return (200, '{}');
+      }, () => cancelled = true);
+      final sw = Stopwatch()..start();
+      await run(api, timeout: null);
+      expect(sw.elapsed, lessThan(const Duration(milliseconds: 1800)));
+      expect(cancelled, isTrue);
+      expect(routes()['server_direct'], ['cached.cn']);
+    });
+
+    test('等网络时页面上又选了：拿到结果再读本机的，不盖掉', () async {
+      final hold = Completer<void>();
+      final api = RouteApi((m, p, {data}) async {
+        await hold.future;
+        return (200, jsonEncode({'data': {'items': []}}));
+      });
+      final f = run(api);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      File('${base.path}/split-choices.json').writeAsStringSync((SplitChoices()..set(site('late.com'), 'direct')).toJson());
+      hold.complete();
+      await f;
+      expect(routes()['user_direct'], ['late.com']);
+    });
+
+    test('换了账号：上个号的网站不进规则、不留着补发，App 照留', () async {
+      final c = SplitChoices()
+        ..owner = 'aaaa1111'
+        ..set(site('old.com'), 'direct')
+        ..set(app('com.example.mine'), 'direct');
+      File('${base.path}/split-choices.json').writeAsStringSync(c.toJson());
+      await run(RouteApi((m, p, {data}) async => (500, '')), account: 'bbbb2222');
+      final back = SplitChoices.fromJson(File('${base.path}/split-choices.json').readAsStringSync())!;
+      expect(back.owner, 'bbbb2222');
+      expect(back.items.map((x) => x.key), ['app:com.example.mine']);
+      expect(routes()['user_direct'], isEmpty);
     });
 
     test('testPrepareNoCacheNoNetwork：什么都没有写一份四个空列表', () async {

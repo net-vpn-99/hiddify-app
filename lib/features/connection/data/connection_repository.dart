@@ -169,6 +169,7 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
         things: await loadThings(directories.baseDir),
         saveThings: (json) => saveThings(directories.baseDir, json),
         savePref: (key, json) => prefs.setString(key, json),
+        account: splitAccountId(ref.read(panelAuthProvider).account?.uuid),
       );
     } catch (e) {
       loggy.warning('智能分流规则没写成：$e');

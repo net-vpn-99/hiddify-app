@@ -10,26 +10,33 @@ import 'package:hiddify/features/smart_split/model/thing_list.dart';
 /// 每次连接（含重连）前写规则（VPN 仓库 docs/计划/智能分流-实施计划-3-安卓.md 任务 6）：
 /// - `<workingDir>/gsl-route.json`：内核补丁 0002 读，四份网址后缀插在国内名单前面；
 /// - SharedPreferences `gsl_direct_apps` / `gsl_split_downloaders`：VPNService 建通道时读（JSON 数组）。
-/// 先拉账号里的网站和服务器默认，最多等 [prepareTimeout]，拉不到用上次存的；任何错误都不影响连接。
+/// 先拉账号里的网站和服务器默认，最多等 [prepareTimeout]（有缓存 [prepareTimeoutCached]），拉不到用上次存的；任何错误都不影响连接。
 
 const prepareTimeout = Duration(seconds: 3);
+
+/// 上次拉到过服务器默认（有缓存）时只等这么久：面板慢也不多拖连接，拉不到用缓存。
+const prepareTimeoutCached = Duration(seconds: 1);
 const gslRouteFile = 'gsl-route.json';
 const splitChoicesFile = 'split-choices.json';
 const splitDefaultsFile = 'split-defaults.json';
 const prefDirectApps = 'gsl_direct_apps';
 const prefSplitDownloaders = 'gsl_split_downloaders';
 
+/// 账号编号：面板 uuid 去掉横线的前 8 位（注册前后不变，跟 App 里显示的编号同一来源）；不知道回空。
+String splitAccountId(String? uuid) {
+  final u = (uuid ?? '').replaceAll('-', '').toLowerCase();
+  return u.length >= 8 ? u.substring(0, 8) : '';
+}
+
 List<String> _sorted(Iterable<String> xs) => xs.toSet().toList()..sort();
 
-/// 四份网址：用户的去掉锁住的和网址级「必须」（名单改了以后作废的），服务器的原样放。
+/// 四份网址：用户的整组去掉锁住的（跟 dropLocked 同一个判断），组里个别网址级「必须」的只去掉那个网址；服务器的原样放。
 Map<String, List<String>> buildGslRoutes(SplitChoices c, RouteDefaults d, ThingList? things) {
-  bool locked(String host) =>
-      things != null && (things.mustLock(host).isNotEmpty || (things.match(host)?.lock.isNotEmpty ?? false));
   final direct = <String>[];
   final proxy = <String>[];
   for (final x in c.items.where((x) => x.kind == 'site')) {
-    if (locked(x.host) || x.domains.any(locked)) continue;
-    (x.choice == 'direct' ? direct : proxy).addAll(x.domains);
+    if (things != null && choiceLocked(x, things)) continue;
+    (x.choice == 'direct' ? direct : proxy).addAll(things == null ? x.domains : x.domains.where((h) => things.mustLock(h).isEmpty));
   }
   return {
     'user_direct': _sorted(direct),
@@ -89,16 +96,20 @@ Future<void> prepareSplitRoutes({
   required ThingList? things,
   required Future<void> Function(String json) saveThings,
   required Future<void> Function(String key, String json) savePref,
-  Duration timeout = prepareTimeout,
+  String account = '',
+  Duration? timeout,
 }) async {
   try {
-    final choices = loadChoices(baseDir);
+    final wait = timeout ?? (File('${baseDir.path}/$splitDefaultsFile').existsSync() ? prepareTimeoutCached : prepareTimeout);
     // 名单也顺便按版本号拉一次（没变服务器只回一句）：服务器新锁的这次连接就生效，不用等他打开智能分流页（审查 5）
     final results = await Future.wait([
-      _within(api.list(), timeout),
-      _within(api.defaults(), timeout),
-      _within(api.things(things?.version ?? 0), timeout),
+      _within(api.list(), wait),
+      _within(api.defaults(), wait),
+      _within(api.things(things?.version ?? 0), wait),
     ]);
+    api.cancel();
+    // 等网络时他可能又在智能分流页选了（页面会存盘）：拿到结果以后再读本机的，中间不再等，不会盖掉
+    final choices = loadChoices(baseDir);
     final server = results[0] as List<SplitChoice>?;
     var defaults = results[1] as RouteDefaults?;
     final thingsBody = results[2] as String?;
@@ -114,6 +125,7 @@ Future<void> prepareSplitRoutes({
     } else {
       defaults = loadDefaults(baseDir);
     }
+    adoptOwner(choices, account);
     if (server != null) {
       final merged = mergeAccountSites(choices, server);
       choices
