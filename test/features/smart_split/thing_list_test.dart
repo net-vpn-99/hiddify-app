@@ -53,7 +53,10 @@ void main() {
     expect(psl.registrable('com'), 'com');
   });
 
-  test('App 里带的种子名单读得懂', () {
-    expect(ThingList.parse(File('assets/split/things-seed.json').readAsStringSync()), isNotNull);
+  test('App 里带的种子名单读得懂，微信 App 锁着走本地、有被墙名单（审查 6）', () {
+    final seed = ThingList.parse(File('assets/split/things-seed.json').readAsStringSync())!;
+    expect(seed.matchApp('com.tencent.mm')?.lock, 'direct');
+    expect(seed.mustLock('a248.e.akamaihd.net'), 'proxy');
+    expect(seed.size, greaterThan(300));
   });
 }

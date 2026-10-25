@@ -87,14 +87,28 @@ Future<void> prepareSplitRoutes({
   required Directory workingDir,
   required RouteApi api,
   required ThingList? things,
+  required Future<void> Function(String json) saveThings,
   required Future<void> Function(String key, String json) savePref,
   Duration timeout = prepareTimeout,
 }) async {
   try {
     final choices = loadChoices(baseDir);
-    final results = await Future.wait([_within(api.list(), timeout), _within(api.defaults(), timeout)]);
+    // 名单也顺便按版本号拉一次（没变服务器只回一句）：服务器新锁的这次连接就生效，不用等他打开智能分流页（审查 5）
+    final results = await Future.wait([
+      _within(api.list(), timeout),
+      _within(api.defaults(), timeout),
+      _within(api.things(things?.version ?? 0), timeout),
+    ]);
     final server = results[0] as List<SplitChoice>?;
     var defaults = results[1] as RouteDefaults?;
+    final thingsBody = results[2] as String?;
+    if (thingsBody != null) {
+      final next = things == null ? ThingList.parse(thingsBody) : ThingList.pickNewer(things, thingsBody);
+      if (next != null) {
+        things = next;
+        await saveThings(thingsBody);
+      }
+    }
     if (defaults != null) {
       _writeAtomic(File('${baseDir.path}/$splitDefaultsFile'), defaults.toJson());
     } else {

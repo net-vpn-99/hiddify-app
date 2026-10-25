@@ -66,16 +66,6 @@ void main() {
       expect(c.poll().map((x) => x.host), ['a.com', 'b.com', 'c.com', 'd.com']);
     });
 
-    test('重连后写得比原来还长：rewind 从头读，已采到的留着', () {
-      log.writeAsStringSync('');
-      final c = Collector(log)..start();
-      log.writeAsStringSync(conn(1, 'a.com'), mode: FileMode.append);
-      expect(c.poll().length, 1);
-      log.writeAsStringSync(conn(2, 'b.com') + conn(3, 'c.com'));
-      c.rewind();
-      expect(c.poll().map((x) => x.host), ['a.com', 'b.com', 'c.com']);
-    });
-
     test('半行先不读，写完了再读', () {
       log.writeAsStringSync('');
       final c = Collector(log)..start();

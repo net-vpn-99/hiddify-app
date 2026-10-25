@@ -117,7 +117,10 @@ class SmartSplitController {
   final _rowNote = <String, String>{};
   final _mineNote = <String, String>{};
   final _pendingDone = <String>{};
-  var _reconnecting = false;
+  // 一次只重连一次（审查 2）：重连中又选了的，等这次完了再重连一次；这些行一起等结果
+  Future<bool>? _reconnecting;
+  var _again = false;
+  final _waitingRows = <String>{};
   var _connected = false;
 
   /// 打开这页：读本机的、拉新名单、跟账号对一下（补发没存上的、再删没删成的）。
@@ -215,7 +218,7 @@ class SmartSplitController {
   /// 连接状态变了。断开就清空采集（我们自己选了以后的那次重连不算）。
   void onConnection({required bool connected}) {
     _connected = connected;
-    if (!connected && !_reconnecting && _collector.running) {
+    if (!connected && _reconnecting == null && _collector.running) {
       _clear();
       return;
     }
@@ -316,25 +319,53 @@ class SmartSplitController {
     _emit();
   }
 
-  Future<void> _reconnect(String? rowKey) async {
-    if (rowKey != null) _rowNote[rowKey] = 'reconnecting';
-    _reconnecting = true;
+  /// 重连让新的选择生效。box.log 重连不清空，接着读就行（审查 1：以前从头读，把采集开始前的记录也读进来了）。
+  Future<bool> _reconnect(String? rowKey) {
+    if (rowKey != null) {
+      _rowNote[rowKey] = 'reconnecting';
+      _waitingRows.add(rowKey);
+    }
     _emit();
-    final ok = await deps.reconnect();
-    _reconnecting = false;
-    // 连之前那一步跟账号合并过、存过盘，以盘上的为准
-    _choices = loadChoices(deps.baseDir);
+    final running = _reconnecting;
+    if (running != null) {
+      _again = true;
+      return running;
+    }
+    return _reconnecting = _reconnectLoop();
+  }
+
+  Future<bool> _reconnectLoop() async {
+    var ok = true;
+    do {
+      _again = false;
+      // 连之前那一步会读这份再写回去：以内存里的为准，每次重连前、重连后都存一次，中途选的不会被盖掉
+      saveChoices(deps.baseDir, _choices);
+      ok = await deps.reconnect();
+    } while (_again && ok);
+    saveChoices(deps.baseDir, _choices);
+    _reconnecting = null;
+    final rows = {..._waitingRows};
+    _waitingRows.clear();
     if (!ok) {
-      if (rowKey != null) _rowNote[rowKey] = 'failed';
-      return;
+      for (final key in rows) {
+        _rowNote[key] = 'failed';
+      }
+      // 没连回来：跟断开一样，采集清空（行里的「没改成」留着给他看）
+      if (!_connected && _collector.running) {
+        _collector.stop();
+        _last = [];
+        _emit(collecting: false);
+      }
+      return false;
     }
-    _collector.rewind();
-    if (rowKey == null) return;
-    if (_connected) {
-      _rowNote[rowKey] = 'done';
-    } else {
-      _pendingDone.add(rowKey);
+    for (final key in rows) {
+      if (_connected) {
+        _rowNote[key] = 'done';
+      } else {
+        _pendingDone.add(key);
+      }
     }
+    return true;
   }
 
   Future<void> _upload(String key) async {

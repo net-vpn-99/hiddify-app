@@ -145,7 +145,11 @@ class SplitChoices {
       kind: thing.kind,
       name: thing.name,
       host: thing.host,
-      domains: site ? domains.take(maxDomainsPerGroup).toList() : const [],
+      // 超过 30 个时主网址一定留着（审查 4：按字母截会把主网址截掉，规则对不上他选的那个网站）
+      domains: site
+          ? ([if (domains.contains(thing.host)) thing.host, ...domains.where((d) => d != thing.host)].take(maxDomainsPerGroup).toList()
+            ..sort())
+          : const [],
       pkg: site ? '' : thing.pkg,
       choice: choice,
       was: was.isNotEmpty ? was : (i >= 0 ? _items[i].was : ''),
@@ -244,7 +248,8 @@ List<String> dropLocked(SplitChoices local, ThingList things) {
   for (final c in local.items) {
     final locked = c.kind == 'site'
         ? things.mustLock(c.host).isNotEmpty || c.domains.any((d) => things.match(d)?.lock.isNotEmpty ?? false)
-        : things.matchApp(c.pkg)?.lock.isNotEmpty ?? false;
+        // BT / 迅雷类本来就锁死走本地（审查 5）
+        : btPackages.contains(c.pkg) || (things.matchApp(c.pkg)?.lock.isNotEmpty ?? false);
     if (locked) out.add(c.key);
   }
   return out;

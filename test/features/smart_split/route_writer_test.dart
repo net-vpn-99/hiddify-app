@@ -70,11 +70,13 @@ void main() {
       work.deleteSync(recursive: true);
     });
 
+    String? savedThings;
     Future<void> run(RouteApi api, {Duration timeout = const Duration(seconds: 3)}) => prepareSplitRoutes(
       baseDir: base,
       workingDir: work,
       api: api,
       things: things,
+      saveThings: (json) async => savedThings = json,
       savePref: (k, v) async => prefs[k] = v,
       timeout: timeout,
     );
@@ -111,6 +113,20 @@ void main() {
       final back = SplitChoices.fromJson(File('${base.path}/split-choices.json').readAsStringSync())!;
       expect(back.pendingDeletes, ['site:b.com']);
       expect(back.items, isEmpty);
+    });
+
+    test('连之前顺便拉新名单：服务器新锁的 App 这次就不排除、从我改过的里拿掉（审查 5）', () async {
+      File('${base.path}/split-choices.json').writeAsStringSync((SplitChoices()..set(app('com.example.locked'), 'direct')).toJson());
+      final newer = jsonEncode({
+        'version': 2,
+        'things': [
+          {'id': 'g', 'name': 'G', 'domains': ['g.com'], 'lock': 'split', 'apps': ['com.example.locked']},
+        ],
+      });
+      await run(RouteApi((m, p, {data}) async => p.startsWith('/api/v1/guest/gsl_route/things') ? (200, newer) : (500, '')));
+      expect(jsonDecode(prefs['gsl_direct_apps']!), isEmpty);
+      expect(savedThings, newer);
+      expect(SplitChoices.fromJson(File('${base.path}/split-choices.json').readAsStringSync())!.items, isEmpty);
     });
 
     test('testPrepareTimeoutUsesCache：接口很慢，到时间用上次存的', () async {

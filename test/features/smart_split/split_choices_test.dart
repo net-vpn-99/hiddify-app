@@ -30,6 +30,19 @@ void main() {
     expect(many.items.single.domains.length, 30);
   });
 
+  test('网址超过 30 个时主网址一定留着（审查 4）', () {
+    final t = site('zz-main.com', domains: [for (var i = 0; i < 40; i++) 'a$i.com', 'zz-main.com']);
+    final c = SplitChoices()..set(t, 'direct');
+    expect(c.items.single.domains, contains('zz-main.com'));
+    expect(c.items.single.domains.length, 30);
+  });
+
+  test('BT 类的 App 选择也算锁住（审查 5）', () {
+    final c = SplitChoices()..set(app('com.xunlei.downloadprovider'), 'direct');
+    expect(dropLocked(c, ThingList.parse(jsonEncode({'version': 1, 'things': [{'id': 'x', 'name': 'X', 'domains': ['x.com']}]}))!),
+        ['app:com.xunlei.downloadprovider']);
+  });
+
   test('testDefaultRemoves：选回 default 就删掉，网站记进 pendingDeletes', () {
     final c = SplitChoices()..set(site('btsj6.com'), 'direct', was: 'proxy');
     expect(c.choiceFor('site:btsj6.com'), 'direct');

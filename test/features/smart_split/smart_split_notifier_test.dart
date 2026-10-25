@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/features/smart_split/data/route_api.dart';
 import 'package:hiddify/features/smart_split/model/public_suffix.dart';
+import 'package:hiddify/features/smart_split/model/split_choices.dart';
 import 'package:hiddify/features/smart_split/model/thing_list.dart';
 import 'package:hiddify/features/smart_split/notifier/smart_split_controller.dart';
 
@@ -25,6 +26,7 @@ void main() {
   late int reconnects;
   late bool setOk;
   late Completer<void>? holdReconnect;
+  late bool reconnectOk;
 
   setUp(() {
     base = Directory.systemTemp.createTempSync('ss-base');
@@ -34,6 +36,7 @@ void main() {
     reconnects = 0;
     setOk = true;
     holdReconnect = null;
+    reconnectOk = true;
   });
   tearDown(() {
     base.deleteSync(recursive: true);
@@ -55,8 +58,9 @@ void main() {
     }),
     reconnect: () async {
       reconnects++;
-      if (holdReconnect != null) await holdReconnect!.future;
-      return true;
+      final hold = holdReconnect;
+      if (hold != null) await hold.future;
+      return reconnectOk;
     },
     loggedIn: () => true,
     appName: (p) => p,
@@ -122,6 +126,92 @@ void main() {
     expect(c.state.mine.single.choice, 'direct');
     expect(c.state.mine.single.was, 'proxy');
     expect(c.state.pickable.single.now, 'direct');
+  });
+
+  test('重连不会清空 box.log：重连以后不把采集开始前的记录读进来（审查 1）', () async {
+    browse(90, 'www.before-collect.com');
+    final c = make();
+    await c.open(connected: true);
+    await c.startCollect();
+    browse(1, 'www.btsj6.com');
+    c.tick();
+    await c.choose('site:btsj6.com', 'direct');
+    browse(2, 'imgb.anycip.com');
+    c.tick();
+    expect(c.state.pickable.map((r) => r.key), ['site:btsj6.com']);
+    expect(c.state.pickable.single.thing.domains, isNot(contains('before-collect.com')));
+  });
+
+  test('重连中又选了一个：不丢、排队再重连一次、采集不被清空（审查 2）', () async {
+    final c = await collecting();
+    log.writeAsStringSync(
+      'INFO [4 1ms] router: found package name: com.example.game\n'
+      'INFO [4 9ms] outbound/vless[x]: outbound connection to api.game.com:443\n',
+      mode: FileMode.append,
+    );
+    c.tick();
+    // 跟真的一样：连之前那一步先读 split-choices.json，等网络，再把读到的写回去（会盖掉中途存的）
+    final file = File('${base.path}/split-choices.json');
+    final firstHold = Completer<void>();
+    var n = 0;
+    final c2 = SmartSplitController(SmartSplitDeps(
+      baseDir: base,
+      boxLog: log,
+      currentConfigPath: '${work.path}/data/current-config.json',
+      psl: psl,
+      loadThings: () async => things,
+      saveThings: (_) async {},
+      api: () => RouteApi((m, p, {data}) async => (200, p.endsWith('/list') ? '{"data":{"items":[]}}' : '{"data":true}')),
+      reconnect: () async {
+        n++;
+        final snapshot = file.existsSync() ? file.readAsStringSync() : null;
+        if (n == 1) await firstHold.future;
+        if (snapshot != null) file.writeAsStringSync(snapshot);
+        return true;
+      },
+      loggedIn: () => true,
+      appName: (p) => p,
+      appVer: '1.1.73',
+      deviceId: 'dev',
+    ));
+    c.leave();
+    await c2.open(connected: true);
+    await c2.startCollect();
+    browse(11, 'www.btsj6.com');
+    log.writeAsStringSync(
+      'INFO [12 1ms] router: found package name: com.example.game\n'
+      'INFO [12 9ms] outbound/vless[x]: outbound connection to api.game.com:443\n',
+      mode: FileMode.append,
+    );
+    c2.tick();
+    final a = c2.choose('site:btsj6.com', 'direct');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    c2.onConnection(connected: false);
+    final b = c2.choose('app:com.example.game', 'direct');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(c2.state.collecting, isTrue);
+    firstHold.complete();
+    await Future.wait([a, b]);
+    c2.onConnection(connected: true);
+    expect(n, 2);
+    expect(c2.state.mine.map((m) => m.key).toSet(), {'site:btsj6.com', 'app:com.example.game'});
+    expect(SplitChoices.fromJson(file.readAsStringSync())!.items.length, 2);
+    expect(c2.state.rowNote['site:btsj6.com'], 'done');
+    expect(c2.state.rowNote['app:com.example.game'], 'done');
+    expect(c2.state.collecting, isTrue);
+  });
+
+  test('重连失败：行里「没改成」，没连上就清空采集（审查 3）', () async {
+    final c = await collecting();
+    reconnectOk = false;
+    holdReconnect = Completer<void>();
+    final f = c.choose('site:btsj6.com', 'direct');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    c.onConnection(connected: false);
+    holdReconnect!.complete();
+    await f;
+    expect(c.state.rowNote['site:btsj6.com'], 'failed');
+    expect(c.state.collecting, isFalse);
   });
 
   test('选回原来那边 = 改回默认，账号里删掉', () async {

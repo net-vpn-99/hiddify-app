@@ -5,7 +5,8 @@ import 'package:hiddify/features/smart_split/data/box_log_parser.dart';
 import 'package:hiddify/features/smart_split/model/classifier.dart';
 
 /// 采集：从点「开始采集」那一刻起读 box.log 新增的部分。只在内存里，停止就清空。
-/// 重连会把 box.log 清空重写（connect_reporter.dart），文件比读到的地方短就从头读，已采到的留着。
+/// 重新连接（点「连接」）和超过 16MB 时 box.log 会被清空：文件比读到的地方短就从头读，已采到的留着。
+/// 我们自己选了以后的重连（restart）不清空，接着读。
 class Collector {
   Collector(this.boxLog);
 
@@ -27,9 +28,6 @@ class Collector {
     _offset = _length();
     _running = true;
   }
-
-  /// 我们自己重连了（选了以后要重连才生效）：box.log 从头重写，从头读。已采到的留着。
-  void rewind() => _offset = 0;
 
   void stop() {
     _running = false;

@@ -290,7 +290,8 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                 ),
               ),
               const SizedBox(width: 8),
-              _TwoWay(now: r.now, onPick: (v) => n.choose(r.key, v)),
+              // 正在重连时先不让选（选了也要排队再断一次）
+              _TwoWay(now: r.now, onPick: s.rowNote.containsValue('reconnecting') ? null : (v) => n.choose(r.key, v)),
             ],
           ),
           _note(r, tk, s, n, body),
@@ -361,7 +362,7 @@ class _SmartSplitViewState extends State<SmartSplitView> {
               Switch(
                 value: on,
                 activeTrackColor: tk.acc,
-                onChanged: (v) => n.choose(r.key, v ? 'direct' : 'split'),
+                onChanged: s.rowNote.containsValue('reconnecting') ? null : (v) => n.choose(r.key, v ? 'direct' : 'split'),
               ),
             ],
           ),
@@ -709,7 +710,7 @@ class _TwoWay extends StatelessWidget {
   const _TwoWay({required this.now, required this.onPick});
 
   final String now;
-  final void Function(String) onPick;
+  final void Function(String)? onPick;
 
   @override
   Widget build(BuildContext context) {
@@ -717,7 +718,7 @@ class _TwoWay extends StatelessWidget {
     Widget opt(String value, String label) {
       final on = now == value;
       return GestureDetector(
-        onTap: on ? null : () => onPick(value),
+        onTap: on || onPick == null ? null : () => onPick!(value),
         child: Container(
           height: 32,
           padding: const EdgeInsets.symmetric(horizontal: 10),

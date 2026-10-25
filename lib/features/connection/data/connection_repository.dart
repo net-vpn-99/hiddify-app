@@ -167,6 +167,7 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
         workingDir: directories.workingDir,
         api: RouteApi.panel(token: token),
         things: await loadThings(directories.baseDir),
+        saveThings: (json) => saveThings(directories.baseDir, json),
         savePref: (key, json) => prefs.setString(key, json),
       );
     } catch (e) {

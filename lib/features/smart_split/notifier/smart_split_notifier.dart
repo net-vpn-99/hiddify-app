@@ -94,10 +94,15 @@ class SmartSplitNotifier extends AutoDisposeNotifier<SmartSplitState> implements
     return {for (final h in hosts) psl.registrable(h)}.toList();
   }
 
+  /// 重连，以连接状态回到「已连接」为准（审查 3：reconnect 出错不抛、没连着时什么都不做，光看它返回判不出来）。
   Future<bool> _reconnect() async {
     try {
       await ref.read(connectionNotifierProvider.notifier).reconnect(await ref.read(activeProfileProvider.future));
-      return true;
+      for (var i = 0; i < 75; i++) {
+        if (_connected) return true;
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      }
+      return false;
     } catch (_) {
       return false;
     }
