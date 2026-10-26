@@ -327,6 +327,7 @@ class SmartSplitController {
 
   /// 「我改过的」里的「改回默认」。
   Future<void> resetOne(String key) async {
+    if (_applying.containsKey(key)) return; // 这一条正在改，再点一次不用另起
     final c = _choices.items.where((x) => x.key == key).firstOrNull;
     if (c == null) return;
     final shown = _last.where((t) => t.key == key).firstOrNull;
@@ -340,7 +341,7 @@ class SmartSplitController {
     _choices.remove(key);
     _mineNote.remove(key);
     saveChoices(deps.baseDir, _choices);
-    await _applyAndUpload(key, accountKeyOf: accountKey(c));
+    await _applyAndUpload(key, rowKey: key, accountKeyOf: accountKey(c));
   }
 
   /// 「全部改回默认」（页面上先问过一句）。
@@ -477,18 +478,18 @@ class SmartSplitController {
       saveChoices(deps.baseDir, _choices);
       // 人还在这一页：列表留着，按钮退回原来那边，行里写「没改成」。
       _applyHold = rows.isNotEmpty;
+      _pendingDone.removeAll(rows);
       _emit();
       return false;
     }
+    // reconnect 回 true 就是已经连上。别再等下一次连接事件：那一下往往已经发生过，
+    // 等不到的话按钮会一直停在「正在改」，改回默认再点就没反应，走光速雷达也点不了。
     for (final key in rows) {
-      if (_connected) {
-        _commitApply(key);
-        _rowNote[key] = 'done';
-      } else {
-        _pendingDone.add(key);
-      }
+      _commitApply(key);
+      _rowNote[key] = 'done';
+      _pendingDone.remove(key);
     }
-    _applyHold = _pendingDone.isNotEmpty || _rowNote.containsValue('failed');
+    _applyHold = _rowNote.containsValue('failed');
     return true;
   }
 
@@ -552,7 +553,8 @@ class SmartSplitController {
         choice = effectiveAppChoice(choice, serverDefaultDirect: _defaults.appsDirect.contains(t.pkg));
       }
       if (choice == 'default') choice = '';
-      if (now.isEmpty) now = choice.isEmpty ? t.now : choice;
+      // 没有用户选择时亮第一次看到的那边。走本地以后直接连出去的变多，不能让按钮跟着这几条停在走本地。
+      if (now.isEmpty) now = choice.isNotEmpty ? choice : (_defaultNow[t.key] ?? t.now);
       final row = SplitRow(t, now: now, choice: choice, excluded: {...?_excluded[t.key]});
       (t.kind == 'locked' ? fixed : rows).add(row);
     }

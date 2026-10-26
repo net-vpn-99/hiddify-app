@@ -313,7 +313,7 @@ class _SmartSplitViewState extends State<SmartSplitView> {
               if (s.rowNote[r.key] == 'reconnecting')
                 const _Changing()
               else
-                _TwoWay(now: r.now, onPick: s.rowNote.containsValue('reconnecting') ? null : (v) => n.choose(r.key, v)),
+                _TwoWay(now: r.now, onPick: (v) => n.choose(r.key, v)),
             ],
           ),
           _note(r, tk, s, n, body),
@@ -387,7 +387,7 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                 Switch(
                   value: on,
                   activeTrackColor: tk.acc,
-                  onChanged: s.rowNote.containsValue('reconnecting') ? null : (v) => n.choose(r.key, v ? 'direct' : 'split'),
+                  onChanged: (v) => n.choose(r.key, v ? 'direct' : 'split'),
                 ),
             ],
           ),
@@ -524,16 +524,22 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                                 onTap: () => n.retrySync(s.mine[i].key),
                                 child: Text('没存上，点一下重试', style: small(tk.fault)),
                               ),
+                            if (s.rowNote[s.mine[i].key] == 'failed')
+                              Text('没改成', style: small(tk.fault)),
                           ],
                         ),
                       ),
-                      Text(route(s.mine[i]), style: body(connected ? tk.text : tk.sub).copyWith(fontWeight: FontWeight.w600)),
-                      if (connected)
-                        TextButton(
-                          style: TextButton.styleFrom(foregroundColor: tk.sub),
-                          onPressed: () => n.resetOne(s.mine[i].key),
-                          child: const Text('改回默认'),
-                        ),
+                      if (s.applying.containsKey(s.mine[i].key))
+                        Text('正在改', style: body(tk.sub).copyWith(fontWeight: FontWeight.w600))
+                      else ...[
+                        Text(route(s.mine[i]), style: body(connected ? tk.text : tk.sub).copyWith(fontWeight: FontWeight.w600)),
+                        if (connected)
+                          TextButton(
+                            style: TextButton.styleFrom(foregroundColor: tk.sub),
+                            onPressed: () => n.resetOne(s.mine[i].key),
+                            child: const Text('改回默认'),
+                          ),
+                      ],
                     ],
                   ),
                 ),

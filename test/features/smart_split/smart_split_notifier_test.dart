@@ -232,6 +232,71 @@ void main() {
     expect(c.state.retryAs['site:btsj6.com'], 'direct');
   });
 
+  test('连上的通知先到了：选完按钮就是走本地，改回默认能删掉，再点走光速雷达也生效', () async {
+    final c = await collecting();
+    holdReconnect = Completer<void>();
+    final picked = c.choose('site:btsj6.com', 'direct');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    // 重连过程里连接事件先回来，等 choose 结束时控制器自己的标志还是断开
+    c.onConnection(connected: false);
+    c.onConnection(connected: true);
+    c.onConnection(connected: false);
+    holdReconnect!.complete();
+    await picked;
+    expect(c.state.rowNote['site:btsj6.com'], 'done');
+    expect(c.state.applying, isEmpty);
+    expect(c.state.pickable.single.now, 'direct');
+    expect(c.state.mine.single.choice, 'direct');
+
+    // 走本地以后，这个网站直接连出去的变多。按钮仍按他选的亮，不跟着这几条改。
+    log.writeAsStringSync(
+      'INFO [3 1ms] router: found package name: com.android.chrome\n'
+      'INFO [3 9ms] outbound/direct[direct]: outbound connection to www.btsj6.com:443\n'
+      'INFO [4 1ms] router: found package name: com.android.chrome\n'
+      'INFO [4 9ms] outbound/direct[direct]: outbound connection to www.btsj6.com:443\n'
+      'INFO [5 1ms] router: found package name: com.android.chrome\n'
+      'INFO [5 9ms] outbound/direct[direct]: outbound connection to imgb.anycip.com:443\n',
+      mode: FileMode.append,
+    );
+    c.tick();
+    expect(c.state.pickable.single.now, 'direct');
+
+    holdReconnect = Completer<void>();
+    final reset = c.resetOne('site:btsj6.com');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(c.state.applying['site:btsj6.com'], 'default');
+    expect(c.state.mine, isNotEmpty);
+    c.onConnection(connected: false);
+    holdReconnect!.complete();
+    await reset;
+    expect(c.state.mine, isEmpty);
+    expect(c.state.applying, isEmpty);
+    expect(c.state.pickable.single.now, 'proxy');
+    expect(c.state.rowNote['site:btsj6.com'], isNot('reconnecting'));
+
+    holdReconnect = Completer<void>();
+    final again = c.choose('site:btsj6.com', 'direct');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    c.onConnection(connected: false);
+    c.onConnection(connected: true);
+    holdReconnect!.complete();
+    await again;
+    expect(c.state.pickable.single.now, 'direct');
+    expect(c.state.applying, isEmpty);
+
+    holdReconnect = Completer<void>();
+    final back = c.choose('site:btsj6.com', 'proxy');
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    c.onConnection(connected: false);
+    c.onConnection(connected: true);
+    holdReconnect!.complete();
+    await back;
+    expect(c.state.mine, isEmpty);
+    expect(c.state.applying, isEmpty);
+    expect(c.state.pickable.single.now, 'proxy');
+    expect(c.state.rowNote['site:btsj6.com'], isNot('reconnecting'));
+  });
+
   test('选回原来那边 = 改回默认，账号里删掉', () async {
     final c = await collecting();
     await c.choose('site:btsj6.com', 'direct');
