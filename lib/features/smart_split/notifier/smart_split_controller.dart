@@ -86,6 +86,9 @@ class SmartSplitState {
     this.rowNote = const {},
     this.mineNote = const {},
     this.loggedIn = false,
+    this.holding = false,
+    this.applying = const {},
+    this.retryAs = const {},
   });
 
   final bool connected;
@@ -94,8 +97,17 @@ class SmartSplitState {
   final List<SplitRow> fixed;
   final List<SplitChoice> mine;
 
-  /// 采集里那一行：reconnecting（会断开一下）/ done（改好了）/ failed（没改成，点一下重试）/ full（满 50 个）
+  /// 采集里那一行：reconnecting（正在改）/ done（好了）/ failed（没改成）/ full（满 50 个）
   final Map<String, String> rowNote;
+
+  /// 我们自己正在重开隧道。页面留在原地，不要换成「还没连上」。
+  final bool holding;
+
+  /// 正在改成哪边：direct / proxy / default。按钮先写「正在改」，连上才亮新的那边。
+  final Map<String, String> applying;
+
+  /// 没改成时再点一下：当时点的那个选项；reset = 再改回默认。
+  final Map<String, String> retryAs;
 
   /// 「我改过的」那一行：retry（没存上，点一下重试）
   final Map<String, String> mineNote;
@@ -130,6 +142,13 @@ class SmartSplitController {
   var _again = false;
   final _waitingRows = <String>{};
   var _connected = false;
+
+  /// 这次重开是我们改规则，页面不要换成「还没连上」。失败后也留着，等人再点一次。
+  var _applyHold = false;
+  final _applying = <String, String>{};
+  final _retryAs = <String, String>{};
+  final _choiceBefore = <String, SplitChoice?>{};
+  final _shownBefore = <String, String>{};
   var _starting = false;
   var _left = false; // 离开这页以后：还在路上的异步步骤不再开始采集、不再补发
 
@@ -227,6 +246,11 @@ class SmartSplitController {
     _last = [];
     _rowNote.clear();
     _pendingDone.clear();
+    _applyHold = false;
+    _applying.clear();
+    _retryAs.clear();
+    _choiceBefore.clear();
+    _shownBefore.clear();
     _emit(collecting: false);
   }
 
@@ -253,15 +277,17 @@ class SmartSplitController {
   /// 连接状态变了。断开就清空采集（我们自己选了以后的那次重连不算）。
   void onConnection({required bool connected}) {
     _connected = connected;
-    if (!connected && _reconnecting == null && _collector.running) {
+    if (!connected && !_applyHold && _reconnecting == null && _collector.running) {
       _clear();
       return;
     }
     if (connected) {
       for (final key in _pendingDone) {
+        _commitApply(key);
         _rowNote[key] = 'done';
       }
       _pendingDone.clear();
+      if (_reconnecting == null && !_rowNote.containsValue('failed')) _applyHold = false;
     }
     _emit();
   }
@@ -282,12 +308,15 @@ class SmartSplitController {
       choice = 'default';
     }
     if (choice == 'default' && chosen.isEmpty && !_rowNote.containsKey(key)) return; // 本来就是这样
+    _remember(key, thing, choice, picked);
     switch (_choices.set(thing, choice, was: thing.kind == 'site' ? original : '')) {
       case SetResult.full:
+        _forget(key);
         _rowNote[key] = 'full';
         _emit();
         return;
       case SetResult.invalid:
+        _forget(key);
         return;
       case SetResult.ok:
         break;
@@ -300,6 +329,14 @@ class SmartSplitController {
   Future<void> resetOne(String key) async {
     final c = _choices.items.where((x) => x.key == key).firstOrNull;
     if (c == null) return;
+    final shown = _last.where((t) => t.key == key).firstOrNull;
+    if (shown != null) _remember(key, shown, 'default', 'reset');
+    else {
+      _choiceBefore[key] = c;
+      _shownBefore[key] = c.choice;
+      _applying[key] = 'default';
+      _retryAs[key] = 'reset';
+    }
     _choices.remove(key);
     _mineNote.remove(key);
     saveChoices(deps.baseDir, _choices);
@@ -308,10 +345,21 @@ class SmartSplitController {
 
   /// 「全部改回默认」（页面上先问过一句）。
   Future<void> resetAll() async {
+    final snap = [..._choices.items];
+    final deleted = [..._choices.pendingDeletes];
     _choices.clear();
     _mineNote.clear();
     saveChoices(deps.baseDir, _choices);
-    await _reconnect(null);
+    final ok = await _reconnect(null);
+    if (!ok) {
+      _choices
+        ..setItems(snap)
+        ..setPendingDeletes(deleted);
+      saveChoices(deps.baseDir, _choices);
+      _applyHold = false;
+      _emit();
+      return;
+    }
     if (await deps.api().reset()) {
       _choices.setPendingDeletes(const []);
       saveChoices(deps.baseDir, _choices);
@@ -343,9 +391,13 @@ class SmartSplitController {
     saveChoices(deps.baseDir, _choices);
   }
 
-  /// 本机先生效（重连），再存账号：选回默认 = 账号里删掉，否则存一次。
+  /// 本机先生效（重连），再存账号。没连回来就撤掉这次，不往账号里写。
   Future<void> _applyAndUpload(String key, {String? rowKey, required String accountKeyOf}) async {
-    await _reconnect(rowKey);
+    final ok = await _reconnect(rowKey);
+    if (!ok) {
+      _emit();
+      return;
+    }
     if (_choices.choiceFor(key).isEmpty) {
       await deps.api().del(accountKeyOf);
     } else {
@@ -356,6 +408,7 @@ class SmartSplitController {
 
   /// 重连让新的选择生效。box.log 重连不清空，接着读就行（审查 1：以前从头读，把采集开始前的记录也读进来了）。
   Future<bool> _reconnect(String? rowKey) {
+    _applyHold = true;
     if (rowKey != null) {
       _rowNote[rowKey] = 'reconnecting';
       _waitingRows.add(rowKey);
@@ -367,6 +420,39 @@ class SmartSplitController {
       return running;
     }
     return _reconnecting = _reconnectLoop();
+  }
+
+  void _remember(String key, SplitThing thing, String choice, String retry) {
+    _choiceBefore[key] = _choices.items.where((c) => c.key == key).firstOrNull;
+    _shownBefore[key] = _shownNow(thing);
+    _applying[key] = choice;
+    _retryAs[key] = retry;
+  }
+
+  void _forget(String key) {
+    _choiceBefore.remove(key);
+    _shownBefore.remove(key);
+    _applying.remove(key);
+    _retryAs.remove(key);
+  }
+
+  void _commitApply(String key) => _forget(key);
+
+  void _revert(String key) {
+    final prev = _choiceBefore[key];
+    _choices.putBack(key, prev);
+    _applying.remove(key);
+    _choiceBefore.remove(key);
+    _shownBefore.remove(key);
+  }
+
+  String _shownNow(SplitThing t) {
+    var choice = _choices.choiceFor(t.key);
+    if (t.kind == 'app') {
+      choice = effectiveAppChoice(choice, serverDefaultDirect: _defaults.appsDirect.contains(t.pkg));
+    }
+    if (choice == 'default') choice = '';
+    return choice.isEmpty ? t.now : choice;
   }
 
   Future<bool> _reconnectLoop() async {
@@ -385,23 +471,24 @@ class SmartSplitController {
     _waitingRows.clear();
     if (!ok) {
       for (final key in rows) {
+        _revert(key);
         _rowNote[key] = 'failed';
       }
-      // 没连回来：跟断开一样，采集清空（行里的「没改成」留着给他看）
-      if (!_connected && _collector.running) {
-        _collector.stop();
-        _last = [];
-        _emit(collecting: false);
-      }
+      saveChoices(deps.baseDir, _choices);
+      // 人还在这一页：列表留着，按钮退回原来那边，行里写「没改成」。
+      _applyHold = rows.isNotEmpty;
+      _emit();
       return false;
     }
     for (final key in rows) {
       if (_connected) {
+        _commitApply(key);
         _rowNote[key] = 'done';
       } else {
         _pendingDone.add(key);
       }
     }
+    _applyHold = _pendingDone.isNotEmpty || _rowNote.containsValue('failed');
     return true;
   }
 
@@ -432,16 +519,41 @@ class SmartSplitController {
 
   String _accountKeyOf(SplitThing t) => t.kind == 'site' ? t.key : 'app:${t.pkg}';
 
+  /// 还没连上之前，「我改过的」仍显示改之前的，不要先写上「走本地」。
+  List<SplitChoice> _visibleMine() {
+    final out = <SplitChoice>[];
+    for (final c in _choices.items) {
+      if (_applying.containsKey(c.key)) {
+        final prev = _choiceBefore[c.key];
+        if (prev != null) out.add(prev);
+      } else {
+        out.add(c);
+      }
+    }
+    for (final key in _applying.keys) {
+      final prev = _choiceBefore[key];
+      if (prev != null && !out.any((c) => c.key == key)) out.add(prev);
+    }
+    return out;
+  }
+
   void _emit({bool? collecting}) {
     final rows = <SplitRow>[];
     final fixed = <SplitRow>[];
     for (final t in _last) {
       var choice = _choices.choiceFor(t.key);
+      var now = '';
+      if (_applying.containsKey(t.key)) {
+        final prev = _choiceBefore[t.key];
+        choice = prev?.choice ?? '';
+        now = _shownBefore[t.key] ?? '';
+      }
       if (t.kind == 'app') {
         choice = effectiveAppChoice(choice, serverDefaultDirect: _defaults.appsDirect.contains(t.pkg));
       }
       if (choice == 'default') choice = '';
-      final row = SplitRow(t, now: choice.isEmpty ? t.now : choice, choice: choice, excluded: {...?_excluded[t.key]});
+      if (now.isEmpty) now = choice.isEmpty ? t.now : choice;
+      final row = SplitRow(t, now: now, choice: choice, excluded: {...?_excluded[t.key]});
       (t.kind == 'locked' ? fixed : rows).add(row);
     }
     _state = SmartSplitState(
@@ -449,10 +561,13 @@ class SmartSplitController {
       collecting: collecting ?? _state.collecting,
       pickable: rows,
       fixed: fixed,
-      mine: _choices.items,
+      mine: _visibleMine(),
       rowNote: Map.unmodifiable(_rowNote),
       mineNote: Map.unmodifiable(_mineNote),
       loggedIn: deps.loggedIn(),
+      holding: _applyHold || _reconnecting != null || _rowNote.containsValue('reconnecting') || _rowNote.containsValue('failed'),
+      applying: Map.unmodifiable(_applying),
+      retryAs: Map.unmodifiable(_retryAs),
     );
     onChange?.call(_state);
   }

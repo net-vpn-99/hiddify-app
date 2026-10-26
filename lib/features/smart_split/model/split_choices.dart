@@ -192,6 +192,13 @@ class SplitChoices {
     ..clear()
     ..addAll(items);
 
+  /// 这次没连回来：撤掉刚写上的，恢复改之前那一条（没有就当没改过）。
+  void putBack(String key, SplitChoice? previous) {
+    _items.removeWhere((c) => c.key == key);
+    _pendingDeletes.remove(key);
+    if (previous != null) _items.add(previous);
+  }
+
   void setPendingDeletes(List<String> keys) => _pendingDeletes
     ..clear()
     ..addAll(keys);

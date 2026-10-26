@@ -123,9 +123,13 @@ void main() {
     final f = c.choose('site:btsj6.com', 'direct');
     await Future<void>.delayed(Duration.zero);
     expect(c.state.rowNote['site:btsj6.com'], 'reconnecting');
-    // 重连中断开那一下不清空
+    expect(c.state.pickable.single.now, 'proxy');
+    expect(c.state.holding, isTrue);
+    expect(c.state.mine, isEmpty);
+    // 重连中断开那一下不清空，页面也不换成「还没连上」
     c.onConnection(connected: false);
     expect(c.state.collecting, isTrue);
+    expect(c.state.holding, isTrue);
     holdReconnect!.complete();
     await f;
     c.onConnection(connected: true);
@@ -210,7 +214,7 @@ void main() {
     expect(c2.state.collecting, isTrue);
   });
 
-  test('重连失败：行里「没改成」，没连上就清空采集（审查 3）', () async {
+  test('重连失败：按钮退回原来那边，列表还在，不往账号里写', () async {
     final c = await collecting();
     reconnectOk = false;
     holdReconnect = Completer<void>();
@@ -220,7 +224,12 @@ void main() {
     holdReconnect!.complete();
     await f;
     expect(c.state.rowNote['site:btsj6.com'], 'failed');
-    expect(c.state.collecting, isFalse);
+    expect(c.state.collecting, isTrue);
+    expect(c.state.holding, isTrue);
+    expect(c.state.pickable.single.now, 'proxy');
+    expect(c.state.mine, isEmpty);
+    expect(calls.where((x) => x.contains('/set')), isEmpty);
+    expect(c.state.retryAs['site:btsj6.com'], 'direct');
   });
 
   test('选回原来那边 = 改回默认，账号里删掉', () async {

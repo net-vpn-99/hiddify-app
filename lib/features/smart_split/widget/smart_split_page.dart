@@ -13,7 +13,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 智能分流（VPN 仓库 docs/计划/智能分流-自己改网站.md 四，样稿 docs/计划/智能分流-样稿/，跟 Windows SmartSplitPanel.qml 同一套）：
 /// 现在的线路 → 分流采集（网站一块、App 一块，不能改的合成最下面一行）→ 我改过的 → 收起的「默认怎么分？」。
-/// 没连上：只有一张说明卡 + 只能看的「我改过的」。安卓改了要重连一次，行里先写「会断开一下」。
+/// 没连上：只有一张说明卡 + 只能看的「我改过的」。改规则要重开隧道，这段时间页面停在原地。
 /// 界面里不出现「代理 / 全局 / 规则 / PAC」这类词。
 class SmartSplitPage extends ConsumerStatefulWidget {
   const SmartSplitPage({super.key});
@@ -76,7 +76,7 @@ class _SmartSplitViewState extends State<SmartSplitView> {
   Widget build(BuildContext context) {
     final tk = OneRayTokens.of(context);
     final text = Theme.of(context).textTheme;
-    final connected = widget.connected;
+    final connected = widget.connected || widget.state.holding;
     final s = widget.state;
     final n = widget.actions;
 
@@ -230,10 +230,21 @@ class _SmartSplitViewState extends State<SmartSplitView> {
   Widget _note(SplitRow r, OneRayTokens tk, SmartSplitState s, SplitActions n, TextStyle Function([Color?]) body) {
     final note = s.rowNote[r.key] ?? '';
     final site = r.kind == 'site';
+    final going = s.applying[r.key];
     final (String msg, Color color, bool retry) = switch (note) {
-      'reconnecting' => ('会断开一下，重新连上后生效', tk.sub, false),
-      'done' => (site ? '改好了，重新打开网页看看' : '改好了，重新打开 App 看看', tk.ok, false),
-      'failed' => ('没改成，点一下重试', tk.fault, true),
+      'reconnecting' => (
+          site
+              ? (going == 'direct'
+                  ? '正在让这个网站走本地。'
+                  : going == 'proxy'
+                      ? '正在让这个网站走光速雷达。'
+                      : '正在改回。')
+              : (going == 'direct' ? '正在让这个 App 走本地。' : '正在改回。'),
+          tk.sub,
+          false,
+        ),
+      'done' => (site ? '好了。回浏览器把那个网页重新打开。' : '好了。重新打开那个 App。', tk.ok, false),
+      'failed' => ('没改成，点这里再试', tk.fault, true),
       'full' => ('最多改 50 个，先在「我改过的」里改回几个', tk.fault, false),
       _ => ('', tk.sub, false),
     };
@@ -241,7 +252,16 @@ class _SmartSplitViewState extends State<SmartSplitView> {
     return Padding(
       padding: const EdgeInsets.only(left: 44, top: 2, bottom: 4),
       child: GestureDetector(
-        onTap: retry ? () => n.choose(r.key, r.now) : null,
+        onTap: retry
+            ? () {
+                final again = s.retryAs[r.key];
+                if (again == 'reset') {
+                  n.resetOne(r.key);
+                } else {
+                  n.choose(r.key, again ?? r.now);
+                }
+              }
+            : null,
         child: Row(
           children: [
             if (note == 'done') ...[Icon(Icons.check, size: 14, color: tk.ok), const SizedBox(width: 4)],
@@ -290,8 +310,10 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                 ),
               ),
               const SizedBox(width: 8),
-              // 正在重连时先不让选（选了也要排队再断一次）
-              _TwoWay(now: r.now, onPick: s.rowNote.containsValue('reconnecting') ? null : (v) => n.choose(r.key, v)),
+              if (s.rowNote[r.key] == 'reconnecting')
+                const _Changing()
+              else
+                _TwoWay(now: r.now, onPick: s.rowNote.containsValue('reconnecting') ? null : (v) => n.choose(r.key, v)),
             ],
           ),
           _note(r, tk, s, n, body),
@@ -359,11 +381,14 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                   ],
                 ),
               ),
-              Switch(
-                value: on,
-                activeTrackColor: tk.acc,
-                onChanged: s.rowNote.containsValue('reconnecting') ? null : (v) => n.choose(r.key, v ? 'direct' : 'split'),
-              ),
+              if (s.rowNote[r.key] == 'reconnecting')
+                const _Changing()
+              else
+                Switch(
+                  value: on,
+                  activeTrackColor: tk.acc,
+                  onChanged: s.rowNote.containsValue('reconnecting') ? null : (v) => n.choose(r.key, v ? 'direct' : 'split'),
+                ),
             ],
           ),
           _note(r, tk, s, n, body),
@@ -701,6 +726,23 @@ class _Avatar extends StatelessWidget {
       child: app
           ? Text(label.isEmpty ? '?' : label.characters.first.toUpperCase(), style: TextStyle(color: tk.sub, fontSize: 12))
           : Icon(Icons.public, size: 18, color: tk.sub),
+    );
+  }
+}
+
+/// 正在重开隧道。先别亮成新的那边。
+class _Changing extends StatelessWidget {
+  const _Changing();
+
+  @override
+  Widget build(BuildContext context) {
+    final tk = OneRayTokens.of(context);
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: tk.ring, borderRadius: BorderRadius.circular(9)),
+      child: Text('正在改', style: TextStyle(fontSize: 12, color: tk.sub)),
     );
   }
 }

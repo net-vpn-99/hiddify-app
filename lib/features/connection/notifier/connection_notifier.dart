@@ -483,8 +483,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
         final result = outcome.mapLeft((ConnectionFailure err) async {
           loggy.warning("error reconnecting", err);
           state = AsyncError(err, StackTrace.current);
-          final copy = connectFailProgress(err);
-          await ref.read(dialogNotifierProvider.notifier).showCustomAlert(title: copy.title, message: copy.message);
+          // 这是智能分流自己在重开。没连回来写在那一行「没改成」，不弹「没能启动连接」。
         });
         final pending = result.match((f) => f, (_) => null);
         if (pending != null) await pending;
