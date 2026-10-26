@@ -407,8 +407,11 @@ class ConnectionButton extends HookConsumerWidget {
     }
     // 第 1～2 步失败（开通账号 / 获取线路）跟线路无关：第二个按钮是「帮我查一查」，不是「换一条线路」
     final failedEarly = radarState == RadarState.failed && shownFailed > 0 && shownFailed <= 2;
-    // 判出这台手机没上网（首页卡说「没连上网」）：换线路也没用，不给第二个按钮
-    final offlineFault = ref.watch(homeFaultProvider) == 'offline';
+    // 判出这台手机没上网（首页卡说「没连上网」）：换线路也没用，不给第二个按钮。
+    // 线路不通时「换一条线路」在失败卡上（connect_issue_card），这里不再重复一颗。
+    final homeFault = ref.watch(homeFaultProvider);
+    final offlineFault = homeFault == 'offline';
+    final cardHasSwitch = status is Disconnected && (deadLine || homeFault == 'line') && !offlineFault;
 
     // ---- 三种「还不能连」的主页（两端同一张表：docs/计划/主页状态表.md）----
     // 放在所有 hook 之后：以前到期那段在 useState 前面就 return，账号一恢复 hook 个数变了会出错。
@@ -586,7 +589,7 @@ class ConnectionButton extends HookConsumerWidget {
             },
       buttonOutlined: busy || (connected && requiresReconnect != true) || status is Connecting || status is Disconnecting,
       showAllLines: connected,
-      secondLabel: radarState != RadarState.failed || offlineFault
+      secondLabel: radarState != RadarState.failed || offlineFault || cardHasSwitch
           ? ''
           : failedEarly
           ? '帮我查一查'

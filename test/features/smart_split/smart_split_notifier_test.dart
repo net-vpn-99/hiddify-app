@@ -292,6 +292,32 @@ void main() {
     holdThings!.complete();
   });
 
+  test('还不知道是哪个号：不补发上个号没存上的网站', () async {
+    account = 'aaaa1111';
+    final c = await collecting();
+    setOk = false;
+    await c.choose('site:btsj6.com', 'direct');
+    c.leave();
+    account = '';
+    calls.clear();
+    await make().open(connected: true);
+    expect(calls.where((x) => x.contains('/set')), isEmpty);
+  });
+
+  test('页面开着换了账号：上个号的网站不留着、也不补发', () async {
+    account = 'aaaa1111';
+    final c = await collecting();
+    await c.choose('site:btsj6.com', 'direct');
+    account = 'bbbb2222';
+    calls.clear();
+    await c.onAccount(account);
+    expect(calls.where((x) => x.contains('/set')), isEmpty);
+    expect(c.state.mine.where((m) => m.key.startsWith('site:')), isEmpty);
+    final saved = SplitChoices.fromJson(File('${base.path}/split-choices.json').readAsStringSync())!;
+    expect(saved.owner, 'bbbb2222');
+    expect(saved.items.where((x) => x.kind == 'site'), isEmpty);
+  });
+
   test('换账号：上个号的网站（含没存上的）不补发给新号，App 选择留着', () async {
     account = 'aaaa1111';
     final c = await collecting();

@@ -24,6 +24,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// 说不清原因的（这条线路不通 / 连接意外断了 / 网页没经过线路）主按钮是「帮我查一查」——连接检查当场查，
 /// 查完给结论和办法（docs/计划/连接检查.md）；以前的「你的网络连不上我们的线路」「原因不明」两种判断都并进去了，
 /// 「同一种情况连着第二次就让联系客服当主按钮」也在连接检查的结论里做。线路设置对不上主按钮仍是「联系客服」。
+/// 线路不通时卡上还有「换一条线路」（打开线路列表自己选），不必等查完才有地方换。
 
 class ConnectIssueCard extends ConsumerWidget {
   const ConnectIssueCard({super.key});
@@ -101,9 +102,9 @@ class ConnectIssueCard extends ConsumerWidget {
       }
     }
 
+    // 只打开列表。没选就关掉时，失败说明还在（Windows 线路列表盖在失败页上，同一套）。
+    // 选了一条才会走新的一次连接，连接一开始才收掉这张卡。
     void pickLine() {
-      ref.read(deadLineProvider.notifier).state = false;
-      ref.read(homeFaultProvider.notifier).state = '';
       showLinePicker(context, ref);
     }
 
@@ -114,8 +115,8 @@ class ConnectIssueCard extends ConsumerWidget {
       if (noBackground) ('允许后台运行', () => ref.read(batteryOptimizationNotifierProvider.notifier).requestToIgnore()),
       if (noBackground) ('重新连接', reconnect),
       if (checkable) ('帮我查一查', () => showConnectCheck(context, ref, fault: checkFault)),
-      // 没上网时换线路也没用：只给「重新连接」
-      if (dead && !checkable && !offline) ('换一条线路', pickLine),
+      // 线路不通（含说不清原因的）：就在这张卡上换线，不用滚到下面。没上网时换线路没用。
+      if (dead && !offline) ('换一条线路', pickLine),
       if (!gone && !lineDown) ('重新连接', reconnect),
     ];
     // 联系客服当主按钮：线路设置对不上（不是用户的问题，要我们处理）。

@@ -162,7 +162,19 @@ class SmartSplitController {
     saveChoices(deps.baseDir, _choices);
   }
 
+  /// 换了账号（页面还开着，或账号信息刚读出来）。上个号的网站丢掉，再跟这个号对。
+  Future<void> onAccount(String account) async {
+    if (_left || account.isEmpty) return;
+    final prev = _choices.owner;
+    adoptOwner(_choices, account);
+    saveChoices(deps.baseDir, _choices);
+    if (prev != account) _emit();
+    await _syncAccount();
+  }
+
   Future<void> _syncAccount() async {
+    // 还不知道是哪个号：先留着不发。开机自动连时凭证已经是新号、账号信息还没读出来，会把上个号没存上的补发出去（10-26 审查）。
+    if ((deps.accountId?.call() ?? '').isEmpty) return;
     final api = deps.api();
     final server = await api.list();
     if (server == null || _left) return;
@@ -365,6 +377,8 @@ class SmartSplitController {
       saveChoices(deps.baseDir, _choices);
       ok = await deps.reconnect();
     } while (_again && ok);
+    // 重连过程里可能换了号：以现在这个号为准再存，别把上个号的网站写回去
+    adoptOwner(_choices, deps.accountId?.call() ?? '');
     saveChoices(deps.baseDir, _choices);
     _reconnecting = null;
     final rows = {..._waitingRows};

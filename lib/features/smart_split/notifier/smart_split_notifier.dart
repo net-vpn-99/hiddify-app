@@ -54,6 +54,11 @@ class SmartSplitNotifier extends AutoDisposeNotifier<SmartSplitState> implements
       _c?.leave();
     });
     ref.listen(connectionNotifierProvider, (_, next) => _c?.onConnection(connected: next.valueOrNull?.isConnected ?? false));
+    ref.listen(panelAuthProvider, (prev, next) {
+      final id = splitAccountId(next.account?.uuid);
+      if (id.isEmpty || id == splitAccountId(prev?.account?.uuid)) return;
+      unawaited(_c?.onAccount(id));
+    });
     unawaited(_init());
     return const SmartSplitState();
   }
