@@ -57,6 +57,8 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   // 不能把这次尝试作废：失败分支马上要按它报 fail（10-14 C2A4：端口被占启动失败，复核账号
   // 那 0.4 秒里 Disconnected 先到、abandon 掉，服务器一条都没收到）。
   bool _connectInFlight = false;
+  // 智能分流改完规则要重连一次。这期间核心报的断开是我们自己停的，不是被系统关掉。
+  bool _applyingSplit = false;
   // 首连 tun permission denied 后等核心真的报「已停止」（状态流里的 Disconnected）再重连。
   Completer<void>? _coreStopped;
   int _heldSerial = 0;
@@ -174,7 +176,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
           ++_connectedSerial;
         case Disconnected() || Disconnecting():
           var judging = false;
-          if (event is Disconnected && _wasUp && !_userStop && ref.read(homeFaultProvider).isEmpty) {
+          if (event is Disconnected && _wasUp && !_userStop && !_applyingSplit && ref.read(homeFaultProvider).isEmpty) {
             // App 里没点断开、也不是我们判断开的。先问原生那边是谁停的：通知栏「停止」、
             // 下拉快捷开关也是用户自己停的，不能说成「被系统关掉」。问完再定（上报要等它）。
             judging = true;
@@ -460,14 +462,35 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
       loggy.info("active profile changed, reconnecting");
       _userAskedToConnect = true;
+      // 改规则要先停再开。刚停马上开，网卡有时还没交回去，第一次会报 permission denied。
+      // 跟点连接那条一样：等核心真的停了再开一次，不要第一次失败就把人留在断开、再弹「没能启动连接」。
+      _applyingSplit = true;
       await ref.read(Preferences.startedByUser.notifier).update(true);
-      await _connectionRepo.reconnect(profile, ref.read(Preferences.disableMemoryLimit)).mapLeft((err) async {
-        loggy.warning("error reconnecting", err);
-        state = AsyncError(err, StackTrace.current);
-        // 给客户看「下一步怎么做」，原始报错只进 app.log。
-        final copy = connectFailProgress(err);
-        await ref.read(dialogNotifierProvider.notifier).showCustomAlert(title: copy.title, message: copy.message);
-      }).run();
+      try {
+        final limit = ref.read(Preferences.disableMemoryLimit);
+        var outcome = await _connectionRepo.reconnect(profile, limit).run();
+        final firstErr = outcome.getLeft().toNullable();
+        if (firstErr != null) {
+          final stopped = state.valueOrNull is! Disconnected ? (_coreStopped = Completer<void>()) : null;
+          final didStop = stopped == null ||
+              await stopped.future.then((_) => true).timeout(const Duration(seconds: 15), onTimeout: () => false);
+          _coreStopped = null;
+          if (didStop) {
+            loggy.info('reconnect failed, core stopped, starting once more');
+            outcome = await _connectionRepo.connect(profile, limit).run();
+          }
+        }
+        final result = outcome.mapLeft((ConnectionFailure err) async {
+          loggy.warning("error reconnecting", err);
+          state = AsyncError(err, StackTrace.current);
+          final copy = connectFailProgress(err);
+          await ref.read(dialogNotifierProvider.notifier).showCustomAlert(title: copy.title, message: copy.message);
+        });
+        final pending = result.match((f) => f, (_) => null);
+        if (pending != null) await pending;
+      } finally {
+        _applyingSplit = false;
+      }
     }
   }
 

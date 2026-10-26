@@ -168,36 +168,42 @@ class HomeRadar extends HookConsumerWidget {
     up.forEach(take);
 
     // 一条条摆（正在用的先摆）：在自己那一圈上从固定角度起左右各挪 15° 试，名字放右边或左边；
-    // 光点 + 名字这一块不能跟已经摆好的、中心点叠上，也不能伸出雷达卡。都不行就放回原位。
+    // 光点 + 名字这一块不能跟已经摆好的、中心点叠上，也不能伸出雷达卡。这一圈摆不下就换外圈。
     final pad = 3 / k;
     final taken = <Rect>[const Rect.fromLTWH(190, 190, 20, 20)];
     return [
       for (final l in picked)
         () {
-          final ring = _hashOf(l.name) ~/ 360 % 3;
+          // 手机上雷达比电脑小，名字一长，最里面那圈摆不下，以前摆不下就叠回原位，光点挤在中间。
+          // 自己那一圈先试；不行再往外圈试。正在用的先摆，所以它还在原来的位置。
+          final preferred = _hashOf(l.name) ~/ 360 % 3;
+          final rings = [preferred, for (var r = 2; r >= 0; r--) if (r != preferred) r];
           final cur = l.name == current;
           final dot = (cur ? 14.0 : 9.0) / k;
           final w = dot + (5 + _textWidth(l.name, cur ? 12 : 11)) / k;
           final h = 18 / k;
           final base = _angleOf(l.name);
           (double, double, double, bool, Rect)? best;
-          for (var i = 0; i < 24 && best == null; i++) {
-            final deg = base + (i.isOdd ? -1 : 1) * ((i + 1) ~/ 2) * 15.0;
-            final a = deg * math.pi / 180;
-            final x = 200 + math.cos(a) * _ringRadius[ring];
-            final y = 200 + math.sin(a) * _ringRadius[ring];
-            for (final left in x > 285 ? [true, false] : [false, true]) {
-              final box = Rect.fromLTWH(left ? x + dot / 2 - w : x - dot / 2, y - h / 2, w, h);
-              if (box.left >= 4 && box.right <= 396 && !taken.any((t) => t.overlaps(box.inflate(pad)))) {
-                best = (deg, x, y, left, box);
-                break;
+          for (final ring in rings) {
+            if (best != null) break;
+            for (var i = 0; i < 24 && best == null; i++) {
+              final deg = base + (i.isOdd ? -1 : 1) * ((i + 1) ~/ 2) * 15.0;
+              final a = deg * math.pi / 180;
+              final x = 200 + math.cos(a) * _ringRadius[ring];
+              final y = 200 + math.sin(a) * _ringRadius[ring];
+              for (final left in x > 285 ? [true, false] : [false, true]) {
+                final box = Rect.fromLTWH(left ? x + dot / 2 - w : x - dot / 2, y - h / 2, w, h);
+                if (box.left >= 4 && box.right <= 396 && !taken.any((t) => t.overlaps(box.inflate(pad)))) {
+                  best = (deg, x, y, left, box);
+                  break;
+                }
               }
             }
           }
           if (best == null) {
             final a = base * math.pi / 180;
-            final x = 200 + math.cos(a) * _ringRadius[ring];
-            final y = 200 + math.sin(a) * _ringRadius[ring];
+            final x = 200 + math.cos(a) * _ringRadius[2];
+            final y = 200 + math.sin(a) * _ringRadius[2];
             best = (base, x, y, x > 285, Rect.fromLTWH(x - dot / 2, y - h / 2, w, h));
           }
           final (deg, x, y, left, box) = best;

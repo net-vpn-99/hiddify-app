@@ -44,6 +44,9 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
             RequestIgnoreBatteryOptimizations("request_ignore_battery_optimizations"),
             GetInstalledPackages("get_installed_packages"),
             GetPackagesIcon("get_package_icon"),
+            // 只要这一个 App 的名字和图标。不要 getInstalledApplications：那一下会扫整机应用，
+            // ColorOS / MIUI 就弹「读取应用列表」。
+            AppLabel("app_label"),
             // OneRay：新用户打开 App 时看手机上是不是开着别家 VPN（我们自己的没连时才问）。
             OtherVpnActive("other_vpn_active"),
             OpenVpnSettings("open_vpn_settings"),
@@ -197,6 +200,30 @@ class PlatformSettingsHandler : FlutterPlugin, MethodChannel.MethodCallHandler, 
                     val base64: String =
                         Base64.encodeToString(byteArrayOutputStream.toByteArray(), Base64.NO_WRAP)
                     success(base64)
+                }
+            }
+
+            Trigger.AppLabel.method -> {
+                val packageName = (call.arguments as? Map<*, *>)?.get("packageName") as? String
+                if (packageName.isNullOrEmpty()) {
+                    result.success(null)
+                } else {
+                    result.runCatching {
+                        val info = packageManager.getApplicationInfo(packageName, 0)
+                        val name = info.loadLabel(packageManager).toString()
+                        val drawable = packageManager.getApplicationIcon(packageName)
+                        val bitmap = Bitmap.createBitmap(
+                            drawable.intrinsicWidth.coerceAtLeast(1),
+                            drawable.intrinsicHeight.coerceAtLeast(1),
+                            Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = Canvas(bitmap)
+                        drawable.setBounds(0, 0, canvas.width, canvas.height)
+                        drawable.draw(canvas)
+                        val bytes = ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
+                        success(mapOf("name" to name, "icon" to bytes.toByteArray()))
+                    }.onFailure { result.success(null) }
                 }
             }
 

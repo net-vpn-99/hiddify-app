@@ -84,6 +84,20 @@ const plainDownloaderPackages = {
 /// 我们自己的包名。
 const ownPackage = 'com.oneray.app';
 
+/// 崩溃上报、统计、广告。浏览器里会比网页本身先连上，不能拿来当这一页的名字
+/// （10-27 实测：打开 BT世界网，先连到 sentry.io，名字就成了 sentry.io，btsj6.com 被收进关联网址）。
+const _notThePage = {
+  'sentry.io', 'appcenter.ms', 'crashlytics.com', 'bugsnag.com',
+  'google-analytics.com', 'googletagmanager.com', 'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
+  'facebook.net', 'scorecardresearch.com', 'hotjar.com', 'segment.io', 'segment.com', 'mixpanel.com', 'amplitude.com', 'newrelic.com',
+};
+
+/// 像用户打开的那个网页：主域名本身，或 www / m。图片站、上报接口是别的子域名，不当这一页的名字。
+bool _looksLikePage(String host, String reg) {
+  if (_notThePage.contains(reg)) return false;
+  return host == reg || host == 'www.$reg' || host == 'm.$reg' || host == 'mobile.$reg';
+}
+
 /// ① 不列出：系统、手机厂商自带的服务、别的 App 里嵌的网页（认不出是谁的）、我们自己。浏览器先认，不受这里影响。
 const _hiddenPrefixes = [
   'android.', 'com.android.', 'com.google.android.gms', 'com.google.android.gsf', 'com.google.process',
@@ -172,7 +186,23 @@ List<SplitThing> classify(
 }) {
   final groups = <String, _Group>{};
   _Group group(String key, int seq) => groups.putIfAbsent(key, () => _Group(SplitThing(key: key), seq));
-  final pageOf = <String, String>{}; // 浏览器包名 → 采集开始后第一个陌生主域名（就是那个网页）
+  final pageOf = <String, String>{}; // 浏览器包名 → 这一页的主域名（www / m，不是先连上的统计域名）
+  // 主网页还没出现时先看到的图片站、统计。等主网页出现再归进去。
+  final held = <String, List<(int, String, String)>>{};
+
+  void attach(String owner, int seq, String reg, String outbound) {
+    if (reg != owner && list.mustLock(reg).isNotEmpty) return;
+    final g = group('site:$owner', seq);
+    final t = g.thing;
+    final must = list.mustLock(owner);
+    t
+      ..kind = must.isEmpty ? 'site' : 'locked'
+      ..lockWhy = must == 'proxy' ? '只能走光速雷达' : (must == 'direct' ? '只能走本地' : '')
+      ..name = owner
+      ..host = owner;
+    if (!t.domains.contains(reg)) t.domains.add(reg);
+    g.vote(outbound);
+  }
 
   for (var i = 0; i < conns.length; i++) {
     final c = conns[i];
@@ -225,21 +255,21 @@ List<SplitThing> classify(
       g.vote(c.outbound);
       continue;
     }
-    // ⑤ 陌生的归到网页：安卓读不到地址栏，采集开始后这个浏览器第一个陌生主域名就是网页
+    // ⑤ 陌生的归到网页。安卓读不到地址栏：主网页是 www / m 这种地址，不是先连上的统计、图片站。
     final reg = psl.registrable(domain);
-    final owner = pageOf.putIfAbsent(pkg, () => reg);
-    // 别的网站那一组里的网址级「必须」（gravatar、akamaihd 这类被墙的公共网址）不归进来：服务器不收
-    if (reg != owner && list.mustLock(reg).isNotEmpty) continue;
-    final g = group('site:$owner', i);
-    final t = g.thing;
-    final must = list.mustLock(owner);
-    t
-      ..kind = must.isEmpty ? 'site' : 'locked'
-      ..lockWhy = must == 'proxy' ? '只能走光速雷达' : (must == 'direct' ? '只能走本地' : '')
-      ..name = owner
-      ..host = owner;
-    if (!t.domains.contains(reg)) t.domains.add(reg);
-    g.vote(c.outbound);
+    final knownOwner = pageOf[pkg];
+    if (knownOwner == null && !_looksLikePage(domain, reg)) {
+      held.putIfAbsent(pkg, () => []).add((i, reg, c.outbound));
+      continue;
+    }
+    final owner = knownOwner ?? reg;
+    if (knownOwner == null) {
+      pageOf[pkg] = owner;
+      for (final (seq, heldReg, outbound) in held.remove(pkg) ?? const <(int, String, String)>[]) {
+        attach(owner, seq, heldReg, outbound);
+      }
+    }
+    attach(owner, i, reg, c.outbound);
   }
 
   final sorted = groups.values.toList()

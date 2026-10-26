@@ -37,6 +37,19 @@ void main() {
     }
   });
 
+  test('统计和图片站先连上：名字仍是网页自己，不叫 sentry.io', () {
+    final r = run([
+      c('com.android.chrome', 'o123.ingest.sentry.io'),
+      c('com.android.chrome', 'imgb.anycip.com'),
+      c('com.android.chrome', 'in.appcenter.ms'),
+      c('com.android.chrome', 'www.btsj6.com'),
+    ]);
+    final t = r.single;
+    expect(t.name, 'btsj6.com');
+    expect(t.host, 'btsj6.com');
+    expect(t.domains, ['anycip.com', 'appcenter.ms', 'btsj6.com', 'sentry.io']);
+  });
+
   test('Chrome 打开 btsj6：主网址一组，图片网址归进去，现在走光速雷达', () {
     final r = run([c('com.android.chrome', 'www.btsj6.com'), c('com.android.chrome', 'imgb.anycip.com')]);
     final t = r.single;

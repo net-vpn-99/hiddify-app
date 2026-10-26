@@ -24,9 +24,19 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <!-- 不要「读取应用列表」。这条权限一声明，ColorOS / MIUI 会在切换到别的 App 时弹授权。
+         看某一个已经知道包名的 App，用 getApplicationInfo 就够，不必把整机应用扫一遍。
+         installed_apps 插件自己也声明了这条，合并时拿掉。能看见哪些 App 靠下面的 queries。 -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
+        tools:node="remove" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:name=".Application"

@@ -18,7 +18,6 @@ import 'package:hiddify/features/smart_split/data/things_store.dart';
 import 'package:hiddify/features/smart_split/model/public_suffix.dart';
 import 'package:hiddify/features/smart_split/notifier/smart_split_controller.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:installed_apps/index.dart';
 
 /// 智能分流页的状态。离开这页（返回键）就释放：采集记录清空（计划书四「安卓」那条）。
 final smartSplitProvider = NotifierProvider.autoDispose<SmartSplitNotifier, SmartSplitState>(SmartSplitNotifier.new);
@@ -121,17 +120,25 @@ class SmartSplitNotifier extends AutoDisposeNotifier<SmartSplitState> implements
     }
   }
 
+  static const _platform = MethodChannel('com.hiddify.app/platform');
+
   /// 采集归类要马上有个名字：先用包名，App 名拿到了再刷新一次。
+  /// 只问这一个包名。不要装的应用列表：那一下会让系统弹「读取应用列表」。
   String _appName(String pkg) {
     final n = _names[pkg];
     if (n != null) return n;
     if (_asking.add(pkg)) {
-      unawaited(InstalledApps.getAppInfo(pkg, null).then((info) {
-        if (info == null) return;
-        _names[pkg] = info.name;
-        icons[pkg] = info.icon;
-        _c?.tick();
-      }).catchError((_) {}));
+      unawaited(() async {
+        try {
+          final raw = await _platform.invokeMethod<Map>('app_label', {'packageName': pkg});
+          if (raw == null) return;
+          final name = raw['name'];
+          final icon = raw['icon'];
+          if (name is String && name.isNotEmpty) _names[pkg] = name;
+          if (icon is Uint8List && icon.isNotEmpty) icons[pkg] = icon;
+          _c?.tick();
+        } catch (_) {}
+      }());
     }
     return pkg;
   }
