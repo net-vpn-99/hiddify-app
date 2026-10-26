@@ -7,6 +7,7 @@ import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
 import 'package:hiddify/features/log/data/log_path_resolver.dart';
+import 'package:hiddify/features/smart_split/data/split_diag.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api_base.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
@@ -97,6 +98,13 @@ Future<String> _collect(WidgetRef ref) async {
   b.writeln();
 
   final dir = ref.read(appDirectoriesProvider).requireValue.workingDir;
+  b.writeln('--- 智能分流 ---');
+  try {
+    b.writeln(await readSplitDiag(dir));
+  } catch (e) {
+    b.writeln('(读智能分流诊断出错: $e)');
+  }
+  b.writeln();
   b.writeln('--- box.log (尾部) ---');
   b.writeln(await _tailFile(LogPathResolver.corePath(dir), 600, 200 * 1024));
   b.writeln();

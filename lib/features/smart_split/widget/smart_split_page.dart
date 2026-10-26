@@ -1,11 +1,14 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/theme/oneray_tokens.dart';
 import 'package:hiddify/features/common/guide_card.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/route_check_notifier.dart';
+import 'package:hiddify/features/smart_split/data/split_diag.dart';
 import 'package:hiddify/features/smart_split/model/split_choices.dart';
 import 'package:hiddify/features/smart_split/notifier/smart_split_controller.dart';
 import 'package:hiddify/features/smart_split/notifier/smart_split_notifier.dart';
@@ -41,6 +44,14 @@ class _SmartSplitPageState extends ConsumerState<SmartSplitPage> {
     lineName: ref.watch(Preferences.lastNodeName),
     actions: ref.read(smartSplitProvider.notifier),
     onRecheck: () => ref.read(routeCheckProvider.notifier).check(),
+    readDiag: () async {
+      try {
+        final dirs = await ref.read(appDirectoriesProvider.future);
+        return readSplitDiag(dirs.workingDir);
+      } catch (e) {
+        return '读不了：$e';
+      }
+    },
   );
 }
 
@@ -54,6 +65,7 @@ class SmartSplitView extends StatefulWidget {
     required this.lineName,
     required this.actions,
     required this.onRecheck,
+    this.readDiag,
   });
 
   final bool connected;
@@ -62,6 +74,9 @@ class SmartSplitView extends StatefulWidget {
   final String lineName;
   final SplitActions actions;
   final VoidCallback onRecheck;
+
+  /// 点「没开出来？看这次实际怎样」时读规则文件和连接日志。截图测试不传。
+  final Future<String> Function()? readDiag;
 
   @override
   State<SmartSplitView> createState() => _SmartSplitViewState();
@@ -249,25 +264,63 @@ class _SmartSplitViewState extends State<SmartSplitView> {
       _ => ('', tk.sub, false),
     };
     if (msg.isEmpty) return const SizedBox.shrink();
+    final showDiag = widget.readDiag != null && (note == 'done' || note == 'failed');
     return Padding(
       padding: const EdgeInsets.only(left: 44, top: 2, bottom: 4),
-      child: GestureDetector(
-        onTap: retry
-            ? () {
-                final again = s.retryAs[r.key];
-                if (again == 'reset') {
-                  n.resetOne(r.key);
-                } else {
-                  n.choose(r.key, again ?? r.now);
-                }
-              }
-            : null,
-        child: Row(
-          children: [
-            if (note == 'done') ...[Icon(Icons.check, size: 14, color: tk.ok), const SizedBox(width: 4)],
-            Expanded(child: Text(msg, style: body(color))),
-          ],
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: retry
+                ? () {
+                    final again = s.retryAs[r.key];
+                    if (again == 'reset') {
+                      n.resetOne(r.key);
+                    } else {
+                      n.choose(r.key, again ?? r.now);
+                    }
+                  }
+                : null,
+            child: Row(
+              children: [
+                if (note == 'done') ...[Icon(Icons.check, size: 14, color: tk.ok), const SizedBox(width: 4)],
+                Expanded(child: Text(msg, style: body(color))),
+              ],
+            ),
+          ),
+          if (showDiag)
+            GestureDetector(
+              onTap: _showDiag,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text('没开出来？看这次实际怎样', style: body(tk.acc)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showDiag() async {
+    final read = widget.readDiag;
+    if (read == null) return;
+    final text = await read();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('这次实际怎样'),
+        content: SingleChildScrollView(child: SelectableText(text)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+          FilledButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: text));
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('复制'),
+          ),
+        ],
       ),
     );
   }
