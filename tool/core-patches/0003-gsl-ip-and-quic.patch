@@ -24,7 +24,7 @@ diff --git a/v2/config/builder.go b/v2/config/builder.go
 index 0000000..0000000 100644
 --- a/v2/config/builder.go
 +++ b/v2/config/builder.go
-@@ -697,6 +697,21 @@ func setRoutingOptions(options *option.Options, hopt *HiddifyOptions) error {
+@@ -697,6 +697,36 @@ func setRoutingOptions(options *option.Options, hopt *HiddifyOptions) error {
  	gslDNS, gslRules := gslRouteRulesFromFile(hopt)
  	dnsRules = append(dnsRules, gslDNS...)
  	routeRules = append(routeRules, gslRules...)
@@ -34,6 +34,21 @@ index 0000000..0000000 100644
 +		DefaultOptions: option.DefaultRule{
 +			RawDefaultRule: option.RawDefaultRule{
 +				Protocol: []string{C.ProtocolQUIC},
++			},
++			RuleAction: option.RuleAction{
++				Action: C.RuleActionTypeReject,
++				RejectOptions: option.RejectActionOptions{
++					Method: C.RuleActionRejectMethodDefault,
++				},
++			},
++		},
++	})
++	// 刷新之后浏览器把图片网址藏成 cloudflare-ech.com。这种也关掉，它会改用能看见网址的连接。
++	routeRules = append(routeRules, option.Rule{
++		Type: C.RuleTypeDefault,
++		DefaultOptions: option.DefaultRule{
++			RawDefaultRule: option.RawDefaultRule{
++				DomainSuffix: []string{"cloudflare-ech.com"},
 +			},
 +			RuleAction: option.RuleAction{
 +				Action: C.RuleActionTypeReject,

@@ -16,7 +16,7 @@ on:
 
 env:
   UPSTREAM_TAG: v4.1.0
-  CORE_TAG: core-v4.1.0-oneray3
+  CORE_TAG: core-v4.1.0-oneray4
 
 permissions:
   contents: write
