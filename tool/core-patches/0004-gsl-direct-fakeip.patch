@@ -1,0 +1,66 @@
+diff --git a/v2/config/gsl_route.go b/v2/config/gsl_route.go
+index a69e8e7..5c3874f 100644
+--- a/v2/config/gsl_route.go
++++ b/v2/config/gsl_route.go
+@@ -78,10 +78,11 @@ func gslClean(in []string) []string {
+ }
+ 
+ // 路由：用户·走本地 → 用户·走光速雷达 → 服务器·走本地 → 服务器·走光速雷达（跟 Windows 同一顺序）。
+-// DNS：只给两份走本地的加国内 DNS（拿真 IP，不进假 DNS）；走光速雷达的不加，节点按域名自己解析。
++// 不给走本地单独做 DNS。单独用国内 DNS 会拿到真 IP，图片连接上没有域名，规则对不上，还是从节点出去。
++// 跟别的流量一样进假 DNS，每个网址有自己的地址，连上来就能对上规则；真正拨号再用国内 DNS。
+ func gslRouteRules(r gslRoutes, hopt *HiddifyOptions) ([]option.DefaultDNSRule, []option.Rule) {
+ 	var dns []option.DefaultDNSRule
+ 	var rules []option.Rule
+ 	add := func(domains []string, outbound string) {
+ 		if len(domains) == 0 {
+ 			return
+@@ -96,20 +98,6 @@ func gslRouteRules(r gslRoutes, hopt *HiddifyOptions) ([]option.DefaultDNSRule,
+ 				},
+ 			},
+ 		})
+-		if outbound != OutboundDirectTag {
+-			return
+-		}
+-		dns = append(dns, option.DefaultDNSRule{
+-			RawDefaultDNSRule: option.RawDefaultDNSRule{DomainSuffix: domains},
+-			DNSRuleAction: option.DNSRuleAction{
+-				Action: C.RuleActionTypeRoute,
+-				RouteOptions: option.DNSRouteActionOptions{
+-					Server:     DNSMultiDirectTag,
+-					Strategy:   hopt.DirectDnsDomainStrategy,
+-					RewriteTTL: &DEFAULT_DNS_TTL,
+-				},
+-			},
+-		})
+ 	}
+ 	add(r.UserDirect, OutboundDirectTag)
+ 	add(r.UserProxy, OutboundMainDetour)
+diff --git a/v2/config/gsl_route_test.go b/v2/config/gsl_route_test.go
+index a2a6616..6f247ab 100644
+--- a/v2/config/gsl_route_test.go
++++ b/v2/config/gsl_route_test.go
+@@ -83,17 +83,14 @@ func TestGslRulesOrder(t *testing.T) {
+ 	}
+ }
+ 
+-// 走本地的两份给国内 DNS（拿真 IP，不进假 DNS）；走光速雷达的不加 DNS 规则：
+-// 开着假 DNS，节点那头按域名自己解析（补丁 0001 把目的地址换成了域名）。
++// 走本地不再单独指定 DNS，否则图片连接拿到真 IP，域名对不上规则。
+ func TestGslDnsRules(t *testing.T) {
+ 	r := gslRoutes{UserDirect: []string{"a.com"}, UserProxy: []string{"b.com"}, ServerDirect: []string{"c.com"}, ServerProxy: []string{"d.com"}}
+-	dns, _ := gslRouteRules(r, &HiddifyOptions{})
+-	if len(dns) != 2 {
+-		t.Fatalf("got %d dns rules", len(dns))
++	dns, rules := gslRouteRules(r, &HiddifyOptions{})
++	if len(dns) != 0 {
++		t.Fatalf("direct domains must stay on fake ip, got %d dns rules", len(dns))
+ 	}
+-	for i, dom := range []string{"a.com", "c.com"} {
+-		if dns[i].DomainSuffix[0] != dom || dns[i].RouteOptions.Server != DNSMultiDirectTag {
+-			t.Fatalf("dns %d = %v -> %s", i, dns[i].DomainSuffix, dns[i].RouteOptions.Server)
+-		}
++	if len(rules) != 4 {
++		t.Fatalf("route rules = %d", len(rules))
+ 	}
+ }
