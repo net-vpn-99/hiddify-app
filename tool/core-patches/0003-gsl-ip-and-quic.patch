@@ -1,0 +1,48 @@
+diff --git a/hiddify-sing-box/route/route.go b/hiddify-sing-box/route/route.go
+index 0000000..0000000 100644
+--- a/hiddify-sing-box/route/route.go
++++ b/hiddify-sing-box/route/route.go
+@@ -462,8 +462,17 @@ func (r *Router) routeConnection(
+ 	} else if metadata.Domain == "" {
+ 		domain, loaded := r.dns.LookupReverseMapping(metadata.Destination.Addr)
+ 		if loaded {
+ 			metadata.Domain = domain
++			// OneRay：浏览器经常只把 IP 交过来。「走本地」按域名认，对不上就还是进节点，
++			// 图片站会 403。解析过的地址认回域名，后面的域名规则才生效。
++			if domain != "" && metadata.Destination.IsIP() {
++				metadata.OriginDestination = metadata.Destination
++				metadata.Destination = M.Socksaddr{
++					Fqdn: domain,
++					Port: metadata.Destination.Port,
++				}
++			}
+ 			r.logger.DebugContext(ctx, "found reserve mapped domain: ", metadata.Domain)
+ 		}
+ 	}
+ 	if metadata.Destination.IsIPv4() {
+diff --git a/v2/config/builder.go b/v2/config/builder.go
+index 0000000..0000000 100644
+--- a/v2/config/builder.go
++++ b/v2/config/builder.go
+@@ -697,6 +697,21 @@ func setRoutingOptions(options *option.Options, hopt *HiddifyOptions) error {
+ 	gslDNS, gslRules := gslRouteRulesFromFile(hopt)
+ 	dnsRules = append(dnsRules, gslDNS...)
+ 	routeRules = append(routeRules, gslRules...)
++	// 加密连接（QUIC）里经常看不见图片网址。掐掉之后浏览器会改走普通连接，网址露出来，上面的规则才对得上。
++	routeRules = append(routeRules, option.Rule{
++		Type: C.RuleTypeDefault,
++		DefaultOptions: option.DefaultRule{
++			RawDefaultRule: option.RawDefaultRule{
++				Protocol: []string{C.ProtocolQUIC},
++			},
++			RuleAction: option.RuleAction{
++				Action: C.RuleActionTypeReject,
++				RejectOptions: option.RejectActionOptions{
++					Method: C.RuleActionRejectMethodDefault,
++				},
++			},
++		},
++	})
+ 
+ 	// for _, rule := range opt.Rules {
+ 	// 	routeRule := rule.MakeRule()
