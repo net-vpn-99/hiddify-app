@@ -374,7 +374,7 @@ class _SmartSplitViewState extends State<SmartSplitView> {
     );
   }
 
-  // App：开着 = 整个走本地；关着 = 跟别的 App 一样国内走本地、国外走光速雷达
+  // App：开着 = 整个走本地；关着 = 国内外分开走（跟没单独改过的一样）
   Widget _appRow(
     SplitRow r,
     OneRayTokens tk,
@@ -403,7 +403,7 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                       overflow: TextOverflow.ellipsis,
                       style: body(tk.text).copyWith(fontSize: 14),
                     ),
-                    Text(on ? '整个走本地' : '国内走本地，国外走光速雷达', style: small()),
+                    Text(on ? '整个走本地' : '国内外分开走', style: small()),
                   ],
                 ),
               ),
