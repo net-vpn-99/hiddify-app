@@ -13,7 +13,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 智能分流（VPN 仓库 docs/计划/智能分流-自己改网站.md 四，样稿 docs/计划/智能分流-样稿/，跟 Windows SmartSplitPanel.qml 同一套）：
 /// 现在的线路 → 分流采集（网站一块、App 一块，不能改的合成最下面一行）→ 我改过的 → 收起的「默认怎么分？」。
-/// 没连上：只有一张说明卡 + 只能看的「我改过的」。改规则要重开隧道，这段时间页面停在原地。
+/// 没连上：只有一张说明卡 + 只能看的「我改过的」。改规则要重开隧道，这段时间整页盖住，只能等。
 /// 界面里不出现「代理 / 全局 / 规则 / PAC」这类词。
 class SmartSplitPage extends ConsumerStatefulWidget {
   const SmartSplitPage({super.key});
@@ -84,25 +84,44 @@ class _SmartSplitViewState extends State<SmartSplitView> {
     TextStyle small([Color? c]) => text.bodySmall!.copyWith(color: c ?? tk.sub, fontSize: 12);
     TextStyle title([Color? c]) => text.titleSmall!.copyWith(color: c ?? tk.text, fontWeight: FontWeight.w600);
 
-    return Scaffold(
-      backgroundColor: tk.bg,
-      appBar: AppBar(title: const Text('智能分流')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+    final busy = s.applying.isNotEmpty;
+    final waitLine = busy ? changingLine(s.applying.keys.first, s.applying[s.applying.keys.first] ?? '') : '';
+    return PopScope(
+      canPop: !busy,
+      child: Scaffold(
+        backgroundColor: tk.bg,
+        appBar: AppBar(automaticallyImplyLeading: !busy, title: const Text('智能分流')),
+        body: Stack(
           children: [
-            Text('国内网站走本地网络，国外网站走光速雷达。可以根据自己的实际情况自己选。', style: body()),
-            const SizedBox(height: 18),
-            if (!connected) ...[
-              _NotConnectedCard(hasMine: s.mine.isNotEmpty),
-              const SizedBox(height: 22),
-            ] else ...[
-              if (!s.collecting) ...[_LiveCard(check: widget.check, onRecheck: widget.onRecheck), const SizedBox(height: 18)],
-              _collectCard(context, tk, s, n, body, small, title),
-              const SizedBox(height: 22),
-            ],
-            if (s.mine.isNotEmpty) ...[_mine(context, tk, s, n, connected, body, small, title), const SizedBox(height: 22)],
-            _explain(tk, body, title),
+            IgnorePointer(
+              ignoring: busy,
+              child: SafeArea(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                  children: [
+                    Text('国内网站走本地网络，国外网站走光速雷达。可以根据自己的实际情况自己选。', style: body()),
+                    const SizedBox(height: 18),
+                    if (!connected) ...[
+                      _NotConnectedCard(hasMine: s.mine.isNotEmpty),
+                      const SizedBox(height: 22),
+                    ] else ...[
+                      if (!s.collecting) ...[
+                        _LiveCard(check: widget.check, onRecheck: widget.onRecheck),
+                        const SizedBox(height: 18),
+                      ],
+                      _collectCard(context, tk, s, n, body, small, title),
+                      const SizedBox(height: 22),
+                    ],
+                    if (s.mine.isNotEmpty) ...[
+                      _mine(context, tk, s, n, connected, body, small, title),
+                      const SizedBox(height: 22),
+                    ],
+                    _explain(tk, body, title),
+                  ],
+                ),
+              ),
+            ),
+            if (busy) _WaitCover(line: waitLine),
           ],
         ),
       ),
@@ -168,7 +187,11 @@ class _SmartSplitViewState extends State<SmartSplitView> {
           ] else ...[
             Row(
               children: [
-                Container(width: 8, height: 8, decoration: BoxDecoration(color: tk.acc, shape: BoxShape.circle)),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(color: tk.acc, shape: BoxShape.circle),
+                ),
                 const SizedBox(width: 8),
                 Expanded(child: Text('正在采集…', style: title())),
                 OutlinedButton(
@@ -217,7 +240,10 @@ class _SmartSplitViewState extends State<SmartSplitView> {
               children: [
                 for (var i = 0; i < rows.length; i++) ...[
                   if (i > 0) Divider(height: 1, color: tk.ring, indent: 12, endIndent: 12),
-                  if (rows[i].kind == 'site') _siteRow(rows[i], tk, s, n, body, small) else _appRow(rows[i], tk, s, n, body, small),
+                  if (rows[i].kind == 'site')
+                    _siteRow(rows[i], tk, s, n, body, small)
+                  else
+                    _appRow(rows[i], tk, s, n, body, small),
                 ],
               ],
             ),
@@ -232,17 +258,7 @@ class _SmartSplitViewState extends State<SmartSplitView> {
     final site = r.kind == 'site';
     final going = s.applying[r.key];
     final (String msg, Color color, bool retry) = switch (note) {
-      'reconnecting' => (
-          site
-              ? (going == 'direct'
-                  ? '正在让这个网站走本地。'
-                  : going == 'proxy'
-                      ? '正在让这个网站走光速雷达。'
-                      : '正在改回。')
-              : (going == 'direct' ? '正在让这个 App 走本地。' : '正在改回。'),
-          tk.sub,
-          false,
-        ),
+      'reconnecting' => (changingLine(r.key, going ?? ''), tk.sub, false),
       'done' => (site ? '好了。回浏览器把那个网页重新打开。' : '好了。重新打开那个 App。', tk.ok, false),
       'failed' => ('没改成，点这里再试', tk.fault, true),
       'full' => ('最多改 50 个，先在「我改过的」里改回几个', tk.fault, false),
@@ -297,7 +313,12 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(tk.text).copyWith(fontSize: 14)),
+                    Text(
+                      r.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: body(tk.text).copyWith(fontSize: 14),
+                    ),
                     if (hasUrls)
                       GestureDetector(
                         onTap: () => setState(() => open ? _urlsOpen.remove(r.key) : _urlsOpen.add(r.key)),
@@ -376,7 +397,12 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(tk.text).copyWith(fontSize: 14)),
+                    Text(
+                      r.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: body(tk.text).copyWith(fontSize: 14),
+                    ),
                     Text(on ? '整个走本地' : '国内走本地，国外走光速雷达', style: small()),
                   ],
                 ),
@@ -384,11 +410,7 @@ class _SmartSplitViewState extends State<SmartSplitView> {
               if (s.rowNote[r.key] == 'reconnecting')
                 const _Changing()
               else
-                Switch(
-                  value: on,
-                  activeTrackColor: tk.acc,
-                  onChanged: (v) => n.choose(r.key, v ? 'direct' : 'split'),
-                ),
+                Switch(value: on, activeTrackColor: tk.acc, onChanged: (v) => n.choose(r.key, v ? 'direct' : 'split')),
             ],
           ),
           _note(r, tk, s, n, body),
@@ -443,7 +465,9 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                   padding: const EdgeInsets.fromLTRB(38, 10, 12, 10),
                   child: Row(
                     children: [
-                      Expanded(child: Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(tk.text))),
+                      Expanded(
+                        child: Text(r.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(tk.text)),
+                      ),
                       Text(r.thing.lockWhy, style: body()),
                     ],
                   ),
@@ -476,11 +500,9 @@ class _SmartSplitViewState extends State<SmartSplitView> {
     TextStyle Function([Color?]) small,
     TextStyle Function([Color?]) title,
   ) {
-    String route(SplitChoice c) => c.kind == 'site'
-        ? (c.choice == 'direct' ? '走本地' : '走光速雷达')
-        : (c.choice == 'direct' ? '整个走本地' : '国内外分开走');
-    String where(SplitChoice c) =>
-        c.kind == 'site' ? '网站 · ${s.loggedIn && c.synced ? '账号里' : '这台手机'}' : 'App · 这台手机';
+    String route(SplitChoice c) =>
+        c.kind == 'site' ? (c.choice == 'direct' ? '走本地' : '走光速雷达') : (c.choice == 'direct' ? '整个走本地' : '国内外分开走');
+    String where(SplitChoice c) => c.kind == 'site' ? '网站 · ${s.loggedIn && c.synced ? '账号里' : '这台手机'}' : 'App · 这台手机';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -511,7 +533,12 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                   padding: EdgeInsets.fromLTRB(12, 10, connected ? 4 : 16, 10),
                   child: Row(
                     children: [
-                      _Avatar(label: s.mine[i].name, icon: n.icons[s.mine[i].pkg], app: s.mine[i].kind != 'site', onCard: true),
+                      _Avatar(
+                        label: s.mine[i].name,
+                        icon: n.icons[s.mine[i].pkg],
+                        app: s.mine[i].kind != 'site',
+                        onCard: true,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -524,15 +551,17 @@ class _SmartSplitViewState extends State<SmartSplitView> {
                                 onTap: () => n.retrySync(s.mine[i].key),
                                 child: Text('没存上，点一下重试', style: small(tk.fault)),
                               ),
-                            if (s.rowNote[s.mine[i].key] == 'failed')
-                              Text('没改成', style: small(tk.fault)),
+                            if (s.rowNote[s.mine[i].key] == 'failed') Text('没改成', style: small(tk.fault)),
                           ],
                         ),
                       ),
                       if (s.applying.containsKey(s.mine[i].key))
                         Text('正在改', style: body(tk.sub).copyWith(fontWeight: FontWeight.w600))
                       else ...[
-                        Text(route(s.mine[i]), style: body(connected ? tk.text : tk.sub).copyWith(fontWeight: FontWeight.w600)),
+                        Text(
+                          route(s.mine[i]),
+                          style: body(connected ? tk.text : tk.sub).copyWith(fontWeight: FontWeight.w600),
+                        ),
                         if (connected)
                           TextButton(
                             style: TextButton.styleFrom(foregroundColor: tk.sub),
@@ -575,7 +604,10 @@ class _SmartSplitViewState extends State<SmartSplitView> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 104, child: Text(what, style: body(tk.text).copyWith(fontWeight: FontWeight.w600))),
+          SizedBox(
+            width: 104,
+            child: Text(what, style: body(tk.text).copyWith(fontWeight: FontWeight.w600)),
+          ),
           Expanded(child: Text(how, style: body())),
         ],
       ),
@@ -600,7 +632,10 @@ class _SmartSplitViewState extends State<SmartSplitView> {
           row('国内网站和 App', '走本地网络。网站看到的是你自己的 IP，不计套餐流量。'),
           row('国外网站和 App', line.isEmpty ? '走光速雷达。网站看到的是线路所在地。' : '走光速雷达。网站看到的是线路所在地（现在是$line）。'),
           row('BT、迅雷下载', '走本地网络，不计套餐流量。'),
-          Padding(padding: const EdgeInsets.only(top: 14), child: Text('想换个走法？用上面的「分流采集」自己选。', style: body())),
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Text('想换个走法？用上面的「分流采集」自己选。', style: body()),
+          ),
         ],
       ],
     );
@@ -629,7 +664,10 @@ class _NotConnectedCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('还没连上光速雷达', style: text.titleSmall!.copyWith(color: tk.text, fontWeight: FontWeight.w600)),
+                Text(
+                  '还没连上光速雷达',
+                  style: text.titleSmall!.copyWith(color: tk.text, fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   hasMine ? '连上以后才能采集和修改。下面是你改过的，连上就生效。' : '连上以后才能采集和修改。',
@@ -661,8 +699,13 @@ class _LiveCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 40, child: Text(label, style: text.bodySmall!.copyWith(color: tk.sub))),
-          Expanded(child: Text(value.isEmpty ? '正在测…' : value, style: text.bodySmall!.copyWith(color: tk.text, height: 1.45))),
+          SizedBox(
+            width: 40,
+            child: Text(label, style: text.bodySmall!.copyWith(color: tk.sub)),
+          ),
+          Expanded(
+            child: Text(value.isEmpty ? '正在测…' : value, style: text.bodySmall!.copyWith(color: tk.text, height: 1.45)),
+          ),
         ],
       ),
     );
@@ -725,15 +768,69 @@ class _Avatar extends StatelessWidget {
       width: 30,
       height: 30,
       alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: onCard ? tk.panel : tk.card,
-        borderRadius: BorderRadius.circular(app ? 8 : 15),
-      ),
+      decoration: BoxDecoration(color: onCard ? tk.panel : tk.card, borderRadius: BorderRadius.circular(app ? 8 : 15)),
       child: app
-          ? Text(label.isEmpty ? '?' : label.characters.first.toUpperCase(), style: TextStyle(color: tk.sub, fontSize: 12))
+          ? Text(
+              label.isEmpty ? '?' : label.characters.first.toUpperCase(),
+              style: TextStyle(color: tk.sub, fontSize: 12),
+            )
           : Icon(Icons.public, size: 18, color: tk.sub),
     );
   }
+}
+
+/// 点了走本地 / 走光速雷达之后：盖住整页，写明要等，底下的按钮点不到。
+class _WaitCover extends StatelessWidget {
+  const _WaitCover({required this.line});
+
+  final String line;
+
+  @override
+  Widget build(BuildContext context) {
+    final tk = OneRayTokens.of(context);
+    final text = Theme.of(context).textTheme;
+    return Stack(
+      children: [
+        ModalBarrier(dismissible: false, color: tk.scrim),
+        Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 40),
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+            decoration: BoxDecoration(color: tk.card, borderRadius: BorderRadius.circular(12)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: tk.acc)),
+                const SizedBox(height: 14),
+                Text(
+                  '请等一下',
+                  style: text.titleSmall!.copyWith(color: tk.text, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  line,
+                  textAlign: TextAlign.center,
+                  style: text.bodySmall!.copyWith(color: tk.sub, height: 1.45, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 正在改成哪边。网站认网址，App 认包名。
+String changingLine(String key, String going) {
+  if (key.startsWith('site:')) {
+    return switch (going) {
+      'direct' => '正在让这个网站走本地。',
+      'proxy' => '正在让这个网站走光速雷达。',
+      _ => '正在改回。',
+    };
+  }
+  return going == 'direct' ? '正在让这个 App 走本地。' : '正在改回。';
 }
 
 /// 正在重开隧道。先别亮成新的那边。
@@ -774,7 +871,11 @@ class _TwoWay extends StatelessWidget {
           decoration: BoxDecoration(color: on ? tk.acc : Colors.transparent, borderRadius: BorderRadius.circular(7)),
           child: Text(
             label,
-            style: TextStyle(fontSize: 12, color: on ? tk.accInk : tk.sub, fontWeight: on ? FontWeight.w600 : FontWeight.w400),
+            style: TextStyle(
+              fontSize: 12,
+              color: on ? tk.accInk : tk.sub,
+              fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+            ),
           ),
         ),
       );
