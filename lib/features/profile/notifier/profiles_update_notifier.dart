@@ -142,9 +142,7 @@ class ForegroundProfilesUpdateNotifier extends _$ForegroundProfilesUpdateNotifie
               })
               .map((_) {
                 loggy.debug("profile [${profile.id}] updated successfully");
-                ref
-                    .read(inAppNotificationControllerProvider)
-                    .showSuccessToast(t.pages.profiles.msg.update.successNamed(name: profile.name));
+                // 后台自己刷新订阅。登录时的「配置文件保存成功」已经不弹，这条「更新成功」同样不弹。
                 state = AsyncData((name: profile.name, success: true));
               })
               .run();
