@@ -7,7 +7,6 @@ import 'package:fpdart/fpdart.dart';
 import 'package:grpc/grpc.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/model/directories.dart';
-import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/log/data/log_data_providers.dart';
@@ -54,8 +53,10 @@ class HiddifyCoreService with InfraLogger {
         .mapLeft((e) {
           loggy.error(e);
           if (PlatformUtils.isIOS) return;
+          // 回前台时前台这条通道偶尔没答上，原文是 gRPC Error (code: 14, UNAVAILABLE)。
+          // 隧道在另一个进程里，上网和节点不受影响。原来把这句原文弹成红条，用户看不懂，也做不了什么。
+          if (e.contains('code: 14') || e.contains('UNAVAILABLE')) return;
           statusController.add(const CoreStatus.stopped());
-          ref.read(inAppNotificationControllerProvider).showErrorToast(e);
         })
         .map((_) {
           loggy.info("Hiddify-core setup done");
