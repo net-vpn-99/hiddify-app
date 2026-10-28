@@ -1,0 +1,911 @@
+diff --git a/v2/config/parser.go b/v2/config/parser.go
+--- a/v2/config/parser.go
++++ b/v2/config/parser.go
+@@ -53,6 +53,10 @@
+ func parseConfigContent(ctx context.Context, content []byte, debug bool, configOpt *HiddifyOptions, fullConfig bool) (*option.Options, error) {
+ 	if configOpt == nil {
+ 		configOpt = DefaultHiddifyOptions()
++	}
++
++	if grouped, recognized, err := parseGslEnvelope(ctx, content, configOpt); recognized {
++		return grouped, err
+ 	}
+ 
+ 	var jsonObj map[string]interface{} = make(map[string]interface{})
+diff --git a/v2/config/builder.go b/v2/config/builder.go
+--- a/v2/config/builder.go
++++ b/v2/config/builder.go
+@@ -4,6 +4,7 @@
+ 	context "context"
+ 	"encoding/base64"
+ 	"fmt"
++	"github.com/hiddify/hiddify-core/v2/gsltransport"
+ 	"math/rand"
+ 	"net"
+ 	"net/netip"
+@@ -152,6 +153,25 @@
+ 		case C.TypeBlock, C.TypeDNS:
+ 			continue
+ 		case C.TypeSelector, C.TypeURLTest:
++			if out.Type == C.TypeSelector {
++				if identity, err := gsltransport.ParseGroupTag(out.Tag); err == nil {
++					selected, ok := out.Options.(*option.SelectorOutboundOptions)
++					if !ok || len(selected.Outbounds) != 2 {
++						return fmt.Errorf("invalid explicit transport selector")
++					}
++					expected := map[string]bool{}
++					for _, ep := range identity.Endpoints {
++						expected[ep.Tag] = true
++					}
++					for _, tag := range selected.Outbounds {
++						if !expected[tag] {
++							return fmt.Errorf("transport selector member mismatch")
++						}
++					}
++					tags = append(tags, out.Tag)
++					outbounds = append(outbounds, out)
++				}
++			}
+ 			continue
+ 		case C.TypeCustom:
+ 			continue
+diff --git a/v2/hcore/commands.go b/v2/hcore/commands.go
+--- a/v2/hcore/commands.go
++++ b/v2/hcore/commands.go
+@@ -3,7 +3,9 @@
+ import (
+ 	"context"
+ 	"fmt"
++	"github.com/hiddify/hiddify-core/v2/gsltransport"
+ 	"runtime"
++	"strings"
+ 	"time"
+ 
+ 	"github.com/hiddify/hiddify-core/v2/config"
+@@ -200,6 +202,7 @@
+ // }
+ 
+ func (s *CoreService) SelectOutbound(ctx context.Context, in *SelectOutboundRequest) (*hcommon.Response, error) {
++	cancelGslProbe()
+ 	return static.SelectOutbound(in)
+ }
+ 
+@@ -251,6 +254,12 @@
+ }
+ 
+ func (s *CoreService) UrlTest(ctx context.Context, in *UrlTestRequest) (*hcommon.Response, error) {
++	if in.Tag == gsltransport.CapabilitiesTag {
++		return &hcommon.Response{Code: hcommon.ResponseCode_OK, Message: `{"schema":1,"real_probe":true,"h3":true}`}, nil
++	}
++	if strings.HasPrefix(in.Tag, gsltransport.ProbePrefix) {
++		return static.gslProbe(ctx, in.Tag)
++	}
+ 	return static.UrlTest(in)
+ }
+ 
+diff --git a/v2/hcore/stop.go b/v2/hcore/stop.go
+--- a/v2/hcore/stop.go
++++ b/v2/hcore/stop.go
+@@ -13,6 +13,7 @@
+ }
+ 
+ func Stop() (coreResponse *CoreInfoResponse, err error) {
++	cancelGslProbe()
+ 	defer config.DeferPanicToError("stop", func(recovered_err error) {
+ 		coreResponse, err = errorWrapper(MessageType_UNEXPECTED_ERROR, recovered_err)
+ 	})
+diff --git a/v2/config/gsl_transport.go b/v2/config/gsl_transport.go
+new file mode 100644
+--- /dev/null
++++ b/v2/config/gsl_transport.go
+@@ -0,0 +1,89 @@
++package config
++
++import (
++	"context"
++	"errors"
++	"github.com/hiddify/hiddify-core/v2/gsltransport"
++	"github.com/hiddify/ray2sing/ray2sing"
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/option"
++	"strconv"
++	"strings"
++)
++
++// Only explicitly authorized schema-1 envelopes enter this path; ordinary subscriptions keep their parser.
++func parseGslEnvelope(ctx context.Context, content []byte, opts *HiddifyOptions) (*option.Options, bool, error) {
++	sub, groups, recognized, err := gsltransport.Unwrap(content)
++	if !recognized || err != nil {
++		return nil, recognized, err
++	}
++	native, err := ray2sing.Ray2SingboxOptions(ctx, sub, false)
++	if err != nil {
++		return nil, true, errors.New("authorized transport subscription conversion failed")
++	}
++	wantedTags := map[string]bool{}
++	for _, identity := range groups {
++		for _, ep := range identity.Endpoints {
++			wantedTags[ep.Tag] = true
++		}
++	}
++	byTag := map[string]option.Outbound{}
++	for i, out := range native.Outbounds {
++		// The normal converter appends a numeric group suffix. Resolve only exact expected identities.
++		if at := strings.LastIndex(out.Tag, " § "); at >= 0 && wantedTags[out.Tag[:at]] {
++			if _, err := strconv.Atoi(out.Tag[at+len(" § "):]); err == nil {
++				out.Tag = out.Tag[:at]
++				native.Outbounds[i] = out
++			}
++		}
++		if _, exists := byTag[out.Tag]; exists {
++			return nil, true, errors.New("duplicate converted endpoint tag")
++		}
++		byTag[out.Tag] = out
++	}
++	first := map[string]option.Outbound{}
++	members := map[string]string{}
++	for _, g := range groups {
++		tag := gsltransport.GroupTag(g)
++		tags := []string{}
++		defaultTag := ""
++		for _, ep := range g.Endpoints {
++			out, ok := byTag[ep.Tag]
++			if !ok || out.Type != C.TypeVLESS {
++				return nil, true, errors.New("converted authorized endpoint missing")
++			}
++			v, ok := out.Options.(*option.VLESSOutboundOptions)
++			if !ok || v.TLS == nil || !v.TLS.Enabled || v.TLS.Insecure || v.Transport == nil || v.Transport.Type != "xhttp" || v.Transport.XHTTPOptions.Mode != "stream-one" || v.Transport.XHTTPOptions.Download != nil {
++				return nil, true, errors.New("converted transport security or mode mismatch")
++			}
++			want := "h2"
++			if ep.Kind == "udp" {
++				want = "h3"
++			}
++			if len(v.TLS.ALPN) != 1 || v.TLS.ALPN[0] != want {
++				return nil, true, errors.New("converted transport ALPN mismatch")
++			}
++			tags = append(tags, ep.Tag)
++			members[ep.Tag] = tag
++			if *ep.Available && (defaultTag == "" || ep.Kind == "tcp") {
++				defaultTag = ep.Tag
++			}
++		}
++		if defaultTag == "" {
++			defaultTag = tags[0]
++		}
++		first[tag] = option.Outbound{Type: C.TypeSelector, Tag: tag, Options: &option.SelectorOutboundOptions{Outbounds: tags, Default: defaultTag, InterruptExistConnections: true}}
++	}
++	result := []option.Outbound{}
++	inserted := map[string]bool{}
++	for _, out := range native.Outbounds {
++		if tag, ok := members[out.Tag]; ok && !inserted[tag] {
++			result = append(result, first[tag])
++			inserted[tag] = true
++		}
++		result = append(result, out)
++	}
++	native.Outbounds = result
++	resultOptions, err := patchConfigOptions(ctx, native, "GslTransportParser", opts)
++	return resultOptions, true, err
++}
+diff --git a/v2/config/gsl_transport_test.go b/v2/config/gsl_transport_test.go
+new file mode 100644
+--- /dev/null
++++ b/v2/config/gsl_transport_test.go
+@@ -0,0 +1,49 @@
++package config
++
++import (
++	"encoding/base64"
++	"encoding/json"
++	"github.com/hiddify/hiddify-core/v2/gsltransport"
++	"github.com/sagernet/sing-box/experimental/libbox"
++	"github.com/sagernet/sing-box/option"
++	"strings"
++	"testing"
++)
++
++func TestGslTransportNativeGraphSurvivesBuild(t *testing.T) {
++	yes := true
++	links := "vless://11111111-1111-4111-8111-111111111111@node.example:25443?security=tls&type=xhttp&sni=node.example&alpn=h2&mode=stream-one&path=%2Foneray-xhttp%2F#Tokyo\nvless://11111111-1111-4111-8111-111111111111@node.example:24443?security=tls&type=xhttp&sni=node.example&alpn=h3&mode=stream-one&path=%2Foneray-xhttp%2F#Tokyo"
++	group := gsltransport.Group{ID: "ln_tokyo", Name: "日本 东京 01", Revision: 1, Endpoints: []gsltransport.Endpoint{{ID: "ep_tcp", Host: "node.example", Port: 25443, Kind: "tcp", Available: &yes}, {ID: "ep_udp", Host: "node.example", Port: 24443, Kind: "udp", Available: &yes}}}
++	payload, _ := json.Marshal(map[string]any{"schema": 1, "subscription": base64.StdEncoding.EncodeToString([]byte(links)), "gsl_transports": map[string]any{"schema": 1, "groups": []gsltransport.Group{group}}})
++	input, recognized, err := parseGslEnvelope(libbox.BaseContext(nil), payload, DefaultHiddifyOptions())
++	if err != nil || !recognized {
++		t.Fatalf("real native conversion failed: %v", err)
++	}
++	if len(input.Outbounds) != 3 {
++		t.Fatalf("expected one logical group and two native endpoints, got %d", len(input.Outbounds))
++	}
++	out := &option.Options{}
++	static := map[string][]string{}
++	if err := setOutbounds(out, input, DefaultHiddifyOptions(), &static); err != nil {
++		t.Fatal(err)
++	}
++	groups := 0
++	hidden := 0
++	for _, ob := range out.Outbounds {
++		if strings.HasPrefix(ob.Tag, gsltransport.GroupPrefix) {
++			groups++
++		}
++		if strings.HasPrefix(ob.Tag, gsltransport.EndpointPrefix) {
++			hidden++
++		}
++	}
++	if groups != 1 || hidden != 2 {
++		t.Fatalf("builder lost explicit topology: groups=%d hidden=%d", groups, hidden)
++	}
++	top := out.Outbounds[0].Options.(*option.SelectorOutboundOptions)
++	for _, tag := range top.Outbounds {
++		if strings.HasPrefix(tag, gsltransport.EndpointPrefix) {
++			t.Fatal("physical endpoint leaked into public root selection")
++		}
++	}
++}
+diff --git a/v2/hcore/gsl_transport.go b/v2/hcore/gsl_transport.go
+new file mode 100644
+--- /dev/null
++++ b/v2/hcore/gsl_transport.go
+@@ -0,0 +1,115 @@
++package hcore
++
++import (
++	"context"
++	"encoding/json"
++	"github.com/hiddify/hiddify-core/v2/config"
++	"github.com/hiddify/hiddify-core/v2/gsltransport"
++	"github.com/hiddify/hiddify-core/v2/hcommon"
++	"github.com/sagernet/sing-box/protocol/group"
++	M "github.com/sagernet/sing/common/metadata"
++	"net"
++	"strings"
++	"sync"
++)
++
++var gslProbeLock sync.Mutex
++var gslProbeCancel context.CancelFunc
++var gslProbeGeneration uint64
++
++func cancelGslProbe() {
++	gslProbeLock.Lock()
++	defer gslProbeLock.Unlock()
++	gslProbeGeneration++
++	if gslProbeCancel != nil {
++		gslProbeCancel()
++		gslProbeCancel = nil
++	}
++}
++func gslResponse(r gsltransport.Result) *hcommon.Response {
++	b, _ := json.Marshal(r)
++	return &hcommon.Response{Code: hcommon.ResponseCode_OK, Message: string(b)}
++}
++
++// This versioned command reuses UrlTest's existing wire message; it never invokes the old monitor.
++func (h *HiddifyInstance) gslProbe(parent context.Context, command string) (*hcommon.Response, error) {
++	var request struct {
++		Operation string `json:"operation"`
++		Group     string `json:"group"`
++	}
++	if len(command) > 16384 || json.Unmarshal([]byte(strings.TrimPrefix(command, gsltransport.ProbePrefix)), &request) != nil || len(request.Operation) == 0 || len(request.Operation) > 64 {
++		return gslResponse(gsltransport.Result{State: "fatal", Reason: "invalid_probe_request"}), nil
++	}
++	identity, err := gsltransport.ParseGroupTag(request.Group)
++	if err != nil {
++		return gslResponse(gsltransport.Result{State: "fatal", Reason: "invalid_group_identity"}), nil
++	}
++	box := h.Box()
++	if box == nil {
++		return gslResponse(gsltransport.Result{State: "unconfirmed", Operation: request.Operation, Reason: "service_not_ready"}), nil
++	}
++	outerRaw, ok := box.Outbound().Outbound(config.OutboundSelectTag)
++	if !ok {
++		return gslResponse(gsltransport.Result{State: "unconfirmed", Reason: "selector_missing"}), nil
++	}
++	outer, ok := outerRaw.(*group.Selector)
++	if !ok || outer.Now() != request.Group {
++		return gslResponse(gsltransport.Result{State: "cancelled", Operation: request.Operation}), nil
++	}
++	raw, ok := box.Outbound().Outbound(request.Group)
++	if !ok {
++		return gslResponse(gsltransport.Result{State: "fatal", Reason: "group_missing"}), nil
++	}
++	selector, ok := raw.(*group.Selector)
++	if !ok || len(selector.All()) != 2 {
++		return gslResponse(gsltransport.Result{State: "fatal", Reason: "group_not_supported"}), nil
++	}
++	allowed := map[string]bool{}
++	tags := []string{}
++	for _, ep := range identity.Endpoints {
++		allowed[ep.Tag] = true
++		if *ep.Available {
++			tags = append(tags, ep.Tag)
++		}
++	}
++	for _, tag := range selector.All() {
++		if !allowed[tag] {
++			return gslResponse(gsltransport.Result{State: "fatal", Reason: "group_members_changed"}), nil
++		}
++	}
++	ctx, cancel := context.WithCancel(parent)
++	defer cancel()
++	stop := context.AfterFunc(h.Context(), cancel)
++	defer stop()
++	gslProbeLock.Lock()
++	if gslProbeCancel != nil {
++		gslProbeCancel()
++	}
++	gslProbeGeneration++
++	generation := gslProbeGeneration
++	gslProbeCancel = cancel
++	gslProbeLock.Unlock()
++	country := gsltransport.Country(identity.Name)
++	result := gsltransport.Race(ctx, tags, func(ctx context.Context, tag string) gsltransport.Result {
++		outbound, exists := box.Outbound().Outbound(tag)
++		if !exists || outbound.Type() != "vless" {
++			return gsltransport.Result{State: "fatal", Reason: "authorized_outbound_missing"}
++		}
++		return gsltransport.Verify(ctx, tag, country, func(c context.Context, network, address string) (netConn net.Conn, e error) {
++			return outbound.DialContext(c, network, M.ParseSocksaddr(address))
++		})
++	})
++	gslProbeLock.Lock()
++	defer gslProbeLock.Unlock()
++	if generation != gslProbeGeneration || ctx.Err() != nil || h.Box() != box || outer.Now() != request.Group {
++		result = gsltransport.Result{State: "cancelled"}
++	}
++	if result.State == "verified" && !selector.SelectOutbound(result.Endpoint) {
++		result = gsltransport.Result{State: "unconfirmed", Reason: "selection_not_committed"}
++	}
++	if generation == gslProbeGeneration {
++		gslProbeCancel = nil
++	}
++	result.Operation = request.Operation
++	return gslResponse(result), nil
++}
+diff --git a/v2/hcore/gsl_transport_test.go b/v2/hcore/gsl_transport_test.go
+new file mode 100644
+--- /dev/null
++++ b/v2/hcore/gsl_transport_test.go
+@@ -0,0 +1,30 @@
++package hcore
++
++import (
++	"context"
++	"encoding/json"
++	"github.com/hiddify/hiddify-core/v2/gsltransport"
++	"github.com/hiddify/hiddify-core/v2/hcommon"
++	"testing"
++)
++
++func TestGslCapabilitiesUsesVersionedDispatch(t *testing.T) {
++	response, err := new(CoreService).UrlTest(context.Background(), &UrlTestRequest{Tag: gsltransport.CapabilitiesTag})
++	if err != nil || response.Code != hcommon.ResponseCode_OK {
++		t.Fatal("capability dispatch failed")
++	}
++	var flags map[string]any
++	if json.Unmarshal([]byte(response.Message), &flags) != nil || flags["schema"] != float64(1) || flags["real_probe"] != true || flags["h3"] != true {
++		t.Fatal("required native transport capability missing")
++	}
++}
++func TestGslMalformedCommandCannotInvokeMonitor(t *testing.T) {
++	response, err := new(CoreService).UrlTest(context.Background(), &UrlTestRequest{Tag: gsltransport.ProbePrefix + "{}"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	var result gsltransport.Result
++	if json.Unmarshal([]byte(response.Message), &result) != nil || result.State != "fatal" || result.Reason != "invalid_probe_request" {
++		t.Fatal("malformed command was not rejected")
++	}
++}
+diff --git a/v2/gsltransport/model.go b/v2/gsltransport/model.go
+new file mode 100644
+--- /dev/null
++++ b/v2/gsltransport/model.go
+@@ -0,0 +1,235 @@
++// Package gsltransport binds explicit same-node identities to already-authorized links.
++package gsltransport
++
++import (
++	"bytes"
++	"crypto/sha256"
++	"encoding/base64"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"net"
++	"net/url"
++	"regexp"
++	"strconv"
++	"strings"
++)
++
++const GroupPrefix = "gsl-ln-v1:"
++const EndpointPrefix = "gsl-ep-v1:"
++const ProbePrefix = "gsl-probe-v1:"
++const CapabilitiesTag = "gsl-capabilities-v1"
++
++type Endpoint struct {
++	ID        string `json:"id"`
++	Host      string `json:"host"`
++	Port      int    `json:"port"`
++	Kind      string `json:"kind"`
++	Available *bool  `json:"available"`
++	Tag       string `json:"tag,omitempty"`
++}
++type Group struct {
++	ID        string     `json:"id"`
++	Name      string     `json:"name"`
++	Revision  int        `json:"revision"`
++	Endpoints []Endpoint `json:"endpoints"`
++}
++type metadata struct {
++	Schema int     `json:"schema"`
++	Groups []Group `json:"groups"`
++}
++type envelopeData struct {
++	Schema       int      `json:"schema"`
++	Subscription string   `json:"subscription"`
++	Metadata     metadata `json:"gsl_transports"`
++}
++
++var identifier = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,95}$`)
++var uuid = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
++
++func validGroup(g Group) bool {
++	if !identifier.MatchString(g.ID) || g.Revision <= 0 || len(g.Name) == 0 || len(g.Name) > 512 || len(g.Endpoints) != 2 {
++		return false
++	}
++	ids := map[string]bool{}
++	kinds := map[string]bool{}
++	for _, e := range g.Endpoints {
++		if !identifier.MatchString(e.ID) || ids[e.ID] || kinds[e.Kind] || e.Available == nil || e.Host == "" || len(e.Host) > 253 || e.Port <= 0 || e.Port > 65535 || (e.Kind != "tcp" && e.Kind != "udp") {
++			return false
++		}
++		ids[e.ID] = true
++		kinds[e.Kind] = true
++	}
++	return true
++}
++
++// Check duplicate JSON keys and bounded depth before ordinary decoding can hide them.
++func strictJSON(data []byte) error {
++	d := json.NewDecoder(bytes.NewReader(data))
++	var value func(int) error
++	value = func(depth int) error {
++		if depth > 16 {
++			return errors.New("metadata too deep")
++		}
++		token, err := d.Token()
++		if err != nil {
++			return err
++		}
++		if delim, ok := token.(json.Delim); ok {
++			switch delim {
++			case '{':
++				seen := map[string]bool{}
++				for d.More() {
++					k, e := d.Token()
++					if e != nil {
++						return e
++					}
++					key, ok := k.(string)
++					if !ok || seen[key] {
++						return errors.New("duplicate metadata key")
++					}
++					seen[key] = true
++					if err := value(depth + 1); err != nil {
++						return err
++					}
++				}
++			case '[':
++				for d.More() {
++					if err := value(depth + 1); err != nil {
++						return err
++					}
++				}
++			default:
++				return errors.New("unexpected metadata token")
++			}
++			_, err = d.Token()
++			return err
++		}
++		return nil
++	}
++	if err := value(0); err != nil {
++		return err
++	}
++	if _, err := d.Token(); err != io.EOF {
++		return errors.New("trailing metadata")
++	}
++	return nil
++}
++func endpointKey(host string, port int) string {
++	return net.JoinHostPort(strings.ToLower(host), strconv.Itoa(port))
++}
++
++// Unwrap never invents a link from metadata. Invalid recognized envelopes fail closed.
++func Unwrap(data []byte) (string, []Group, bool, error) {
++	raw := string(data)
++	trim := bytes.TrimSpace(data)
++	if len(trim) == 0 || trim[0] != '{' {
++		return raw, nil, false, nil
++	}
++	var marker map[string]json.RawMessage
++	if json.Unmarshal(trim, &marker) != nil {
++		return raw, nil, false, nil
++	}
++	if _, ok := marker["gsl_transports"]; !ok {
++		return raw, nil, false, nil
++	}
++	fail := func() (string, []Group, bool, error) {
++		return "", nil, true, errors.New("invalid authorized transport envelope")
++	}
++	if len(data) > 2*1024*1024 || strictJSON(trim) != nil {
++		return fail()
++	}
++	var v envelopeData
++	if json.Unmarshal(trim, &v) != nil || v.Schema != 1 || v.Metadata.Schema != 1 || len(v.Metadata.Groups) > 256 {
++		return fail()
++	}
++	decoded, err := base64.StdEncoding.DecodeString(v.Subscription)
++	if err != nil {
++		return fail()
++	}
++	lines := strings.Split(strings.ReplaceAll(string(decoded), "\r\n", "\n"), "\n")
++	byAddress := map[string][]int{}
++	urls := map[int]*url.URL{}
++	for i, line := range lines {
++		u, err := url.Parse(strings.TrimSpace(line))
++		if err != nil || u.Scheme != "vless" {
++			continue
++		}
++		port, err := strconv.Atoi(u.Port())
++		if err != nil {
++			continue
++		}
++		key := endpointKey(u.Hostname(), port)
++		byAddress[key] = append(byAddress[key], i)
++		urls[i] = u
++	}
++	groups := v.Metadata.Groups
++	groupIDs := map[string]bool{}
++	endpointIDs := map[string]bool{}
++	used := map[int]bool{}
++	for gi := range groups {
++		g := &groups[gi]
++		if !validGroup(*g) || groupIDs[g.ID] {
++			return fail()
++		}
++		groupIDs[g.ID] = true
++		for ei := range g.Endpoints {
++			ep := &g.Endpoints[ei]
++			indexes := byAddress[endpointKey(ep.Host, ep.Port)]
++			if len(indexes) != 1 || endpointIDs[ep.ID] || used[indexes[0]] {
++				return fail()
++			}
++			i := indexes[0]
++			u := urls[i]
++			q := u.Query()
++			alpn := "h2"
++			if ep.Kind == "udp" {
++				alpn = "h3"
++			}
++			if u.User == nil || !uuid.MatchString(u.User.Username()) || q.Get("security") != "tls" || q.Get("type") != "xhttp" || q.Get("alpn") != alpn || q.Get("flow") != "" || q.Get("allowInsecure") == "1" || q.Get("insecure") == "1" {
++				return fail()
++			}
++			hash := sha256.Sum256([]byte(strings.TrimSpace(lines[i])))
++			ep.Tag = EndpointPrefix + ep.ID + ":" + hex.EncodeToString(hash[:16]) + "§hide§"
++			u.Fragment = ep.Tag
++			u.RawFragment = ""
++			lines[i] = u.String()
++			used[i] = true
++			endpointIDs[ep.ID] = true
++		}
++	}
++	return strings.Join(lines, "\n"), groups, true, nil
++}
++func GroupTag(g Group) string {
++	b, _ := json.Marshal(g)
++	return GroupPrefix + base64.RawURLEncoding.EncodeToString(b)
++}
++func ParseGroupTag(tag string) (Group, error) {
++	var g Group
++	if !strings.HasPrefix(tag, GroupPrefix) || len(tag) > 8192 {
++		return g, errors.New("not a logical transport group")
++	}
++	b, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(tag, GroupPrefix))
++	if err != nil || strictJSON(b) != nil {
++		return g, errors.New("invalid group identity")
++	}
++	if json.Unmarshal(b, &g) != nil || !validGroup(g) {
++		return g, errors.New("invalid group identity")
++	}
++	for _, ep := range g.Endpoints {
++		if !strings.HasPrefix(ep.Tag, EndpointPrefix+ep.ID+":") || !strings.HasSuffix(ep.Tag, "§hide§") {
++			return g, fmt.Errorf("invalid endpoint identity")
++		}
++	}
++	return g, nil
++}
++func Country(name string) string {
++	for _, v := range [][2]string{{"日本", "JP"}, {"香港", "HK"}, {"美国", "US"}, {"新加坡", "SG"}, {"韩国", "KR"}, {"台湾", "TW"}, {"英国", "GB"}} {
++		if strings.HasPrefix(name, v[0]) {
++			return v[1]
++		}
++	}
++	return ""
++}
+diff --git a/v2/gsltransport/model_test.go b/v2/gsltransport/model_test.go
+new file mode 100644
+--- /dev/null
++++ b/v2/gsltransport/model_test.go
+@@ -0,0 +1,59 @@
++package gsltransport
++
++import (
++	"encoding/base64"
++	"encoding/json"
++	"net/url"
++	"strings"
++	"testing"
++)
++
++func envelope() []byte {
++	sub := "vless://11111111-1111-4111-8111-111111111111@node.example:25443?security=tls&type=xhttp&sni=node.example&alpn=h2&mode=stream-one&path=%2Foneray-xhttp%2F#Tokyo\nvless://11111111-1111-4111-8111-111111111111@node.example:24443?security=tls&type=xhttp&sni=node.example&alpn=h3&mode=stream-one&path=%2Foneray-xhttp%2F#Tokyo"
++	v := map[string]any{"schema": 1, "subscription": base64.StdEncoding.EncodeToString([]byte(sub)), "gsl_transports": map[string]any{"schema": 1, "groups": []any{map[string]any{"id": "ln_tokyo", "name": "日本 东京 01 | 标准线路", "revision": 1, "endpoints": []any{map[string]any{"id": "ep_tcp", "host": "node.example", "port": 25443, "kind": "tcp", "available": true}, map[string]any{"id": "ep_udp", "host": "node.example", "port": 24443, "kind": "udp", "available": true}}}}}}
++	b, _ := json.Marshal(v)
++	return b
++}
++func TestGslEnvelopeBindsActualURIs(t *testing.T) {
++	sub, groups, recognized, err := Unwrap(envelope())
++	if err != nil || !recognized || len(groups) != 1 {
++		t.Fatalf("valid metadata rejected: %v", err)
++	}
++	u, parseErr := url.Parse(strings.Split(sub, "\n")[0])
++	if parseErr != nil || !strings.HasPrefix(u.Fragment, EndpointPrefix) || strings.Contains(sub, "#Tokyo") {
++		t.Fatal("actual endpoint identities were not rewritten")
++	}
++	tag := GroupTag(groups[0])
++	g, err := ParseGroupTag(tag)
++	if err != nil || g.ID != "ln_tokyo" || g.Name != "日本 东京 01 | 标准线路" || len(g.Endpoints) != 2 {
++		t.Fatal("group tag lost explicit identity")
++	}
++	if strings.Contains(tag, "11111111-1111") {
++		t.Fatal("group identity leaks account credential")
++	}
++}
++func TestGslInvalidEnvelopeFailsClosed(t *testing.T) {
++	for _, b := range [][]byte{[]byte(strings.Replace(string(envelope()), `"revision":1`, `"revision":0`, 1)), []byte(strings.Replace(string(envelope()), `"ep_udp"`, `"ep_tcp"`, 1)), []byte(strings.Replace(string(envelope()), `"host":"node.example"`, `"host":"unauthorized.example"`, 1)), []byte(strings.Replace(string(envelope()), `"schema":1`, `"schema":9`, 1))} {
++		_, _, recognized, err := Unwrap(b)
++		if !recognized || err == nil {
++			t.Fatal("invalid metadata accepted")
++		}
++	}
++}
++func TestGslLegacyContentUnchanged(t *testing.T) {
++	raw := "dmxlc3M6Ly9leGFtcGxl"
++	s, g, recognized, err := Unwrap([]byte(raw))
++	if s != raw || len(g) != 0 || recognized || err != nil {
++		t.Fatal("legacy input altered")
++	}
++}
++func TestGslMissingRealEndpointCannotBeInvented(t *testing.T) {
++	var v map[string]any
++	json.Unmarshal(envelope(), &v)
++	v["subscription"] = base64.StdEncoding.EncodeToString([]byte("vless://11111111-1111-4111-8111-111111111111@other.example:443#unrelated"))
++	b, _ := json.Marshal(v)
++	_, _, _, err := Unwrap(b)
++	if err == nil {
++		t.Fatal("metadata created an unauthorized endpoint")
++	}
++}
+diff --git a/v2/gsltransport/race.go b/v2/gsltransport/race.go
+new file mode 100644
+--- /dev/null
++++ b/v2/gsltransport/race.go
+@@ -0,0 +1,124 @@
++package gsltransport
++
++import (
++	"context"
++	"crypto/tls"
++	"crypto/x509"
++	"encoding/json"
++	"errors"
++	"io"
++	"net"
++	"net/http"
++	"strings"
++	"sync"
++	"syscall"
++)
++
++type Result struct {
++	State     string `json:"state"`
++	Endpoint  string `json:"endpoint,omitempty"`
++	IP        string `json:"ip,omitempty"`
++	Country   string `json:"country,omitempty"`
++	Reason    string `json:"reason,omitempty"`
++	Operation string `json:"operation,omitempty"`
++}
++type DialFunc func(context.Context, string, string) (net.Conn, error)
++
++// Race has no clock or timeout input: only actual results or caller cancellation decide.
++func Race(parent context.Context, tags []string, request func(context.Context, string) Result) Result {
++	if len(tags) == 0 || len(tags) > 2 {
++		return Result{State: "unconfirmed", Reason: "no_available_endpoint"}
++	}
++	ctx, cancel := context.WithCancel(parent)
++	defer cancel()
++	results := make(chan Result, len(tags))
++	var running sync.WaitGroup
++	for _, tag := range tags {
++		running.Add(1)
++		go func(tag string) { defer running.Done(); results <- request(ctx, tag) }(tag)
++	}
++	defer running.Wait() // Candidate request teardown completes before the caller may commit a winner.
++	failures := 0
++	for i := 0; i < len(tags); i++ {
++		select {
++		case <-parent.Done():
++			cancel()
++			return Result{State: "cancelled"}
++		case r := <-results:
++			if parent.Err() != nil {
++				cancel()
++				return Result{State: "cancelled"}
++			}
++			if r.State == "verified" || r.State == "fatal" {
++				cancel()
++				return r
++			}
++			if r.State == "transport_error" {
++				failures++
++			}
++		}
++	}
++	if failures == len(tags) {
++		return Result{State: "transport_error", Reason: "both_requests_failed"}
++	}
++	return Result{State: "unconfirmed"}
++}
++
++// Verify uses only an explicitly selected real outbound dialer. No URL comes from RPC metadata.
++func Verify(ctx context.Context, tag, expectedCountry string, dial DialFunc) Result {
++	r := Result{State: "unconfirmed", Endpoint: tag}
++	if expectedCountry == "" || expectedCountry == "CN" {
++		r.Reason = "unknown_egress_country"
++		return r
++	}
++	transport := &http.Transport{DialContext: dial, DisableKeepAlives: true, ForceAttemptHTTP2: false, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
++	defer transport.CloseIdleConnections()
++	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
++	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ipinfo.io/json", nil)
++	if err != nil {
++		return r
++	}
++	response, err := client.Do(req)
++	if err != nil {
++		if ctx.Err() != nil {
++			r.State = "cancelled"
++			return r
++		}
++		var authority x509.UnknownAuthorityError
++		var invalid x509.CertificateInvalidError
++		var hostname x509.HostnameError
++		var certificate *tls.CertificateVerificationError
++		if errors.As(err, &authority) || errors.As(err, &invalid) || errors.As(err, &hostname) || errors.As(err, &certificate) {
++			r.State = "fatal"
++			r.Reason = "tls"
++			return r
++		}
++		lower := strings.ToLower(err.Error())
++		if strings.Contains(lower, "authentication failed") || strings.Contains(lower, "invalid user") {
++			r.State = "fatal"
++			r.Reason = "authentication"
++			return r
++		}
++		var dns *net.DNSError
++		if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ENETUNREACH) || errors.Is(err, syscall.EHOSTUNREACH) || (errors.As(err, &dns) && dns.IsNotFound) {
++			r.State = "transport_error"
++		}
++		return r
++	}
++	defer response.Body.Close()
++	body, err := io.ReadAll(io.LimitReader(response.Body, 8193))
++	if err != nil || len(body) > 8192 || response.StatusCode != 200 {
++		return r
++	}
++	var info struct {
++		IP      string `json:"ip"`
++		Country string `json:"country"`
++	}
++	if json.Unmarshal(body, &info) != nil || net.ParseIP(info.IP) == nil || info.Country != expectedCountry || info.Country == "CN" {
++		return r
++	}
++	r.State = "verified"
++	r.IP = info.IP
++	r.Country = info.Country
++	return r
++}
+diff --git a/v2/gsltransport/race_test.go b/v2/gsltransport/race_test.go
+new file mode 100644
+--- /dev/null
++++ b/v2/gsltransport/race_test.go
+@@ -0,0 +1,74 @@
++package gsltransport
++
++import (
++	"context"
++	"testing"
++)
++
++func TestGslVerifiedWinnerCancelsUnconfirmedAndWaits(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	ended := make(chan struct{})
++	out := Race(ctx, []string{"tcp", "udp"}, func(ctx context.Context, tag string) Result {
++		if tag == "udp" {
++			return Result{State: "verified", Endpoint: tag, IP: "203.0.113.1", Country: "JP"}
++		}
++		<-ctx.Done()
++		close(ended)
++		return Result{State: "cancelled", Endpoint: tag}
++	})
++	if out.State != "verified" || out.Endpoint != "udp" {
++		t.Fatal(out)
++	}
++	select {
++	case <-ended:
++	default:
++		t.Fatal("winner escaped before losing request ended")
++	}
++}
++func TestGslSilenceIsNotFailure(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	ready := make(chan struct{}, 2)
++	done := make(chan Result, 1)
++	go func() {
++		done <- Race(ctx, []string{"tcp", "udp"}, func(ctx context.Context, tag string) Result {
++			ready <- struct{}{}
++			<-ctx.Done()
++			return Result{State: "cancelled", Endpoint: tag}
++		})
++	}()
++	<-ready
++	<-ready
++	select {
++	case <-done:
++		t.Fatal("silence produced a decision")
++	default:
++	}
++	cancel()
++	if r := <-done; r.State != "cancelled" {
++		t.Fatal(r)
++	}
++}
++func TestGslExplicitSecurityFailureStopsSelection(t *testing.T) {
++	r := Race(context.Background(), []string{"tcp", "udp"}, func(ctx context.Context, tag string) Result {
++		if tag == "tcp" {
++			return Result{State: "fatal", Reason: "tls"}
++		}
++		<-ctx.Done()
++		return Result{State: "cancelled"}
++	})
++	if r.State != "fatal" {
++		t.Fatal(r)
++	}
++}
++func TestGslMixedUnknownDoesNotBecomeBothFailed(t *testing.T) {
++	r := Race(context.Background(), []string{"tcp", "udp"}, func(ctx context.Context, tag string) Result {
++		if tag == "tcp" {
++			return Result{State: "transport_error"}
++		}
++		return Result{State: "unconfirmed"}
++	})
++	if r.State != "unconfirmed" {
++		t.Fatal(r)
++	}
++}
