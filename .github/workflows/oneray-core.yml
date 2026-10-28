@@ -41,6 +41,8 @@ jobs:
       - name: Apply OneRay patches
         working-directory: core
         run: |
+          # Upstream commits commands.go with CRLF; normalize before applying textual patches.
+          sed -i 's/\r$//' v2/hcore/commands.go
           for p in ../app/tool/core-patches/*.patch; do
             echo "apply $p"
             git apply --verbose "$p"
