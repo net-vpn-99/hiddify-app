@@ -517,6 +517,7 @@ class HiddifyCoreService with InfraLogger {
       loggy.debug("selecting outbound");
       final logical = GslTransportGroup.tryParse(outboundTag);
       cancelTransportSelection();
+      final selectionOperation = _transportOperation;
       if (logical != null)
         ref.read(transportSelectionProvider.notifier).state = TransportSelectionState(
           group: outboundTag,
@@ -532,6 +533,7 @@ class HiddifyCoreService with InfraLogger {
           SelectOutboundRequest(groupTag: groupTag, outboundTag: outboundTag),
           options: logical == null ? CallOptions(timeout: const Duration(seconds: 1)) : null,
         );
+        if (logical != null && selectionOperation != _transportOperation) return right(unit);
         if (res.code != ResponseCode.OK) return left("${res.code} ${res.message}");
 
         if (logical != null) {
