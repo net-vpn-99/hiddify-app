@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:hiddify/features/proxy/model/transport_group.dart';
+import 'package:hiddify/features/home/widget/connect_progress.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:hiddify/core/http_client/http_client_provider.dart';
@@ -29,10 +31,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 ///  - [confirmed] 之前首页还是「连接中」，第一次探测成功才算「已连接」；
 ///  - 判出不通（有正面证据）→ connection_notifier 断开并置 [deadLineProvider]，首页说原因和下一步；
 class StabilityState {
-  const StabilityState(this.score, {this.confirmed = false, this.egressAudit = '', this.offline = false});
+  const StabilityState(this.score, {this.confirmed = false, this.egressAudit = '', this.offline = false,
+    this.notice = '',
+  });
 
   /// 0~10；-1 = 这次连接还没测出过结果
   final int score;
+  final String notice;
 
   /// 这次连接至少有一次经隧道的请求成功了（= 真的通了）
   final bool confirmed;
@@ -46,6 +51,7 @@ class StabilityState {
   bool get measuring => score < 0;
 
   String get label {
+    if (notice.isNotEmpty) return notice;
     if (score < 0) return '测量中';
     if (score >= 10) return '很稳';
     if (score >= 8) return '稳定';
@@ -75,6 +81,117 @@ final deadRealityProvider = StateProvider<bool>((ref) => false);
 final homeFaultProvider = StateProvider<String>((ref) => '');
 
 class StabilityNotifier extends Notifier<StabilityState> {
+  bool _transportModeKnown = false;
+  bool _groupedProfile = false;
+  bool _transportAwaiting = false;
+  String _transportGroupTag = '';
+  String _selectedTransportEndpoint = '';
+
+  Future<void> _prepareWarmup(int gen) async {
+    final selection = ref.read(transportSelectionProvider);
+    if (selection.phase != 'idle') {
+      if (gen == _gen && _running) _transportSelectionChanged(selection);
+      return;
+    }
+    final hasGroups = await ref.read(hiddifyCoreServiceProvider).loadedProfileHasTransportGroups();
+    if (gen != _gen || !_running) return;
+    if (hasGroups == null) {
+      state = StabilityState(-1, notice: '尚未确认');
+      return;
+    }
+    _transportModeKnown = true;
+    _groupedProfile = hasGroups;
+    if (hasGroups) {
+      _transportAwaiting = true;
+      final current = ref.read(transportSelectionProvider);
+      if (current.phase != 'idle') _transportSelectionChanged(current);
+    } else {
+      _transportAwaiting = false;
+      _schedule(immediate: true);
+    }
+  }
+
+  void _transportSelectionChanged(TransportSelectionState next) {
+    if (!_running || next.phase == 'idle') return;
+    if (next.phase == 'legacy') {
+      if (_transportModeKnown && !_groupedProfile && !_transportAwaiting) return;
+      _transportModeKnown = true;
+      _groupedProfile = false;
+      _transportAwaiting = false;
+      ++_gen;
+      _closeWarmClients();
+      _timer?.cancel();
+      _schedule(immediate: true);
+      return;
+    }
+    _transportModeKnown = true;
+    _groupedProfile = true;
+    if (next.phase == 'checking' || next.phase == 'awaiting_selection') {
+      final changed = next.group.isNotEmpty && next.group != _transportGroupTag;
+      if (next.group.isNotEmpty) _transportGroupTag = next.group;
+      _transportAwaiting = true;
+      if (changed || !_confirmed) {
+        ++_gen;
+        _timer?.cancel();
+        _closeWarmClients();
+        _confirmed = false;
+        state = const StabilityState(-1);
+      }
+      return;
+    }
+    if (next.selected) {
+      final same = next.group == _transportGroupTag && next.endpoint == _selectedTransportEndpoint;
+      _transportGroupTag = next.group;
+      _transportAwaiting = false;
+      if (same && _confirmed) return;
+      _selectedTransportEndpoint = next.endpoint;
+      ++_gen;
+      _closeWarmClients();
+      _timer?.cancel();
+      _confirmed = false;
+      _down = null;
+      _base = 0;
+      _zeroEnds = 0;
+      state = const StabilityState(-1);
+      // Candidate success does not confirm the user path: one fresh request through the mixed port must answer.
+      _schedule(immediate: true);
+    } else if (next.phase == 'fatal') {
+      unawaited(_transportFailed(_gen, next.reason));
+    } else if (next.phase == 'unconfirmed') {
+      _transportAwaiting = true;
+      state = StabilityState(
+        _confirmed ? _rememberedScore : -1,
+        confirmed: _confirmed,
+        egressAudit: '入口验证未确认，未判定线路失败',
+        notice: _confirmed ? '' : '尚未确认',
+      );
+    }
+  }
+
+  Future<void> _transportFailed(int gen, String reason) async {
+    final security = reason == 'tls' || reason == 'authentication';
+    final explicitBoth = reason == 'both_requests_failed';
+    final title = security
+        ? '线路安全校验未通过'
+        : reason == 'update_required'
+        ? '请完成客户端更新'
+        : explicitBoth
+        ? '两个入口的请求均已失败'
+        : '连接组件未能完成验证';
+    final reporter = ref.read(connectReporterProvider);
+    if (reporter.attemptOpen) {
+      await reporter.reportFailure(title, forcedStage: explicitBoth ? 'proxy_request' : 'tunnel', probeLog: reason);
+    }
+    if (gen != _gen || !_running) return;
+    ref.read(connectProgressProvider.notifier).state = ConnectProgress(
+      failedStep: 5,
+      title: title,
+      message: reason == 'update_required' ? '请退出后重新打开，或安装当前完整版本。' : '请换线或联系客服。',
+    );
+    ref.read(homeFaultProvider.notifier).state = 'engine';
+    unawaited(ref.read(connectionNotifierProvider.notifier).abortConnection());
+  }
+
   Timer? _timer;
   Timer? _ifaceTimer;
   String _ifaces = '';
@@ -120,6 +237,9 @@ class StabilityNotifier extends Notifier<StabilityState> {
   @override
   StabilityState build() {
     ref.onDispose(() {
+      _running = false;
+      ++_gen;
+      _closeWarmClients();
       _timer?.cancel();
       _ifaceTimer?.cancel();
     });
@@ -148,6 +268,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
         unawaited(_probe(_gen));
       }
     });
+    ref.listen<TransportSelectionState>(transportSelectionProvider, (_, next) => _transportSelectionChanged(next));
     return StabilityState(_rememberedScore);
   }
 
@@ -177,7 +298,14 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _closeWarmClients();
     // 有上次的分数就先照着显示，探完再更新；没有才是「测量中」。
     state = StabilityState(_rememberedScore);
-    _schedule(immediate: true);
+    _transportModeKnown = false;
+    _groupedProfile = false;
+    _transportAwaiting = true;
+    _transportGroupTag = '';
+    _selectedTransportEndpoint = '';
+    _timer?.cancel();
+    _ifaceTimer?.cancel();
+    unawaited(_prepareWarmup(_gen));
   }
 
   /// 确认通之前（两端统一，docs/计划/连上后判通-按节点回数据.md）：三家检测网址同时问一次，**不设超时**
@@ -186,7 +314,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _timer?.cancel();
     final gen = _gen;
     if (immediate) {
-      for (final url in _exitUrls) {
+      if (!_transportModeKnown || _transportAwaiting) return;
+      for (final url in (_groupedProfile ? const ['https://ipinfo.io/json'] : _exitUrls)) {
         unawaited(_warmAsk(gen, url));
       }
     }
@@ -217,10 +346,11 @@ class StabilityNotifier extends Notifier<StabilityState> {
   Future<bool> sentDataNow() async {
     final gen = _gen;
     await _pollBytes(gen);
-    return gen == _gen && _running && (_confirmed || _sentData);
+    return gen == _gen && _running && (_confirmed || (!_groupedProfile && _sentData));
   }
 
   Future<void> _readBytes(int gen) async {
+    if (!_transportModeKnown || _groupedProfile || _transportAwaiting) return;
     final d = await ref.read(proxyRepositoryProvider).selectedOutboundDownload();
     if (gen != _gen || !_running) return;
     if (d != null) {
@@ -238,6 +368,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
 
   /// 确认通之前的一个检测请求（自己的连接，不设超时，只等它自己有结果）。
   Future<void> _warmAsk(int gen, String url) async {
+    if (!_transportModeKnown || _transportAwaiting) return;
     final port = ref.read(httpClientProvider).port;
     if (port <= 0) return;
     final core = ref.read(hiddifyCoreServiceProvider);
@@ -253,8 +384,9 @@ class StabilityNotifier extends Notifier<StabilityState> {
     try {
       final req = await client.getUrl(Uri.parse(url));
       req.persistentConnection = false;
+      if (_groupedProfile) req.followRedirects = false;
       final res = await req.close();
-      answered = true;
+      answered = !_groupedProfile || res.statusCode == 200;
       final body = await res.transform(utf8.decoder).join();
       exit = _parseExit(url, body);
     } catch (e) {
@@ -280,6 +412,18 @@ class StabilityNotifier extends Notifier<StabilityState> {
       await _warmEnded(gen, url, '$err');
       return;
     }
+
+    if (_groupedProfile) {
+      final expected = GslTransportGroup.tryParse(_transportGroupTag)?.country ?? '';
+      if (_transportAwaiting ||
+          exit == null ||
+          InternetAddress.tryParse(exit.ip) == null ||
+          expected.isEmpty ||
+          exit.cc.toUpperCase() != expected) {
+        state = const StabilityState(-1, notice: '尚未确认');
+        return;
+      }
+    }
     final line = ref.read(Preferences.lastNodeName);
     // 出口是国内 = 流量没走隧道。别的情况回答都是经节点来的，线路是通的（出口国家对不上多半是 IP 库标错）。
     if (exit != null && exit.cc.toUpperCase() == 'CN') {
@@ -290,13 +434,21 @@ class StabilityNotifier extends Notifier<StabilityState> {
     }
     _note('ok');
     _confirm(gen, _audit(exit == null || _proves(exit, line), exit, line,
-        note: exit == null ? '${Uri.parse(url).host} 有回答' : null));
+        note: exit == null ? '${Uri.parse(url).host} 有回答' : null),
+    );
   }
 
   /// 一个检测连接自己结束了。先现读一次字节：节点回过数据就不算（线路通，只是这家没答上来）；
   /// 一个字节都没回才记一条，够 3 条（三家同时问的第一轮全被结束）就下结论，不够就把这一家再问一次。
   /// 按条数，不按时间（10-19 实测：账号 / 密钥不对时节点 0.5 秒内就把三条都断了）。
   Future<void> _warmEnded(int gen, String url, String why) async {
+    if (_groupedProfile) {
+      if (gen == _gen && _running && !_confirmed) {
+        _transportAwaiting = true;
+        state = const StabilityState(-1, notice: '尚未确认', egressAudit: '正式通道未确认；不重复轮询入口或判定线路失败');
+      }
+      return;
+    }
     await _pollBytes(gen);
     if (gen != _gen || !_running || _confirmed || _sentData) return;
     _zeroEnds++;
@@ -385,11 +537,28 @@ class StabilityNotifier extends Notifier<StabilityState> {
       return;
     }
     final line = ref.read(Preferences.lastNodeName);
-    final proved = exit != null && _proves(exit, line);
+    final expected = GslTransportGroup.tryParse(_transportGroupTag)?.country ?? '';
+    final proved = exit != null &&
+        (_groupedProfile
+            ? InternetAddress.tryParse(exit.ip) != null && expected.isNotEmpty && exit.cc.toUpperCase() == expected
+            : _proves(exit, line));
     // 确认网通之前发出、确认之后才超时回来的那几轮：不算「用着时没回音」（不然第一轮卡住、第三轮通了，
     // 前两轮晚到的超时会把刚连上的连接判成断了）。
     final confirmedAt = _confirmedAt;
     if (!proved && _confirmed && confirmedAt != null && started.isBefore(confirmedAt)) return;
+
+    if (_groupedProfile) {
+      final core = ref.read(hiddifyCoreServiceProvider);
+      if (proved) {
+        if (ref.read(transportSelectionProvider).phase == 'checking')
+          core.cancelTransportSelection(retainSelected: true);
+        _confirm(gen, _audit(true, exit, line));
+      } else {
+        // Our resource timeout is unknown; only a new actual candidate response may choose an alternative.
+        unawaited(core.verifyTransportGroup(_transportGroupTag, recovery: true));
+      }
+      return;
+    }
     final audit = _audit(proved, exit, line);
     if (exit == null) {
       _note('timeout');
@@ -506,7 +675,9 @@ class StabilityNotifier extends Notifier<StabilityState> {
       // 说不清原因：叫他回来点「帮我查一查」（连接检查，Windows 右下角提醒同一句）
       unawaited(DropNotice.show(kind == 'egress'
           ? '网页没有经过光速雷达的线路。打开光速雷达，点「帮我查一查」'
-          : '${line.isEmpty ? '这条线路' : line} 连不上了。打开光速雷达，点「帮我查一查」'));
+          : '${line.isEmpty ? '这条线路' : line} 连不上了。打开光速雷达，点「帮我查一查」',
+        ),
+      );
     } else if (kind == 'egress' && reporter.attemptOpen) {
       // 还没确认网通就发现出口是国内：第 5 步失败（以前被 abortConnection 当成取消丢掉了）。
       unawaited(reporter.reportFailure('出口是国内 IP，流量没走隧道', forcedStage: 'egress_mismatch',
@@ -522,8 +693,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
   static const _exitUrls = [
     'https://1.1.1.1/cdn-cgi/trace',
     'https://api.ip.sb/geoip',
-    'https://ipinfo.io/json',
-  ];
+    'https://ipinfo.io/json'];
 
   Future<_Exit?> _readExit() async {
     // 本进程被排除在 VPN 之外，直接请求会绕过隧道。走本地 mixed 端口、不指定出站，
@@ -541,7 +711,9 @@ class StabilityNotifier extends Notifier<StabilityState> {
       try {
         final req = await client.getUrl(Uri.parse(url));
         req.persistentConnection = false;
+        if (_groupedProfile) req.followRedirects = false;
         final res = await req.close();
+        if (_groupedProfile && res.statusCode != 200) return null;
         final body = await res.transform(utf8.decoder).join();
         return _parseExit(url, body);
       } catch (_) {
@@ -560,7 +732,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
           pending--;
           if (done.isCompleted) return;
           if (exit != null || pending == 0) done.complete(exit);
-        }));
+        }),
+        );
       }
       return done.future;
     }
@@ -574,7 +747,8 @@ class StabilityNotifier extends Notifier<StabilityState> {
     }
 
     final exit = await (_confirmed ? askInOrder() : askAll())
-        .timeout(const Duration(seconds: 4), onTimeout: () => null);
+        .timeout(const Duration(seconds: 4), onTimeout: () => null,
+    );
     client.close(force: true);
     return exit;
   }

@@ -102,8 +102,7 @@ ConnectProgress _vpnDeniedProgress() {
   return const ConnectProgress(
     failedStep: 4,
     title: '需要你允许一次',
-    message: '再点一下按钮，手机弹出「网络连接请求」时，请点「确定」。',
-  );
+    message: '再点一下按钮，手机弹出「网络连接请求」时，请点「确定」。');
 }
 
 /// 他选的线路（preferredLineName）不在订阅里了（下线 / 隐藏 / 精品体验结束）：停在第 3 步的那张失败卡——
@@ -114,10 +113,11 @@ ConnectProgress _vpnDeniedProgress() {
 /// [read] 传 ref.read（界面里的 WidgetRef、provider 里的 Ref 都行）。
 Future<ConnectProgress?> lineGoneProgress(T Function<T>(ProviderListenable<T>) read) async {
   final line = read(Preferences.preferredLineName);
+  final logicalId = read(Preferences.preferredLogicalLineId);
   if (line.isEmpty) return null;
   final set = await read(lineSetProvider.future);
   // 只对真订阅比（locked = 账号用不了时的公开橱窗，不算）。
-  if (set.locked || set.lines.isEmpty || set.lines.any((o) => o.name == line)) return null;
+  if (set.locked || set.lines.isEmpty || set.lines.any((o) => logicalId.isNotEmpty ? o.routeId == logicalId : o.name == line)) return null;
   final acc = read(panelAuthProvider).account;
   final to = set.lines.where((o) => !(acc?.isLineDown(o.name) ?? false)).firstOrNull?.name ?? '';
   return ConnectProgress(

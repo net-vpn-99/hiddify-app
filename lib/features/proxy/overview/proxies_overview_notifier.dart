@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:hiddify/features/proxy/model/transport_group.dart';
 
 import 'package:dartx/dartx.dart';
 
@@ -170,7 +171,7 @@ class ProxiesOverviewNotifier extends _$ProxiesOverviewNotifier with AppLogger {
     for (final item in sortedItems) {
       all.add(item);
       // 藏掉 hiddify-core 自动生成的 balance / lowest / select 等均衡组，只留真实线路
-      if (item.isGroup || isAutoGroupTag(item.tag)) continue;
+      if ((item.isGroup && !isLogicalTransportTag(item.tag)) || isAutoGroupTag(item.tag)) continue;
       items.add(item);
     }
     // 万一过滤后一个不剩（不该发生），回退成原列表，别给用户一个空页面

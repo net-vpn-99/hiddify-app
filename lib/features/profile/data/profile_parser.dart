@@ -155,7 +155,7 @@ class ProfileParser {
 
     final swProfile = Stopwatch()..start();
     Future<Response<dynamic>> fetch(String u) => _httpClient.download(
-      u.trim(),
+      withOwnTransportSchema(u.trim()),
       tempFilePath,
       cancelToken: cancelToken,
       userAgent: _ref.read(ConfigOptions.useXrayCoreWhenPossible)

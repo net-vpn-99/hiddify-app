@@ -148,6 +148,7 @@ class HomePage extends HookConsumerWidget {
       final tag = next.valueOrNull?.tagDisplay ?? '';
       if (tag.isEmpty) return;
       final n = splitNodeName(tag);
+      ref.read(Preferences.lastLogicalLineId.notifier).update(n.routeId);
       ref.read(Preferences.lastNodeName.notifier).update(n.name);
       ref.read(Preferences.lastNodeDesc.notifier).update(n.desc);
     });
@@ -198,7 +199,8 @@ class HomePage extends HookConsumerWidget {
         title: Row(
           children: [
             (theme.brightness == Brightness.dark ? Assets.images.markOnDarkSmall : Assets.images.markOnLightSmall)
-                .svg(width: 28, height: 28),
+                .svg(width: 28, height: 28,
+            ),
             const Gap(8),
             Text(t.common.appTitle, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
           ],
@@ -257,7 +259,8 @@ class _SpeedLine extends ConsumerWidget {
     if (!connected) return const SizedBox.shrink();
 
     final stats = ref.watch(statsNotifierProvider).valueOrNull ?? SystemInfo.create();
-    final num = TextStyle(fontFamily: OneRayTokens.numberFont, fontSize: 15, fontWeight: FontWeight.w600, color: tk.text);
+    final num = TextStyle(fontFamily: OneRayTokens.numberFont, fontSize: 15, fontWeight: FontWeight.w600, color: tk.text,
+    );
     final sub = TextStyle(fontSize: 12, color: tk.sub);
     return Padding(
       padding: const EdgeInsets.only(top: 4),

@@ -103,6 +103,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     final set = ref.watch(lineSetProvider);
     // 正在用 / 上次连上的那条（连接成功时首页会写进来）。
     final currentName = ref.watch(Preferences.lastNodeName);
+    final currentId = ref.watch(Preferences.lastLogicalLineId);
     // 用户自己在这页选过的那条。选过了就不用再给他看「推荐」。
     final pickedName = ref.watch(Preferences.preferredLineName);
     final connected = ref.watch(connectionNotifierProvider).valueOrNull?.isConnected ?? false;
@@ -111,7 +112,6 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     final isp = ref.watch(panelAuthProvider.select((s) => s.account?.isp ?? ''));
     final account = ref.watch(panelAuthProvider).account;
     final subOptions = value?.lines ?? const <LineOption>[];
-    final firstName = subOptions.isEmpty ? '' : subOptions.first.name;
     // 没账号 / 到期：这是只能看的公开清单。
     final preview = value?.locked ?? false;
     final tiers = ref.watch(lineTierProvider);
@@ -138,7 +138,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     LineOption? current;
     if (!preview && currentName.isNotEmpty) {
       for (final o in all) {
-        if (o.name == currentName) current = o;
+        if (currentId.isNotEmpty ? o.routeId == currentId : o.name == currentName) current = o;
       }
     }
 
@@ -147,8 +147,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
       bool isCurrent = false,
       bool showKind = false,
       String tierTag = '',
-      Key? key,
-    }) {
+      Key? key}) {
       final down = !preview && downLines.contains(o.name);
       final busy = !preview && !down && busyLines.contains(o.name);
       final code = countryCodeFromLineName(o.name);
@@ -163,7 +162,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
         showKind: showKind,
         isp: isp,
         tierTag: tierTag,
-        recommended: !preview && pickedName.isEmpty && o.name == firstName,
+        recommended: !preview && pickedName.isEmpty && subOptions.isNotEmpty && sameNodeIdentity(o, subOptions.first),
         down: down,
         busy: busy,
         aiTip: tag != null && code != null && RemoteSiteConfig.aiTipRegions.contains(code) ? tag : '',
@@ -182,18 +181,21 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     final query = _search.text.trim();
     final children = <Widget>[];
     if (set.isLoading && subOptions.isEmpty) {
-      children.add(const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())));
+      children.add(const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()),
+        ),
+      );
     } else if (subOptions.isEmpty) {
       children.add(const Padding(
         padding: EdgeInsets.all(20),
-        child: Text('暂时读不到线路，检查一下网络，或在「我的」页联系客服。'),
-      ));
+        child: Text('暂时读不到线路，检查一下网络，或在「我的」页联系客服。')));
     } else if (query.isNotEmpty) {
       // ===== 搜索：精品在前，每行右边写「精品 / 标准」=====
       final hits = all.where((o) => o.name.toLowerCase().contains(query.toLowerCase())).toList();
       final ordered = [...orderLines(hits.where(isPro).toList()), ...orderLines(hits.where((o) => !isPro(o)).toList())];
       for (final o in ordered) {
-        children.add(row(o, isCurrent: current != null && o.name == current.name, tierTag: tiered ? (isPro(o) ? '精品' : '标准') : ''));
+        children.add(row(o, isCurrent: current != null && sameNodeIdentity(o, current), tierTag: tiered ? (isPro(o) ? '精品' : '标准') : '',
+          ),
+        );
       }
       if (ordered.isEmpty) {
         children.add(Padding(
@@ -205,7 +207,8 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
               Text('换一个城市或国家试试', style: TextStyle(fontSize: 12, color: tokens.sub)),
             ],
           ),
-        ));
+        ),
+        );
       }
       if (region.enabled && !preview) {
         children.add(Padding(
@@ -223,14 +226,16 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                     text: '没有你想去的城市？',
                     style: TextStyle(fontSize: 14, color: tokens.sub),
                     children: [
-                      TextSpan(text: '投票开通 ›', style: TextStyle(color: tokens.acc, fontWeight: FontWeight.w600)),
+                      TextSpan(text: '投票开通 ›', style: TextStyle(color: tokens.acc, fontWeight: FontWeight.w600),
+                        ),
                     ],
                   ),
                 ),
               ),
             ),
           ),
-        ));
+        ),
+        );
       }
     } else if (_stdPage) {
       // ===== 标准线路那一页 =====
@@ -241,12 +246,12 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
           padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
           child: Text(
             '标着「适合$isp」的，你用起来更快。',
-            style: TextStyle(fontSize: 12, height: 1.4, color: tokens.sub),
+            style: TextStyle(fontSize: 12, height: 1.4, color: tokens.sub)),
           ),
-        ));
+        );
       }
       for (final o in std) {
-        final cur = current != null && o.name == current.name;
+        final cur = current != null && sameNodeIdentity(o, current);
         children.add(row(o, isCurrent: cur, key: cur ? _currentKey : null));
       }
       if (current != null && !isPro(current)) _revealCurrent();
@@ -269,10 +274,12 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('精品线路 · $proCount 条',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.acc)),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: tokens.acc),
+                            ),
                           const Gap(2),
                           Text(proLocked ? '晚高峰也不卡 · 精品版才能用' : '晚高峰也不卡',
-                              style: TextStyle(fontSize: 12, color: tokens.sub)),
+                              style: TextStyle(fontSize: 12, color: tokens.sub),
+                            ),
                         ],
                       ),
                     ),
@@ -282,7 +289,8 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
               ),
             ),
           ),
-        ));
+        ),
+        );
       }
     } else {
       // ===== 主页：正在用 / 精品 / 标准卡 =====
@@ -291,7 +299,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
         children.add(row(current, isCurrent: true, showKind: tiered));
         children.add(const Gap(10));
       }
-      final others = all.where((o) => current == null || o.name != current.name).toList();
+      final others = all.where((o) => current == null || !sameNodeIdentity(o, current)).toList();
       if (!tiered) {
         for (final o in orderLines(others)) {
           children.add(row(o));
@@ -308,7 +316,8 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                 : '晚高峰也不卡',
             hintAcc: tiers.trial == 'active',
             account: account,
-          ));
+          ),
+          );
           for (final o in proOthers) {
             children.add(row(o));
           }
@@ -319,7 +328,8 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
             countries: _countries(proAll),
             onUpgrade: () => _upgrade(context, 'pro'),
             onLineTap: () => _lockedTap(context),
-          ));
+          ),
+          );
         }
         final stdAll = all.where((o) => !isPro(o)).toList();
         if (stdAll.isNotEmpty) {
@@ -333,7 +343,8 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
               currentRegion: curRegion,
               onTap: () => _openStdPage(true),
             ),
-          ));
+          ),
+          );
         }
       }
       // 最后两张卡：投票 / 定制。跟着列表走，不钉在屏幕底（面板高度跟内容走，不留空白）。
@@ -364,11 +375,11 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
             children: [
               for (final (i, t) in tiles.indexed) ...[
                 if (i > 0) const Gap(10),
-                Expanded(child: t),
-              ],
+                Expanded(child: t)],
             ],
           ),
-        ));
+        ),
+        );
       }
     }
 
@@ -391,7 +402,8 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
                   icon: Icon(Icons.chevron_left_rounded, color: tokens.sub),
                 ),
               Text(_stdPage ? '标准线路' : '全部线路',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: tokens.text)),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: tokens.text),
+              ),
             ],
           ),
         ),
@@ -438,8 +450,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
           child: ListView(
             shrinkWrap: true,
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
-            children: children,
-          ),
+            children: children),
         ),
       ],
     );
@@ -614,9 +625,13 @@ Future<void> showProTrialGuide(BuildContext context, LineTierState tiers, String
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text.rich(TextSpan(children: [
-                TextSpan(text: '精品线路', style: TextStyle(color: t.acc, fontSize: 13, fontWeight: FontWeight.w700)),
-                TextSpan(text: '  体验中 · 还剩 ${tiers.minutes} 分钟', style: TextStyle(color: t.acc, fontSize: 11)),
-              ])),
+                TextSpan(text: '精品线路', style: TextStyle(color: t.acc, fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                TextSpan(text: '  体验中 · 还剩 ${tiers.minutes} 分钟', style: TextStyle(color: t.acc, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
               if (sampleName.isNotEmpty) ...[
                 const Gap(6),
                 Container(
@@ -634,16 +649,19 @@ Future<void> showProTrialGuide(BuildContext context, LineTierState tiers, String
                       Expanded(
                         child: Text.rich(
                           TextSpan(children: [
-                            TextSpan(text: country, style: TextStyle(fontWeight: FontWeight.w700, color: t.text)),
+                            TextSpan(text: country, style: TextStyle(fontWeight: FontWeight.w700, color: t.text),
+                              ),
                             TextSpan(text: ' · ${_shortName(country, sampleName)}'),
-                          ]),
+                          ],
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 13, color: t.text),
                         ),
                       ),
                       if (sampleFits)
-                        Text('适合$isp', style: TextStyle(color: t.acc, fontSize: 11, fontWeight: FontWeight.w600)),
+                        Text('适合$isp', style: TextStyle(color: t.acc, fontSize: 11, fontWeight: FontWeight.w600),
+                        ),
                     ],
                   ),
                 ),
@@ -692,7 +710,9 @@ String _regionLink(String subtitle) {
 /// 记住选的这条线路（偏好 + 上次用的名字 / 说明）。选线路和精品体验结束换线都用它。
 /// [read] 传 ref.read（界面里的 WidgetRef、notifier 里的 Ref 都行）。
 Future<void> rememberLine(T Function<T>(ProviderListenable<T>) read, LineOption o) async {
+  await read(Preferences.preferredLogicalLineId.notifier).update(o.routeId);
   await read(Preferences.preferredLineName.notifier).update(o.name);
+  await read(Preferences.lastLogicalLineId.notifier).update(o.routeId);
   await read(Preferences.lastNodeName.notifier).update(o.name);
   await read(Preferences.lastNodeDesc.notifier).update(o.desc);
 }
@@ -702,10 +722,14 @@ Future<void> rememberLine(T Function<T>(ProviderListenable<T>) read, LineOption 
 /// 没连着就走一键连接；连着时 autoLineFixer 按偏好切过去。线路清单刷新过、那条没了返回 false。
 Future<bool> switchToLine(T Function<T>(ProviderListenable<T>) read, String name) async {
   final lines = (await read(lineSetProvider.future)).lines;
-  final o = lines.where((x) => x.name == name).firstOrNull;
-  if (o == null) return false;
+  final matches = lines.where((x) => x.name == name).toList();
+  if (matches.length != 1) return false;
+  final o = matches.first;
   await rememberLine(read, o);
-  if (identical(o, lines.first)) await read(Preferences.preferredLineName.notifier).update('');
+  if (identical(o, lines.first)) {
+    await read(Preferences.preferredLineName.notifier).update('');
+    await read(Preferences.preferredLogicalLineId.notifier).update('');
+  }
   read(connectRequestProvider.notifier).state++;
   return true;
 }
@@ -713,8 +737,7 @@ Future<bool> switchToLine(T Function<T>(ProviderListenable<T>) read, String name
 Future<bool> chooseLine(BuildContext context, WidgetRef ref, LineOption o) async {
   if (ref.read(panelAuthProvider).account?.isLineDown(o.name) ?? false) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('「${o.name}」正在维修，暂时连不上。请换一条线路。')),
-    );
+      SnackBar(content: Text('「${o.name}」正在维修，暂时连不上。请换一条线路。')));
     return false;
   }
   await rememberLine(ref.read, o);
@@ -751,7 +774,8 @@ class _GroupLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.sub)),
+      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: tokens.sub),
+      ),
     );
   }
 }
@@ -826,8 +850,7 @@ class _LineRow extends StatelessWidget {
     final second = <InlineSpan>[
       for (final (i, group) in groups.indexed) ...[
         if (i > 0) const TextSpan(text: ' · '),
-        ...group,
-      ],
+        ...group],
     ];
     final row = Material(
       color: current ? tokens.accSoft : Colors.transparent,
@@ -845,7 +868,8 @@ class _LineRow extends StatelessWidget {
                   Container(
                     width: 36,
                     height: 36,
-                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: tokens.ring)),
+                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: tokens.ring),
+                    ),
                   ),
                 ],
               ),
@@ -857,7 +881,8 @@ class _LineRow extends StatelessWidget {
                     Text.rich(
                       TextSpan(
                         children: [
-                          TextSpan(text: country, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          TextSpan(text: country, style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
                           TextSpan(text: ' · $city'),
                         ],
                       ),
@@ -867,15 +892,15 @@ class _LineRow extends StatelessWidget {
                     ),
                     if (second.isNotEmpty) ...[
                       const Gap(3),
-                      Text.rich(TextSpan(children: second), maxLines: 1, overflow: TextOverflow.ellipsis, style: sub),
+                      Text.rich(TextSpan(children: second), maxLines: 1, overflow: TextOverflow.ellipsis, style: sub,
+                      ),
                     ],
                   ],
                 ),
               ),
               if (marker != null) ...[
                 const Gap(8),
-                _Pill(text: marker.$1, kind: marker.$2, tokens: tokens),
-              ],
+                _Pill(text: marker.$1, kind: marker.$2, tokens: tokens)],
             ],
           ),
         ),
@@ -949,7 +974,8 @@ class _ProHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text('精品线路', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.acc)),
+              Text('精品线路', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.acc),
+              ),
               const Gap(8),
               Expanded(
                 child: Text(
@@ -962,7 +988,8 @@ class _ProHeader extends StatelessWidget {
               if (onUpgrade != null)
                 GestureDetector(
                   onTap: onUpgrade,
-                  child: Text('升级精品版 ›', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.acc)),
+                  child: Text('升级精品版 ›', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: tokens.acc),
+                  ),
                 )
               else if (know)
                 Text(
@@ -1035,7 +1062,8 @@ class _LockedProCard extends StatelessWidget {
                     children: [
                       LineIcon(LineIconName.lock, color: tokens.acc, size: 14),
                       const Gap(8),
-                      Text('精品线路', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.acc)),
+                      Text('精品线路', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.acc),
+                      ),
                       const Gap(8),
                       Text('晚高峰也不卡', style: TextStyle(fontSize: 12, color: tokens.sub)),
                     ],
@@ -1082,7 +1110,8 @@ class _LockedProCard extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text('想晚高峰更快？', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text)),
+                    child: Text('想晚高峰更快？', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: tokens.text),
+                    ),
                   ),
                   const Gap(8),
                   FilledButton(
@@ -1094,7 +1123,9 @@ class _LockedProCard extends StatelessWidget {
                       shape: const StadiumBorder(),
                     ),
                     onPressed: onUpgrade,
-                    child: Text('升级精品版', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefaultTextStyle.of(context).style.fontFamily)),
+                    child: Text('升级精品版', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefaultTextStyle.of(context).style.fontFamily,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -1139,7 +1170,8 @@ class _StdCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text('标准线路', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.text)),
+                  Text('标准线路', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: tokens.text),
+                  ),
                   const Gap(8),
                   Expanded(
                     child: Text('晚高峰可能变慢 · $count 条', style: TextStyle(fontSize: 12, color: tokens.sub)),
@@ -1219,10 +1251,12 @@ class _FootTile extends StatelessWidget {
               Text(title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: tokens.text)),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: tokens.text),
+              ),
               const Gap(4),
               Text(link,
-                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: tokens.acc)),
+                  maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: tokens.acc),
+              ),
             ],
           ),
         ),

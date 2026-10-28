@@ -28,8 +28,7 @@ String _inviteOrDefault(String? typed) {
 }
 
 const _secureStorage = FlutterSecureStorage(
-  aOptions: AndroidOptions(encryptedSharedPreferences: true),
-);
+  aOptions: AndroidOptions(encryptedSharedPreferences: true));
 
 class PanelAuthState {
   const PanelAuthState({
@@ -37,8 +36,7 @@ class PanelAuthState {
     this.email,
     this.account,
     this.guestPassword,
-    this.guestPaidReminder,
-  });
+    this.guestPaidReminder});
 
   final bool loading;
 
@@ -182,7 +180,9 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     if (owner == no) return;
     // 升级上来第一次（还没记过是谁的）：当成这个号的，不清
     if (owner.isNotEmpty) {
+      await ref.read(Preferences.preferredLogicalLineId.notifier).update('');
       await ref.read(Preferences.preferredLineName.notifier).update('');
+      await ref.read(Preferences.lastLogicalLineId.notifier).update('');
       await ref.read(Preferences.lastNodeName.notifier).update('');
       await ref.read(Preferences.lastNodeDesc.notifier).update('');
     }
@@ -208,8 +208,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       loading: false,
       email: savedEmail,
       account: sub.account,
-      setGuestPaidReminder: true,
-    );
+      setGuestPaidReminder: true);
     return (subscribeUrl: sub.subscribeUrl, error: null);
   }
 
@@ -258,8 +257,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     String email,
     String password, {
     String? code,
-    String? inviteCode,
-  }) async {
+    String? inviteCode}) async {
     if (state.loading) return (subscribeUrl: null, error: null);
     state = state.copyWith(loading: true);
 
@@ -298,12 +296,15 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
 
   /// 免注册试用：按本机 ANDROID_ID 开 / 取回游客号，成功返回订阅地址。
   /// 这台设备登过正式账号时返回 hasAccountMask（让用户直接登录），不开游客。
-  Future<({String? subscribeUrl, String? error, String? hasAccountMask, String? hasAccountNo, bool? isNetworkError, String? action})> guestLogin(
+  Future<({String? subscribeUrl, String? error, String? hasAccountMask, String? hasAccountNo, bool? isNetworkError, String? action,
+    })> guestLogin(
       {void Function()? onVerify}) async {
-    if (state.loading) return (subscribeUrl: null, error: null, hasAccountMask: null, hasAccountNo: null, isNetworkError: null, action: null);
+    if (state.loading) return (subscribeUrl: null, error: null, hasAccountMask: null, hasAccountNo: null, isNetworkError: null, action: null,
+      );
     final deviceId = await DeviceId.read();
     if (deviceId == null) {
-      return (subscribeUrl: null, error: '读不到本机设备信息，请注册账号使用', hasAccountMask: null, hasAccountNo: null, isNetworkError: false, action: null);
+      return (subscribeUrl: null, error: '读不到本机设备信息，请注册账号使用', hasAccountMask: null, hasAccountNo: null, isNetworkError: false, action: null,
+      );
     }
     state = state.copyWith(loading: true);
     try {
@@ -312,7 +313,8 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       final token = r.token;
       if (token == null) {
         state = state.copyWith(loading: false);
-        return (subscribeUrl: null, error: null, hasAccountMask: r.hasAccountMask ?? '', hasAccountNo: r.hasAccountNo, isNetworkError: false, action: null);
+        return (subscribeUrl: null, error: null, hasAccountMask: r.hasAccountMask ?? '', hasAccountNo: r.hasAccountNo, isNetworkError: false, action: null,
+        );
       }
       final sub = await _api.getSubscribe(token);
       final email = sub.email ?? '';
@@ -335,15 +337,17 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
         loading: false,
         email: email,
         account: sub.account,
-        guestPassword: pw,
+        guestPassword: pw);
+      return (subscribeUrl: sub.subscribeUrl, error: null, hasAccountMask: null, hasAccountNo: null, isNetworkError: false, action: null,
       );
-      return (subscribeUrl: sub.subscribeUrl, error: null, hasAccountMask: null, hasAccountNo: null, isNetworkError: false, action: null);
     } on PanelApiException catch (e) {
       state = state.copyWith(loading: false);
-      return (subscribeUrl: null, error: e.message, hasAccountMask: null, hasAccountNo: null, isNetworkError: e.isNetworkError, action: e.action);
+      return (subscribeUrl: null, error: e.message, hasAccountMask: null, hasAccountNo: null, isNetworkError: e.isNetworkError, action: e.action,
+      );
     } catch (e) {
       state = state.copyWith(loading: false);
-      return (subscribeUrl: null, error: '免注册试用出错：$e', hasAccountMask: null, hasAccountNo: null, isNetworkError: true, action: null);
+      return (subscribeUrl: null, error: '免注册试用出错：$e', hasAccountMask: null, hasAccountNo: null, isNetworkError: true, action: null,
+      );
     }
   }
 
@@ -382,8 +386,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
     final stillValid = exp == null || exp == 0 || exp > nowSec;
     state = state.copyWith(
       guestPaidReminder: paid == true && stillValid && state.isGuest,
-      setGuestPaidReminder: true,
-    );
+      setGuestPaidReminder: true);
   }
 
   /// 当前免注册号有没有买过套餐。null = 查失败，登录页不拦。
@@ -606,6 +609,7 @@ class PanelAuthNotifier extends Notifier<PanelAuthState> {
       }
     } catch (_) {}
     try {
+      await ref.read(Preferences.lastLogicalLineId.notifier).update('');
       await ref.read(Preferences.lastNodeName.notifier).update('');
       await ref.read(Preferences.lastNodeDesc.notifier).update('');
     } catch (_) {}

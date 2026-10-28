@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:hiddify/features/proxy/model/transport_group.dart';
+import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/app/notifier/app_foreground.dart';
@@ -27,6 +29,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// 在首页 `ref.watch` 一下即可。preferredLineName 变了会重新跑（已连接则立即切）。
 final autoLineFixerProvider = StreamProvider<void>((ref) async* {
   final preferred = ref.watch(Preferences.preferredLineName);
+  final logicalId = ref.watch(Preferences.preferredLogicalLineId);
   final running = await ref.watch(serviceRunningProvider.future);
   if (!running) return;
 
@@ -35,20 +38,30 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
     final OutboundGroup? group = either.getOrElse((_) => null);
     if (group == null) continue;
 
-    final real = group.items.where((o) => !o.isGroup && !isAutoGroupTag(o.tag)).toList();
+    final real = group.items.where((o) => (!o.isGroup || isLogicalTransportTag(o.tag)) && !isAutoGroupTag(o.tag)).toList();
     if (real.isEmpty) continue;
 
     // 1) 用户选过线路：按名字切过去
-    if (preferred.isNotEmpty) {
+    if (preferred.isNotEmpty || logicalId.isNotEmpty) {
       OutboundInfo? target;
       for (final o in real) {
-        if (splitNodeName(o.tag).name == preferred) {
+        if (logicalId.isNotEmpty
+            ? GslTransportGroup.tryParse(o.tag)?.id == logicalId
+            : splitNodeName(o.tag).name == preferred) {
           target = o;
           break;
         }
       }
       if (target != null && target.tag != group.selected) {
         await repo.selectProxy(group.tag, target.tag).run();
+      }
+      if (target != null && target.tag == group.selected) {
+        final core = ref.read(hiddifyCoreServiceProvider);
+        if (isLogicalTransportTag(target.tag)) {
+          unawaited(core.verifyTransportGroup(target.tag));
+        } else {
+          core.retainLegacySelection();
+        }
       }
       // 选的线路不在订阅里了：不让内核接着用它自己挑的那条。首页按钮第 3 步已经拦过，走到这里的是
       // 通知栏快捷开关、开机自动连这些原生直接起内核的入口——同样停下，首页停在第 3 步那张卡（换到 X / 自己选线路）。
@@ -60,7 +73,15 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
     }
 
     // 2) 没有偏好：跟服务器排的第一条（已经是它就不动）
-    if (group.selected == real.first.tag) return;
+    if (group.selected == real.first.tag) {
+      final core = ref.read(hiddifyCoreServiceProvider);
+      if (isLogicalTransportTag(real.first.tag)) {
+        unawaited(core.verifyTransportGroup(real.first.tag));
+      } else {
+        core.retainLegacySelection();
+      }
+      return;
+    }
 
     await _applyServerRecommended(repo, group.tag, real);
     return;
@@ -88,7 +109,6 @@ void _stopForGoneLine(Ref ref, ConnectProgress gone) {
 Future<void> _applyServerRecommended(
   ProxyRepository repo,
   String groupTag,
-  List<OutboundInfo> real,
-) async {
+  List<OutboundInfo> real) async {
   await repo.selectProxy(groupTag, real.first.tag).run();
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/proxy/active/ip_widget.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
+import 'package:hiddify/features/proxy/model/transport_group.dart';
 import 'package:hiddify/gen/fonts.gen.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
@@ -26,7 +27,8 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
         n.name,
         overflow: TextOverflow.ellipsis,
         style: (PlatformUtils.isWindows ? const TextStyle(fontFamily: FontFamily.emoji) : const TextStyle())
-            .copyWith(fontWeight: FontWeight.w600),
+            .copyWith(fontWeight: FontWeight.w600,
+        ),
       ),
       leading: IPCountryFlag(
         countryCode: proxy.ipinfo.countryCode,
@@ -37,6 +39,8 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
       subtitle: Text(
         n.desc.isNotEmpty
             ? n.desc
+            : isLogicalTransportTag(proxy.tag)
+            ? '自动选择可用入口'
             : (proxy.isGroup ? '${proxy.type} (${proxy.groupSelectedTagDisplay.trim()})' : proxy.type),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -84,7 +88,8 @@ class _NodeSignal extends StatelessWidget {
           );
         }),
         const SizedBox(width: 6),
-        Text(label, style: theme.textTheme.bodySmall?.copyWith(color: color, fontWeight: FontWeight.w600)),
+        Text(label, style: theme.textTheme.bodySmall?.copyWith(color: color, fontWeight: FontWeight.w600),
+        ),
       ],
     );
   }

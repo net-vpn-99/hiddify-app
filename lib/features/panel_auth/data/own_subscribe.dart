@@ -87,8 +87,7 @@ Future<void> unbindAccountProfileIdIf(String id) async {
 String buildOwnSubscribeUrl({
   required String apiBase,
   String? token,
-  String? originalUrl,
-}) {
+  String? originalUrl}) {
   var t = token?.trim() ?? '';
   final extra = <String, String>{};
   if (originalUrl != null && originalUrl.trim().isNotEmpty) {
@@ -110,4 +109,13 @@ String buildOwnSubscribeUrl({
     q.write('&${Uri.encodeQueryComponent(k)}=${Uri.encodeQueryComponent(v)}');
   });
   return '$base/api/v1/client/subscribe?$q';
+}
+
+/// Opt in only for this application's known authenticated panel sources; third-party URLs stay untouched.
+String withOwnTransportSchema(String url) {
+  if (!isOwnAccountSubscribeSource(url)) return url;
+  final parsed = Uri.parse(url);
+  return parsed
+      .replace(queryParameters: {...parsed.queryParameters, 'flag': 'general', 'gsl_transport_schema': '1'})
+      .toString();
 }

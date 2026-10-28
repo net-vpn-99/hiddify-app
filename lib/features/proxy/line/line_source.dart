@@ -59,19 +59,22 @@ final homeLineProvider = Provider<HomeLine?>((ref) {
   final last = ref.watch(Preferences.lastNodeName);
   final lastDesc = ref.watch(Preferences.lastNodeDesc);
   final preferred = ref.watch(Preferences.preferredLineName);
-  LineOption named(String name) =>
-      lines.where((o) => o.name == name).firstOrNull ??
-      (name: name, desc: name == last ? lastDesc : '', isps: null, pro: false);
+  final logicalId = ref.watch(Preferences.preferredLogicalLineId);
+  final lastLogicalId = ref.watch(Preferences.lastLogicalLineId);
+  LineOption named(String name, String id) =>
+      lines.where((o) => id.isNotEmpty ? o.routeId == id : o.name == name).firstOrNull ??
+      (name: name, desc: name == last ? lastDesc : '', isps: null, pro: false, routeId: id);
   final first = lines.firstOrNull;
   final connected = ref.watch(connectionNotifierProvider.select((s) => s.valueOrNull?.isConnected ?? false));
   // 还没确认通时内核可能先恢复上一次的选择、lastNodeName 闪成旧的那条，fixer 马上切走：这时照「会连哪条」写
   if (connected && last.isNotEmpty && ref.watch(stabilityProvider.select((s) => s.confirmed))) {
-    return (line: named(last), recommended: preferred.isEmpty && first?.name == last);
+    return (line: named(last, lastLogicalId), recommended: preferred.isEmpty && first != null && sameNodeIdentity(first, named(last, lastLogicalId)),
+    );
   }
-  if (preferred.isNotEmpty) return (line: named(preferred), recommended: false);
+  if (preferred.isNotEmpty) return (line: named(preferred, logicalId), recommended: false);
   if (first != null) return (line: first, recommended: true);
   // 清单还在读（冷启动那一下）：跟服务器走的人先写上次那条，提示行照样是「推荐线路」，读出来不跳字
-  return last.isEmpty ? null : (line: named(last), recommended: set == null);
+  return last.isEmpty ? null : (line: named(last, lastLogicalId), recommended: set == null);
 });
 
 /// 当前订阅里的线路列表，从本地 profile 文件离线读出来（不用连接）。

@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:hiddify/features/proxy/model/transport_group.dart';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:fpdart/fpdart.dart';
-import 'package:grpc/grpc.dart';
+import 'package:grpc/grpc.dart' hide Response;
 import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/model/directories.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
@@ -31,7 +32,14 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:rxdart/rxdart.dart';
 
 class HiddifyCoreService with InfraLogger {
-  HiddifyCoreService(this.ref);
+  HiddifyCoreService(this.ref) {
+    ref.onDispose(() {
+      ++_transportOperation;
+      final pending = _transportProbe;
+      _transportProbe = null;
+      if (pending != null) unawaited(pending.cancel());
+    });
+  }
   final Ref ref;
 
   // CoreHiddifyCoreService() {}
@@ -47,6 +55,135 @@ class HiddifyCoreService with InfraLogger {
   final CallOptions? grpcOptions = null; //CallOptions(timeout: const Duration(milliseconds: 10000));
   final Map<String, StreamSubscription?> subscriptions = {};
   List<OutboundGroup> latest = [];
+
+  int _transportOperation = 0;
+  ResponseFuture<Response>? _transportProbe;
+
+  void cancelTransportSelection({bool retainSelected = false}) {
+    ++_transportOperation;
+    final previous = ref.read(transportSelectionProvider);
+    final pending = _transportProbe;
+    _transportProbe = null;
+    if (pending != null) unawaited(pending.cancel());
+    ref.read(transportSelectionProvider.notifier).state = retainSelected && previous.group.isNotEmpty
+        ? TransportSelectionState(group: previous.group, endpoint: previous.endpoint, phase: 'selected')
+        : const TransportSelectionState();
+  }
+
+  Future<void> _prepareTransportProfile(String path) async {
+    cancelTransportSelection();
+    try {
+      final value = jsonDecode(await File(path).readAsString());
+      if (value is Map &&
+          value['outbounds'] is List &&
+          (value['outbounds'] as List).any((e) => e is Map && isLogicalTransportTag('${e['tag'] ?? ''}'))) {
+        ref.read(transportSelectionProvider.notifier).state = const TransportSelectionState(
+          phase: 'awaiting_selection',
+        );
+      }
+    } catch (_) {
+      // The ordinary start path owns configuration errors; no network diagnosis is made here.
+    }
+  }
+
+  Future<bool?> loadedProfileHasTransportGroups() async {
+    try {
+      final list = await core.bgClient.mainOutboundsInfo(Empty()).first;
+      return list.items.any((g) => g.items.any((e) => isLogicalTransportTag(e.tag)));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void retainLegacySelection() {
+    cancelTransportSelection();
+    ref.read(transportSelectionProvider.notifier).state = const TransportSelectionState(phase: 'legacy');
+  }
+
+  Future<void> verifyTransportGroup(String tag, {bool recovery = false}) async {
+    final identity = GslTransportGroup.tryParse(tag);
+    if (identity == null) {
+      retainLegacySelection();
+      return;
+    }
+    final previous = ref.read(transportSelectionProvider);
+    if (previous.group == tag && (_transportProbe != null || (!recovery && previous.selected))) return;
+    final retainedEndpoint = previous.group == tag ? previous.endpoint : '';
+    cancelTransportSelection();
+    final operation = (++_transportOperation).toString();
+    ref.read(transportSelectionProvider.notifier).state = TransportSelectionState(
+      group: tag,
+      operation: operation,
+      phase: 'checking',
+      endpoint: retainedEndpoint,
+    );
+    try {
+      final capabilityRequest = core.bgClient.urlTest(UrlTestRequest(tag: 'gsl-capabilities-v1'));
+      _transportProbe = capabilityRequest;
+      final capability = await capabilityRequest;
+      if (operation != _transportOperation.toString()) return;
+      Map<String, dynamic>? capabilities;
+      try {
+        capabilities = jsonDecode(capability.message) as Map<String, dynamic>;
+      } catch (_) {}
+      if (capability.code != ResponseCode.OK ||
+          capabilities?['schema'] != 1 ||
+          capabilities?['real_probe'] != true ||
+          capabilities?['h3'] != true) {
+        ref.read(transportSelectionProvider.notifier).state = TransportSelectionState(
+          group: tag,
+          operation: operation,
+          phase: 'fatal',
+          reason: 'update_required',
+        );
+        return;
+      }
+      final request = core.bgClient.urlTest(
+        UrlTestRequest(tag: 'gsl-probe-v1:${jsonEncode({'operation': operation, 'group': tag})}'),
+      );
+      _transportProbe = request;
+      final response = await request;
+      if (operation != _transportOperation.toString()) return;
+      final result = jsonDecode(response.message);
+      if (response.code != ResponseCode.OK || result is! Map || result['operation'] != operation) {
+        ref.read(transportSelectionProvider.notifier).state = TransportSelectionState(
+          group: tag,
+          operation: operation,
+          phase: 'unconfirmed',
+          endpoint: retainedEndpoint,
+          reason: 'result_not_confirmed',
+        );
+        return;
+      }
+      final status = result['state'];
+      final endpoint = '${result['endpoint'] ?? ''}';
+      final validWinner = identity.endpoints.any((e) => e['tag'] == endpoint && e['available'] == true);
+      final phase = status == 'verified' && validWinner
+          ? 'selected'
+          : status == 'fatal' || status == 'transport_error'
+          ? 'fatal'
+          : 'unconfirmed';
+      if (phase == 'selected' && endpoint != retainedEndpoint) lineSwitches += 2;
+      ref.read(transportSelectionProvider.notifier).state = TransportSelectionState(
+        group: tag,
+        operation: operation,
+        phase: phase,
+        endpoint: phase == 'selected' ? endpoint : retainedEndpoint,
+        reason: '${result['reason'] ?? status}',
+      );
+    } catch (_) {
+      if (operation != _transportOperation.toString()) return;
+      ref.read(transportSelectionProvider.notifier).state = TransportSelectionState(
+        group: tag,
+        operation: operation,
+        phase: 'unconfirmed',
+        endpoint: retainedEndpoint,
+        reason: 'control_request_unconfirmed',
+      );
+    } finally {
+      if (operation == _transportOperation.toString()) _transportProbe = null;
+    }
+  }
 
   Future<void> init() async {
     await setup()
@@ -166,6 +303,7 @@ class HiddifyCoreService with InfraLogger {
 
   TaskEither<ConnectionFailure, Unit> start(String path, String name, bool disableMemoryLimit) {
     return TaskEither(() async {
+      await _prepareTransportProfile(path);
       statusController.add(currentState = const CoreStatus.starting());
       await _truncateCoreLog();
       watchCoreLogSize();
@@ -233,6 +371,7 @@ class HiddifyCoreService with InfraLogger {
   TaskEither<String, Unit> stop() {
     return TaskEither(() async {
       loggy.debug("stopping");
+      cancelTransportSelection();
       var errMsg = "";
       try {
         final res = await core.bgClient.stop(Empty());
@@ -258,6 +397,7 @@ class HiddifyCoreService with InfraLogger {
   TaskEither<String, Unit> restart(String path, String name, bool disableMemoryLimit) {
     return TaskEither(() async {
       loggy.debug("restarting");
+      await _prepareTransportProfile(path);
       // if (!await core.restart(path, name)) {
       try {
         final res = await core.bgClient.restart(
@@ -375,6 +515,14 @@ class HiddifyCoreService with InfraLogger {
   TaskEither<String, Unit> selectOutbound(String groupTag, String outboundTag) {
     return TaskEither(() async {
       loggy.debug("selecting outbound");
+      final logical = GslTransportGroup.tryParse(outboundTag);
+      cancelTransportSelection();
+      if (logical != null)
+        ref.read(transportSelectionProvider.notifier).state = TransportSelectionState(
+          group: outboundTag,
+          phase: 'awaiting_selection',
+        );
+
       lineSwitches++;
       _selecting++;
       final done = Completer<void>();
@@ -386,6 +534,11 @@ class HiddifyCoreService with InfraLogger {
         );
         if (res.code != ResponseCode.OK) return left("${res.code} ${res.message}");
 
+        if (logical != null) {
+          unawaited(verifyTransportGroup(outboundTag));
+        } else {
+          retainLegacySelection();
+        }
         return right(unit);
       } catch (e) {
         loggy.error("error selecting outbound: $e");
