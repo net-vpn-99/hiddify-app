@@ -301,7 +301,7 @@ class ConnectionButton extends HookConsumerWidget {
       if (stopped()) return;
       final line = ref.read(homeLineProvider)?.line.name ?? '';
       if (gone != null) {
-        failAt(3, gone.title, gone.message, reportStage: 'route_gone', lineGone: true, switchTo: gone.switchTo);
+        failAt(3, gone.title, gone.message, reportStage: gone.lineGone ? 'route_gone' : 'route_down', lineGone: gone.lineGone, switchTo: gone.switchTo);
         return;
       }
       // 选的线路在维修：不去连，说清楚，让他自己换（不自动换线；Windows 同一句，route_down）。
@@ -559,7 +559,7 @@ class ConnectionButton extends HookConsumerWidget {
           ? '未连接 · 推荐线路'
           : '未连接 · 上次用的线路',
       connectedDot: connected && confirmed,
-      faultTag: radarState == RadarState.failed ? '连接失败' : '',
+      faultTag: radarState == RadarState.failed ? (progress.unconfirmed ? '尚未确认' : '连接失败') : '',
       title: shownStep > 0
           ? (lineName.isEmpty ? '正在连接…' : '正在连接 $lineName…')
           : radarState == RadarState.failed && progress.title.isNotEmpty
@@ -692,16 +692,18 @@ class HomeConnectPanel extends StatelessWidget {
               child: Text(buttonLabel),
             ),
     );
-    return Column(
-      children: [
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final size = math.max(220.0, math.min(320.0, math.min(c.maxWidth - 40, c.maxHeight - 8)));
-              return Center(child: radar(size));
-            },
-          ),
-        ),
+    return LayoutBuilder(builder: (context, constraints) {
+      final radarSize = math.min(constraints.maxWidth - 40,
+          (constraints.maxHeight * 0.42).clamp(220.0, 320.0));
+      return SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: IntrinsicHeight(
+            child: Column(
+              children: [
+                Expanded(child: Center(child: SizedBox(
+                  width: radarSize, height: radarSize, child: radar(radarSize),
+                ))),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Column(
@@ -814,8 +816,12 @@ class HomeConnectPanel extends StatelessWidget {
             ],
           ),
         ),
-      ],
-    );
+              ],
+            ),
+          ),
+        ),
+      );
+    });
   }
 }
 

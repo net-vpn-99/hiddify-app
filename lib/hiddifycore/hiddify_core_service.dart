@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/proxy/model/transport_group.dart';
 import 'dart:io';
 import 'dart:math';
@@ -106,11 +107,19 @@ class HiddifyCoreService with InfraLogger {
       retainLegacySelection();
       return;
     }
+    if (!identity.available) {
+      cancelTransportSelection();
+      ref.read(transportSelectionProvider.notifier).state = TransportSelectionState(
+        group: tag, phase: 'fatal', reason: 'route_unavailable',
+      );
+      return;
+    }
     final previous = ref.read(transportSelectionProvider);
     if (previous.group == tag && (_transportProbe != null || (!recovery && previous.selected))) return;
     final retainedEndpoint = previous.group == tag ? previous.endpoint : '';
     cancelTransportSelection();
     final operation = (++_transportOperation).toString();
+    ConnectFlowClock.log?.call('transport start group=${identity.id} operation=$operation recovery=$recovery');
     ref.read(transportSelectionProvider.notifier).state = TransportSelectionState(
       group: tag,
       operation: operation,
@@ -156,6 +165,7 @@ class HiddifyCoreService with InfraLogger {
         return;
       }
       final status = result['state'];
+      ConnectFlowClock.log?.call('transport ended group=${identity.id} operation=$operation state=$status reason=${result['reason']}');
       final endpoint = '${result['endpoint'] ?? ''}';
       final validWinner = identity.endpoints.any((e) => e['tag'] == endpoint && e['available'] == true);
       final phase = status == 'verified' && validWinner
@@ -516,6 +526,7 @@ class HiddifyCoreService with InfraLogger {
     return TaskEither(() async {
       loggy.debug("selecting outbound");
       final logical = GslTransportGroup.tryParse(outboundTag);
+      if (logical != null && !logical.available) return left('这条线路暂不可用，请选择其他线路');
       cancelTransportSelection();
       final selectionOperation = _transportOperation;
       if (logical != null)

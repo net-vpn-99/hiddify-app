@@ -158,20 +158,35 @@ class StabilityNotifier extends Notifier<StabilityState> {
     } else if (next.phase == 'fatal') {
       unawaited(_transportFailed(_gen, next.reason));
     } else if (next.phase == 'unconfirmed') {
-      _transportAwaiting = true;
-      state = StabilityState(
-        _confirmed ? _rememberedScore : -1,
-        confirmed: _confirmed,
-        egressAudit: '入口验证未确认，未判定线路失败',
-        notice: _confirmed ? '' : '尚未确认',
-      );
+      _endTransportUnconfirmed(_gen, next.reason);
     }
+  }
+
+  void _endTransportUnconfirmed(int gen, String reason) {
+    if (gen != _gen || !_running) return;
+    if (_confirmed) {
+      _transportAwaiting = false;
+      state = StabilityState(_rememberedScore, confirmed: true, egressAudit: '备用入口未确认，保留当前已确认连接');
+      return;
+    }
+    ++_gen;
+    _transportAwaiting = true;
+    _timer?.cancel();
+    _closeWarmClients();
+    state = const StabilityState(-1, notice: '尚未确认');
+    ref.read(connectProgressProvider.notifier).state = const ConnectProgress(
+      failedStep: 5, unconfirmed: true, title: '线路尚未确认', message: '本次验证已结束，请重试或选择其他线路',
+    );
+    final reporter = ref.read(connectReporterProvider);
+    if (reporter.attemptOpen) unawaited(reporter.reportCancel('verify', detail: 'transport_unconfirmed: $reason'));
+    unawaited(ref.read(connectionNotifierProvider.notifier).abortConnection());
   }
 
   Future<void> _transportFailed(int gen, String reason) async {
     final security = reason == 'tls' || reason == 'authentication';
     final explicitBoth = reason == 'both_requests_failed';
-    final title = security
+    final unavailable = reason == 'route_unavailable';
+    final title = unavailable ? '这条线路暂不可用' : security
         ? '线路安全校验未通过'
         : reason == 'update_required'
         ? '请完成客户端更新'
@@ -180,15 +195,19 @@ class StabilityNotifier extends Notifier<StabilityState> {
         : '连接组件未能完成验证';
     final reporter = ref.read(connectReporterProvider);
     if (reporter.attemptOpen) {
-      await reporter.reportFailure(title, forcedStage: explicitBoth ? 'proxy_request' : 'tunnel', probeLog: reason);
+      if (unavailable) {
+        await reporter.reportStepFailure(3, 'route_down', title);
+      } else {
+        await reporter.reportFailure(title, forcedStage: explicitBoth ? 'proxy_request' : 'tunnel', probeLog: reason);
+      }
     }
     if (gen != _gen || !_running) return;
     ref.read(connectProgressProvider.notifier).state = ConnectProgress(
-      failedStep: 5,
+      failedStep: unavailable ? 3 : 5,
       title: title,
       message: reason == 'update_required' ? '请退出后重新打开，或安装当前完整版本。' : '请换线或联系客服。',
     );
-    ref.read(homeFaultProvider.notifier).state = 'engine';
+    ref.read(homeFaultProvider.notifier).state = unavailable ? 'line' : 'engine';
     unawaited(ref.read(connectionNotifierProvider.notifier).abortConnection());
   }
 
@@ -315,7 +334,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     final gen = _gen;
     if (immediate) {
       if (!_transportModeKnown || _transportAwaiting) return;
-      for (final url in (_groupedProfile ? const ['https://ipinfo.io/json'] : _exitUrls)) {
+      for (final url in _exitUrls) {
         unawaited(_warmAsk(gen, url));
       }
     }
@@ -379,6 +398,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
     _warmClients.add(client);
     _Exit? exit;
     Object? err;
+    int? httpStatus;
     // 拿到了 HTTP 回答（哪怕是 429 / 格式认不出）：回答是经节点回来的，线路是通的。
     var answered = false;
     try {
@@ -386,6 +406,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
       req.persistentConnection = false;
       if (_groupedProfile) req.followRedirects = false;
       final res = await req.close();
+      httpStatus = res.statusCode;
       answered = !_groupedProfile || res.statusCode == 200;
       final body = await res.transform(utf8.decoder).join();
       exit = _parseExit(url, body);
@@ -396,6 +417,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
       _warmClients.remove(client);
     }
     if (gen != _gen || !_running || _confirmed) return;
+    if (_groupedProfile) ConnectFlowClock.log?.call('user path result source=${Uri.parse(url).host} http=$httpStatus country=${exit?.cc ?? 'unknown'} error=${err?.runtimeType ?? 'none'} remaining=${_warmClients.length}');
     if (!answered) {
       // 发出后 App 切过线路（连上后 auto_line_fixer 切到偏好 / 推荐那条，或用户自己点）：这条是被切线路结束的，
       // 没到节点，不是证据，重问。1.1.67 的 24 份 dead_tunnel 包全是这样（三条同一毫秒结束，离连上 13～50 毫秒）。
@@ -420,7 +442,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
           InternetAddress.tryParse(exit.ip) == null ||
           expected.isEmpty ||
           exit.cc.toUpperCase() != expected) {
-        state = const StabilityState(-1, notice: '尚未确认');
+        await _warmEnded(gen, url, 'response_not_verified');
         return;
       }
     }
@@ -444,8 +466,7 @@ class StabilityNotifier extends Notifier<StabilityState> {
   Future<void> _warmEnded(int gen, String url, String why) async {
     if (_groupedProfile) {
       if (gen == _gen && _running && !_confirmed) {
-        _transportAwaiting = true;
-        state = const StabilityState(-1, notice: '尚未确认', egressAudit: '正式通道未确认；不重复轮询入口或判定线路失败');
+        if (_warmClients.isEmpty) _endTransportUnconfirmed(gen, 'all_user_path_requests_ended');
       }
       return;
     }

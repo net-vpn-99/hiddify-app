@@ -16,6 +16,19 @@ class SiteLink {
   final String name;
   final String url;
   final String? iconPath;
+
+  static const googleCheckUrl = 'https://www.google.com/search?q=%E4%BB%8A%E5%A4%A9%E5%A4%A9%E6%B0%94';
+
+  Uri get launchUri {
+    final uri = Uri.parse(url);
+    // The catalog's Google homepage can redirect this exit to the retired google.cn/m page.
+    // Keep explicit configured searches and every other site's URL unchanged.
+    if (id == 'google' && const {'google.com', 'www.google.com'}.contains(uri.host) &&
+        (uri.path.isEmpty || uri.path == '/') && !uri.hasQuery && !uri.hasFragment) {
+      return Uri.parse(googleCheckUrl);
+    }
+    return uri;
+  }
 }
 
 class SitesCatalog {

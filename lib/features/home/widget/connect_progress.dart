@@ -24,6 +24,7 @@ class ConnectProgress {
   const ConnectProgress({
     this.step = 0,
     this.failedStep = 0,
+    this.unconfirmed = false,
     this.title = '',
     this.message = '',
     this.action = SettingsAction.none,
@@ -37,6 +38,9 @@ class ConnectProgress {
 
   /// 停在哪一步失败了，0 = 没失败。
   final int failedStep;
+
+  /// Completed without trusted evidence; this is not a measured network failure.
+  final bool unconfirmed;
   final String title;
   final String message;
 
@@ -114,10 +118,19 @@ ConnectProgress _vpnDeniedProgress() {
 Future<ConnectProgress?> lineGoneProgress(T Function<T>(ProviderListenable<T>) read) async {
   final line = read(Preferences.preferredLineName);
   final logicalId = read(Preferences.preferredLogicalLineId);
-  if (line.isEmpty) return null;
   final set = await read(lineSetProvider.future);
   // 只对真订阅比（locked = 账号用不了时的公开橱窗，不算）。
-  if (set.locked || set.lines.isEmpty || set.lines.any((o) => logicalId.isNotEmpty ? o.routeId == logicalId : o.name == line)) return null;
+  if (set.locked || set.lines.isEmpty) return null;
+  final selected = line.isEmpty && logicalId.isEmpty
+      ? set.lines.first
+      : set.lines.where((o) => logicalId.isNotEmpty ? o.routeId == logicalId : o.name == line).firstOrNull;
+  if (selected != null) {
+    final unavailable = await read(unavailableLogicalLinesProvider.future);
+    if (selected.routeId.isNotEmpty && unavailable.contains(selected.routeId)) {
+      return ConnectProgress(failedStep: 3, title: '${selected.name} 暂不可用', message: '请选择其他线路，或稍后刷新线路列表');
+    }
+    return null;
+  }
   final acc = read(panelAuthProvider).account;
   final to = set.lines.where((o) => !(acc?.isLineDown(o.name) ?? false)).firstOrNull?.name ?? '';
   return ConnectProgress(

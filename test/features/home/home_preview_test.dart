@@ -14,6 +14,7 @@ import 'package:hiddify/core/theme/app_theme_mode.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/home/widget/connection_button.dart';
+import 'package:hiddify/features/home/widget/home_page.dart';
 import 'package:hiddify/features/home/widget/home_radar.dart';
 import 'package:hiddify/features/panel_auth/data/panel_api.dart';
 import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
@@ -158,6 +159,20 @@ void main() {
         buttonOutlined: true,
         showAllLines: true,
         onAllLines: () {},
+      ),
+    );
+    await _shot(
+      tester, 'H5-活动卡-已连接.png', state: RadarState.connected,
+      panel: (radar) => HomeConnectPanel(
+        radar: radar, onTap: () {}, enabled: true, connectedDot: true, kicker: '',
+        title: '日本 东京 01 双传输内测', sub: '标准线路',
+        statusExtra: const [Text('↓ 12.42 KiB/s · ↑ 3.24 KiB/s'), Text('连接很稳')],
+        middle: [
+          HomeActivityCard(phase: 'open', onClaim: () {}, onDismiss: () {}),
+          const Padding(padding: EdgeInsets.only(top: 12), child: Text('先点 Google，打得开就说明连通了')),
+          const SizedBox(height: 72, child: Center(child: Text('ChatGPT       Claude       Gemini       Google'))),
+        ],
+        buttonLabel: '断开连接', buttonOutlined: true, showAllLines: true, onAllLines: () {},
       ),
     );
     await _shot(

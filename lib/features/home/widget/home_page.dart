@@ -223,7 +223,7 @@ class HomePage extends HookConsumerWidget {
                       const ConnectIssueCard(),
                       const SupportFailureLink(),
                       if (loggedIn && !activityHidden.value && (giftOpen || giftClaimed.value))
-                        _ActivityCard(
+                        HomeActivityCard(
                           phase: giftClaimed.value ? 'claimed' : (giftPending.value ? 'pending' : 'open'),
                           onClaim: () async {
                             giftPending.value = true;
@@ -316,8 +316,8 @@ class _HomeNote extends ConsumerWidget {
 
 /// 活动卡（B 夜航 §3.7）：活动是「让用户做一件事拿好处」，跟公告分开放，做完或过期才消失。
 /// phase：open 能领 / pending 点过领取、等确认 / claimed 刚领到。× 只是这次收起。
-class _ActivityCard extends StatelessWidget {
-  const _ActivityCard({required this.phase, required this.onClaim, required this.onDismiss});
+class HomeActivityCard extends StatelessWidget {
+  const HomeActivityCard({required this.phase, required this.onClaim, required this.onDismiss});
 
   final String phase;
   final VoidCallback onClaim;
@@ -397,7 +397,7 @@ class _ActivityCard extends StatelessWidget {
 class _SitesBlock extends HookConsumerWidget {
   const _SitesBlock();
 
-  static const _google = 'https://www.google.com/search?q=%E4%BB%8A%E5%A4%A9%E5%A4%A9%E6%B0%94';
+  static const _google = SiteLink.googleCheckUrl;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -512,7 +512,7 @@ class _SitesBlock extends HookConsumerWidget {
                       ? ClipOval(child: Image.file(File(sites[i].iconPath!), width: 24, height: 24, fit: BoxFit.cover))
                       : letter(sites[i].name),
                   onTap: () {
-                    UriUtils.tryLaunch(Uri.parse(sites[i].url));
+                    UriUtils.tryLaunch(sites[i].launchUri);
                     if (sites[i].id.isNotEmpty) PanelApi().reportSiteClick(sites[i].id);
                   },
                 ),

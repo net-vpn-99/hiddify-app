@@ -115,7 +115,11 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     // 没账号 / 到期：这是只能看的公开清单。
     final preview = value?.locked ?? false;
     final tiers = ref.watch(lineTierProvider);
-    final downLines = account?.downLines ?? const <String>{};
+    final unavailableIds = ref.watch(unavailableLogicalLinesProvider).valueOrNull ?? const <String>{};
+    final downLines = {
+      ...?account?.downLines,
+      for (final option in subOptions) if (unavailableIds.contains(option.routeId)) option.name,
+    };
     final busyLines = account?.busyLines ?? const <String>{};
     // 同国家里适合他宽带的在前、繁忙和维修中的最后（两端统一）。
     final lastLines = preview ? const <String>{} : {...busyLines, ...downLines};
@@ -735,7 +739,10 @@ Future<bool> switchToLine(T Function<T>(ProviderListenable<T>) read, String name
 }
 
 Future<bool> chooseLine(BuildContext context, WidgetRef ref, LineOption o) async {
-  if (ref.read(panelAuthProvider).account?.isLineDown(o.name) ?? false) {
+  final unavailableIds = await ref.read(unavailableLogicalLinesProvider.future);
+  if (!context.mounted) return false;
+  if ((o.routeId.isNotEmpty && unavailableIds.contains(o.routeId)) ||
+      (ref.read(panelAuthProvider).account?.isLineDown(o.name) ?? false)) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('「${o.name}」正在维修，暂时连不上。请换一条线路。')));
     return false;

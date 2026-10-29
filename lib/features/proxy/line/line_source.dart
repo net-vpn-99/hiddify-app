@@ -5,6 +5,7 @@ import 'package:hiddify/features/panel_auth/notifier/panel_auth.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
+import 'package:hiddify/features/proxy/model/transport_group.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 typedef LineOption = NodeName;
@@ -78,11 +79,17 @@ final homeLineProvider = Provider<HomeLine?>((ref) {
 });
 
 /// 当前订阅里的线路列表，从本地 profile 文件离线读出来（不用连接）。
-final activeProfileLinesProvider = FutureProvider<List<LineOption>>((ref) async {
+final activeProfileRawProvider = FutureProvider<String>((ref) async {
   final profile = await ref.watch(activeProfileProvider.future);
-  if (profile == null) return const [];
+  if (profile == null) return '';
   final repo = await ref.watch(profileRepositoryProvider.future);
-  final raw = await repo.getRawConfig(profile.id).getOrElse((_) => '').run();
-  if (raw.isEmpty) return const [];
-  return parseSubscriptionLines(raw);
+  return repo.getRawConfig(profile.id).getOrElse((_) => '').run();
+});
+
+final activeProfileLinesProvider = FutureProvider<List<LineOption>>((ref) async {
+  return parseSubscriptionLines(await ref.watch(activeProfileRawProvider.future));
+});
+
+final unavailableLogicalLinesProvider = FutureProvider<Set<String>>((ref) async {
+  return unavailableTransportGroups(await ref.watch(activeProfileRawProvider.future));
 });

@@ -11,6 +11,8 @@ class GslTransportGroup {
   final int revision;
   final List<Map<String, dynamic>> endpoints;
 
+  bool get available => endpoints.any((endpoint) => endpoint['available'] == true);
+
   String get country =>
       const {'日本': 'JP', '香港': 'HK', '美国': 'US', '新加坡': 'SG', '韩国': 'KR', '台湾': 'TW', '英国': 'GB'}[name
           .trim()
@@ -77,8 +79,25 @@ class TransportSelectionState {
     this.reason = '',
   });
   final String group, operation, phase, endpoint, reason;
-  bool get pending => phase == 'awaiting_selection' || phase == 'checking' || phase == 'unconfirmed';
+  bool get pending => phase == 'awaiting_selection' || phase == 'checking';
   bool get selected => phase == 'selected';
 }
 
 final transportSelectionProvider = StateProvider<TransportSelectionState>((ref) => const TransportSelectionState());
+
+/// Explicit subscription availability, independent of display names or account status labels.
+Set<String> unavailableTransportGroups(String raw) {
+  try {
+    final config = jsonDecode(raw);
+    if (config is! Map || config['outbounds'] is! List) return {};
+    final groups = <GslTransportGroup>[];
+    for (final outbound in config['outbounds'] as List) {
+      if (outbound is! Map || outbound['tag'] is! String) continue;
+      final group = GslTransportGroup.tryParse(outbound['tag'] as String);
+      if (group != null) groups.add(group);
+    }
+    return {for (final group in groups) if (!group.available) group.id};
+  } catch (_) {
+    return {};
+  }
+}
