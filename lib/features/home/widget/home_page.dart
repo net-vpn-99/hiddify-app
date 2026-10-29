@@ -507,7 +507,7 @@ class _SitesBlock extends HookConsumerWidget {
                 if (i > 0) const SizedBox(width: 6),
                 chip(
                   name: sites[i].name,
-                  test: i == 0,
+                  test: sites[i].id == 'google' || (sites[i].id.isEmpty && sites[i].url == _google),
                   icon: sites[i].iconPath != null && File(sites[i].iconPath!).existsSync()
                       ? ClipOval(child: Image.file(File(sites[i].iconPath!), width: 24, height: 24, fit: BoxFit.cover))
                       : letter(sites[i].name),

@@ -9,6 +9,11 @@ on:
     branches: [oneray-rel]
   workflow_dispatch:
     inputs:
+      official_release:
+        description: "Use the formal signing certificate for an official release only."
+        type: boolean
+        required: false
+        default: false
       default_invite_code:
         description: "Bake this invite code into the APK. Empty for official builds."
         required: false
@@ -47,7 +52,8 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Set up release signing (skipped if secrets absent -> debug-signed)
+      - name: Set up formal signing (official release only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.official_release }}
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -55,8 +61,8 @@ jobs:
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           if [ -z "$KS_B64" ]; then
-            echo "No ANDROID_KEYSTORE_BASE64 secret -> APK will be debug-signed."
-            exit 0
+            echo "Official release requires the formal signing certificate."
+            exit 1
           fi
           echo "$KS_B64" | base64 -d > android/app/oneray.jks
           printf 'storeFile=oneray.jks\nstorePassword=%s\nkeyPassword=%s\nkeyAlias=%s\n' \
