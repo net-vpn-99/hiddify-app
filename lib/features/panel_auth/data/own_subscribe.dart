@@ -116,6 +116,6 @@ String withOwnTransportSchema(String url) {
   if (!isOwnAccountSubscribeSource(url)) return url;
   final parsed = Uri.parse(url);
   return parsed
-      .replace(queryParameters: {...parsed.queryParameters, 'flag': 'general', 'gsl_transport_schema': '1'})
+      .replace(queryParameters: {...parsed.queryParameters, 'flag': 'general', 'gsl_transport_schema': '1', 'gsl_recommendation_schema': '1'})
       .toString();
 }

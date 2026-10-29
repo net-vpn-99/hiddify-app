@@ -112,6 +112,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
     final isp = ref.watch(panelAuthProvider.select((s) => s.account?.isp ?? ''));
     final account = ref.watch(panelAuthProvider).account;
     final subOptions = value?.lines ?? const <LineOption>[];
+    final recommendedLine = serverRecommendedLine(subOptions, ref.watch(subscriptionRecommendationProvider));
     // 没账号 / 到期：这是只能看的公开清单。
     final preview = value?.locked ?? false;
     final tiers = ref.watch(lineTierProvider);
@@ -166,7 +167,7 @@ class _LinePickerSheetState extends ConsumerState<_LinePickerSheet> {
         showKind: showKind,
         isp: isp,
         tierTag: tierTag,
-        recommended: !preview && pickedName.isEmpty && subOptions.isNotEmpty && sameNodeIdentity(o, subOptions.first),
+        recommended: !preview && pickedName.isEmpty && recommendedLine != null && sameNodeIdentity(o, recommendedLine),
         down: down,
         busy: busy,
         aiTip: tag != null && code != null && RemoteSiteConfig.aiTipRegions.contains(code) ? tag : '',

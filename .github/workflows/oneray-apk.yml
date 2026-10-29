@@ -76,7 +76,11 @@ jobs:
 
       # 连接检查结论表（docs/计划/连接检查.md，VPN 仓库）：情况表里每一种情况都要对，不对就不出包。
       - name: Test connect-check verdicts (连接检查结论表)
-        run: flutter test test/features/connection/connect_check_verdict_test.dart test/features/proxy/transport_group_test.dart test/features/proxy/node_display_test.dart test/features/panel_auth/own_subscribe_test.dart test/features/connection/connect_progress_transport_test.dart test/features/connection/transport_terminal_test.dart test/features/connection/close_warm_clients_test.dart test/features/home/google_launch_test.dart test/features/home/home_activity_layout_test.dart test/features/proxy/transport_unavailable_test.dart
+        run: flutter test test/features/proxy/subscription_recommendation_test.dart test/features/connection/recommendation_live_session_test.dart test/features/connection/connect_check_verdict_test.dart test/features/proxy/transport_group_test.dart test/features/proxy/node_display_test.dart test/features/panel_auth/own_subscribe_test.dart test/features/connection/connect_progress_transport_test.dart test/features/connection/transport_terminal_test.dart test/features/connection/close_warm_clients_test.dart test/features/home/google_launch_test.dart test/features/home/home_activity_layout_test.dart test/features/proxy/transport_unavailable_test.dart
+
+      # 分流采集、网站/App选择、账号同步必须通过，避免界面或规则漏进候选。
+      - name: Test smart split (采集与自定义分流)
+        run: flutter test test/features/smart_split
 
       # 核心写死的国内名单（hiddify-geo）很不全，B 站 / QQ / 微信都不在里面 → 换成源站上
       # 跟 iOS 同一份的名单。替换不成功会让构建失败，不会带着旧名单出包。

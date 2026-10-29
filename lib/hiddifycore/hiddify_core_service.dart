@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:hiddify/features/proxy/model/subscription_recommendation.dart';
 import 'dart:convert';
 import 'package:hiddify/features/connection/data/connect_flow_clock.dart';
 import 'package:hiddify/features/proxy/model/transport_group.dart';
@@ -311,8 +312,19 @@ class HiddifyCoreService with InfraLogger {
     } catch (_) {}
   }
 
+  Future<String?> _recommendationStartError(String path) async {
+    try {
+      final decision=SubscriptionRecommendation.read(await File(path).readAsString());
+      final manual=ref.read(Preferences.preferredLineName).isNotEmpty || ref.read(Preferences.preferredLogicalLineId).isNotEmpty;
+      if(decision.known && !decision.selected && !manual) return '暂时没有推荐线路，请手动选择一条线路或稍后刷新';
+      return null;
+    }catch(_){return '线路配置无法读取，请刷新线路列表';}
+  }
+
   TaskEither<ConnectionFailure, Unit> start(String path, String name, bool disableMemoryLimit) {
     return TaskEither(() async {
+      final recommendationError=await _recommendationStartError(path);
+      if(recommendationError!=null)return left(ConnectionFailure.unexpected(recommendationError));
       await _prepareTransportProfile(path);
       statusController.add(currentState = const CoreStatus.starting());
       await _truncateCoreLog();
@@ -406,6 +418,8 @@ class HiddifyCoreService with InfraLogger {
 
   TaskEither<String, Unit> restart(String path, String name, bool disableMemoryLimit) {
     return TaskEither(() async {
+      final recommendationError=await _recommendationStartError(path);
+      if(recommendationError!=null)return left(recommendationError);
       loggy.debug("restarting");
       await _prepareTransportProfile(path);
       // if (!await core.restart(path, name)) {

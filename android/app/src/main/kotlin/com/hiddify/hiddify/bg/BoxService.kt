@@ -158,6 +158,14 @@ class BoxService(
                 return
             }
 
+            if (Settings.startCoreAfterStartingService && RecommendationStartGuard.blocksAutomaticStart(
+                    File(selectedConfigPath).readText(), Settings.hasManualLine) {
+                    String(android.util.Base64.decode(it, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP), Charsets.UTF_8)
+                }) {
+                stopAndAlert(Alert.StartService, "暂时没有推荐线路，请打开光速雷达手动选择线路")
+                return
+            }
+
             activeProfileName = Settings.activeProfileName
 
             withContext(Dispatchers.Main) {

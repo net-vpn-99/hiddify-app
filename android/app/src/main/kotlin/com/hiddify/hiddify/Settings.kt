@@ -170,6 +170,10 @@ object Settings {
         get() = preferences.getInt(SettingsKey.GRPC_PORT, 17078)!!
         set(value) = preferences.edit().putInt(SettingsKey.GRPC_PORT, value).apply()
 
+    val hasManualLine: Boolean
+        get() = !preferences.getString("flutter.preferred_line_name", "").isNullOrBlank() ||
+            !preferences.getString("flutter.preferred_logical_line_id", "").isNullOrBlank()
+
     var startCoreAfterStartingService: Boolean
         get() = preferences.getBoolean(SettingsKey.START_CORE_ON_STARTING_SERVICE, false)
         set(value) = preferences.edit().putBoolean(SettingsKey.START_CORE_ON_STARTING_SERVICE, value).apply()

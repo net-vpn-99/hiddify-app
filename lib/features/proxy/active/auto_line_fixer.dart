@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
+import 'package:hiddify/features/proxy/line/line_source.dart';
+import 'package:hiddify/features/proxy/model/subscription_recommendation.dart';
 import 'package:hiddify/features/proxy/model/transport_group.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 
@@ -9,7 +12,6 @@ import 'package:hiddify/features/connection/data/drop_notice.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/home/widget/connect_progress.dart';
 import 'package:hiddify/features/proxy/data/proxy_data_providers.dart';
-import 'package:hiddify/features/proxy/data/proxy_repository.dart';
 import 'package:hiddify/features/proxy/model/node_display.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -40,8 +42,11 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
 
     final real = group.items.where((o) => (!o.isGroup || isLogicalTransportTag(o.tag)) && !isAutoGroupTag(o.tag)).toList();
     if (real.isEmpty) continue;
+    // A refreshed recommendation is not a new connection intent.
+    if (preferred.isEmpty && logicalId.isEmpty && ref.read(stabilityProvider).confirmed) return;
     final unavailable = await lineGoneProgress(ref.read);
     if (unavailable != null) {
+      if (unavailable.recommendationMissing && _retainRunningSelection(ref, real, group.selected)) return;
       _stopForGoneLine(ref, unavailable);
       return;
     }
@@ -77,18 +82,26 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
       return; // 每次连接（或每次改偏好）只跑一次
     }
 
-    // 2) 没有偏好：跟服务器排的第一条（已经是它就不动）
-    if (group.selected == real.first.tag) {
+    // 2) No preference: use the explicit decision, or the legacy first only if absent.
+    final policy = SubscriptionRecommendation.read(await ref.read(activeProfileRawProvider.future));
+    final target = policy.defaultTag(real.map((o) => o.tag).toList());
+    if (target == null) {
+      if (_retainRunningSelection(ref, real, group.selected)) return;
+      _stopForGoneLine(ref, const ConnectProgress(failedStep:3, recommendationMissing:true,
+          title:'暂时没有推荐线路',message:'请手动选择一条线路，或稍后刷新线路列表'));
+      return;
+    }
+    if (group.selected == target) {
       final core = ref.read(hiddifyCoreServiceProvider);
-      if (isLogicalTransportTag(real.first.tag)) {
-        unawaited(core.verifyTransportGroup(real.first.tag));
+      if (isLogicalTransportTag(target)) {
+        unawaited(core.verifyTransportGroup(target));
       } else {
         core.retainLegacySelection();
       }
       return;
     }
 
-    await _applyServerRecommended(repo, group.tag, real);
+    await repo.selectProxy(group.tag, target).run();
     return;
   }
 });
@@ -96,7 +109,7 @@ final autoLineFixerProvider = StreamProvider<void>((ref) async* {
 /// 断开前先把卡、上报、通知都做完：断开会让这个 provider 重跑，之后 ref 就不能用了。
 void _stopForGoneLine(Ref ref, ConnectProgress gone) {
   ref.read(connectProgressProvider.notifier).state = gone;
-  unawaited(ref.read(connectReporterProvider).reportStepFailure(3, gone.lineGone ? 'route_gone' : 'route_down', '${gone.title}：${gone.message}'));
+  unawaited(ref.read(connectReporterProvider).reportStepFailure(3, gone.recommendationMissing ? 'recommendation_unavailable' : (gone.lineGone ? 'route_gone' : 'route_down'), '${gone.title}：${gone.message}'));
   // App 在后台（快捷开关、开机时多半是）：发一条系统通知，不然他不知道为什么没连上
   if (!ref.read(appForegroundProvider)) {
     unawaited(DropNotice.show('打开光速雷达换一条线路', title: gone.title));
@@ -104,16 +117,16 @@ void _stopForGoneLine(Ref ref, ConnectProgress gone) {
   unawaited(ref.read(connectionNotifierProvider.notifier).abortConnection());
 }
 
-/// 服务端推荐 = 订阅第一条（real.first，负载均衡钩子按用户排在最前）。
-/// **先立刻切过去**，不等 urltest —— 否则连上后十几秒内核还在走它自己默认挑的
-/// 「最快」节点（国内经常是美国 CN2 GIA），负载均衡白排。
-///
-/// 以前这里切完还会后台测一轮：推荐节点连不上就**自动回退到最快那条**。两端统一
-/// 去掉了（docs/连上但不通-两端统一-手册.md）：连不上由 connection_notifier 按正面证据
-/// 断开并在首页说原因和下一步，换哪条由用户自己选。
-Future<void> _applyServerRecommended(
-  ProxyRepository repo,
-  String groupTag,
-  List<OutboundInfo> real) async {
-  await repo.selectProxy(groupTag, real.first.tag).run();
+
+
+// New starts are guarded before core startup. If a pending/live core already has a
+// real selection, a later catalog change must not turn it into a fresh default pick.
+bool _retainRunningSelection(Ref ref, List<OutboundInfo> real, String selected) {
+  final current=real.where((node)=>node.tag==selected).firstOrNull;
+  if(current==null)return false;
+  final core=ref.read(hiddifyCoreServiceProvider);
+  if(isLogicalTransportTag(current.tag)){
+    unawaited(core.verifyTransportGroup(current.tag));
+  }else{core.retainLegacySelection();}
+  return true;
 }

@@ -1,3 +1,4 @@
+import 'package:hiddify/features/profile/data/profile_recommendation.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
@@ -281,15 +282,15 @@ class ProfileRepositoryImpl with ExceptionHandler, InfraLogger implements Profil
   @override
   TaskEither<ProfileFailure, Unit> validateConfig(String path, String tempPath, String? profileOverride, bool debug) =>
       TaskEither.fromEither(_configOptionRepo.fullOptionsOverrided(profileOverride))
-          .mapLeft((configOptionFailure) => ProfileFailure.invalidConfig(null, configOptionFailure))
-          .flatMap(
-            (overridedOptions) => _singbox
-                .changeOptions(overridedOptions)
-                .mapLeft(ProfileFailure.invalidConfig)
-                .flatMap(
-                  (_) => _singbox.validateConfigByPath(path, tempPath, debug).mapLeft(ProfileFailure.invalidConfig),
-                ),
-          );
+          .mapLeft((failure) => ProfileFailure.invalidConfig(null, failure))
+          .flatMap((options) => _singbox.changeOptions(options)
+              .mapLeft(ProfileFailure.invalidConfig)
+              .flatMap((_) => TaskEither.tryCatch(() async {
+                return convertProfileWithRecommendation(tempPath,path,(staging) async {
+                  final result=await _singbox.validateConfigByPath(staging,tempPath,debug).mapLeft(ProfileFailure.invalidConfig).run();
+                  return result.fold((failure)=>throw failure,(unit)=>unit);
+                });
+              }, (error,stack) => error is ProfileFailure ? error : ProfileFailure.unexpected(error,stack))));
 
   @override
   TaskEither<ProfileFailure, String> generateConfig(String id) => TaskEither.fromEither(

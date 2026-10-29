@@ -1,3 +1,4 @@
+import 'package:hiddify/features/proxy/model/subscription_recommendation.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/connection/notifier/stability_notifier.dart';
@@ -65,15 +66,17 @@ final homeLineProvider = Provider<HomeLine?>((ref) {
   LineOption named(String name, String id) =>
       lines.where((o) => id.isNotEmpty ? o.routeId == id : o.name == name).firstOrNull ??
       (name: name, desc: name == last ? lastDesc : '', isps: null, pro: false, routeId: id);
-  final first = lines.firstOrNull;
+  final policy = ref.watch(subscriptionRecommendationProvider);
+  final first = serverRecommendedLine(lines, policy);
   final connected = ref.watch(connectionNotifierProvider.select((s) => s.valueOrNull?.isConnected ?? false));
   // 还没确认通时内核可能先恢复上一次的选择、lastNodeName 闪成旧的那条，fixer 马上切走：这时照「会连哪条」写
   if (connected && last.isNotEmpty && ref.watch(stabilityProvider.select((s) => s.confirmed))) {
     return (line: named(last, lastLogicalId), recommended: preferred.isEmpty && first != null && sameNodeIdentity(first, named(last, lastLogicalId)),
     );
   }
-  if (preferred.isNotEmpty) return (line: named(preferred, logicalId), recommended: false);
+  if (preferred.isNotEmpty || logicalId.isNotEmpty) return (line: named(preferred, logicalId), recommended: false);
   if (first != null) return (line: first, recommended: true);
+  if (policy?.known == true) return null;
   // 清单还在读（冷启动那一下）：跟服务器走的人先写上次那条，提示行照样是「推荐线路」，读出来不跳字
   return last.isEmpty ? null : (line: named(last, lastLogicalId), recommended: set == null);
 });
@@ -89,6 +92,21 @@ final activeProfileRawProvider = FutureProvider<String>((ref) async {
 final activeProfileLinesProvider = FutureProvider<List<LineOption>>((ref) async {
   return parseSubscriptionLines(await ref.watch(activeProfileRawProvider.future));
 });
+
+final subscriptionRecommendationProvider = Provider<SubscriptionRecommendation?>((ref) {
+  final raw = ref.watch(activeProfileRawProvider);
+  if (raw.isLoading || !raw.hasValue) return null;
+  return SubscriptionRecommendation.read(raw.value!);
+});
+
+LineOption? serverRecommendedLine(List<LineOption> lines, SubscriptionRecommendation? policy) {
+  if (policy == null) return null;
+  if (!policy.known) return lines.firstOrNull;
+  if (!policy.selected) return null;
+  final matches = lines.where((line) => policy.logicalId.isNotEmpty
+      ? line.routeId == policy.logicalId : line.name == splitNodeName(policy.selectedTag).name).toList();
+  return matches.length == 1 ? matches.single : null;
+}
 
 final unavailableLogicalLinesProvider = FutureProvider<Set<String>>((ref) async {
   return unavailableTransportGroups(await ref.watch(activeProfileRawProvider.future));

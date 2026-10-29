@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:hiddify/features/proxy/model/subscription_recommendation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
@@ -30,6 +31,7 @@ class ConnectProgress {
     this.action = SettingsAction.none,
     this.repair = false,
     this.lineGone = false,
+    this.recommendationMissing = false,
     this.switchTo = '',
   });
 
@@ -41,6 +43,7 @@ class ConnectProgress {
 
   /// Completed without trusted evidence; this is not a measured network failure.
   final bool unconfirmed;
+  final bool recommendationMissing;
   final String title;
   final String message;
 
@@ -121,9 +124,14 @@ Future<ConnectProgress?> lineGoneProgress(T Function<T>(ProviderListenable<T>) r
   final set = await read(lineSetProvider.future);
   // 只对真订阅比（locked = 账号用不了时的公开橱窗，不算）。
   if (set.locked || set.lines.isEmpty) return null;
-  final selected = line.isEmpty && logicalId.isEmpty
-      ? set.lines.first
+  final automatic = line.isEmpty && logicalId.isEmpty;
+  final selected = automatic
+      ? serverRecommendedLine(set.lines, SubscriptionRecommendation.read(await read(activeProfileRawProvider.future)))
       : set.lines.where((o) => logicalId.isNotEmpty ? o.routeId == logicalId : o.name == line).firstOrNull;
+  if (automatic && selected == null) {
+    return const ConnectProgress(failedStep:3, recommendationMissing:true,
+        title:'暂时没有推荐线路', message:'请手动选择一条线路，或稍后刷新线路列表');
+  }
   if (selected != null) {
     final unavailable = await read(unavailableLogicalLinesProvider.future);
     if (selected.routeId.isNotEmpty && unavailable.contains(selected.routeId)) {
