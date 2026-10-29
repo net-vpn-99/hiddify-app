@@ -6,21 +6,21 @@ import 'package:hiddify/features/smart_split/data/box_log_parser.dart';
 import 'package:hiddify/features/smart_split/data/clash_conns.dart';
 import 'package:hiddify/features/smart_split/data/collector.dart';
 
-/// 采集读 box.log（样例是 10-25 真机诊断 1E12-1025 的原样几行：OPPO 手机、Edge 打开 btsj6）。
+/// 采集读 box.log；脱敏格式样例保留连接号、重复出站行和 DNS 行，网址使用保留测试域。
 /// 跑法：flutter test test/features/smart_split
 void main() {
-  final sample = File('test/fixtures/split/box-sample.log').readAsStringSync();
+  final sample = File('test/fixtures/split/box-sample.txt').readAsStringSync();
 
   test('testPairPackageAndHost：同一个连接号拼上包名和网址，出站行重复的只算一次', () {
     final conns = parseBoxLog(sample);
     final edge = conns.where((c) => c.pkg == 'com.microsoft.emmx').map((c) => c.host).toList();
-    expect(edge, ['www.btsj6.com', 'm.btsj6.com', 'imgb.anycip.com']);
+    expect(edge, ['www.example.test', 'm.example.test', 'img.example.test']);
   });
 
   test('testDirectVsProxy', () {
     final conns = parseBoxLog(sample);
-    expect(conns.firstWhere((c) => c.host == 'loc.map.baidu.com').outbound, 'direct');
-    expect(conns.firstWhere((c) => c.host == 'www.btsj6.com').outbound, 'proxy');
+    expect(conns.firstWhere((c) => c.host == 'location.example.test').outbound, 'direct');
+    expect(conns.firstWhere((c) => c.host == 'www.example.test').outbound, 'proxy');
   });
 
   test('testIgnoreLinesWithoutId：DNS 那几行、没有连接号的行不出连接', () {

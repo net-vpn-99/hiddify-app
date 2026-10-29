@@ -1,0 +1,24 @@
+INFO [2701029455 0ms] inbound/tun[tun-in]: inbound connection from 172.19.0.1:37842
+INFO [2701029455 0ms] inbound/tun[tun-in]: inbound connection to 203.0.113.34:443
+INFO [2701029455 0ms] router: found package name: com.oplus.location
+INFO [2701029455 20ms] outbound/direct[direct §hide§]: outbound connection to location.example.test:443
+INFO [2331236780 0ms] inbound/tun[tun-in]: inbound connection from [fdfe:dcba:9876::1]:39880
+INFO [2331236780 0ms] inbound/tun[tun-in]: inbound connection to [fc00::19]:443
+INFO [2331236780 4ms] router: found package name: com.microsoft.emmx
+INFO [2331236780 52ms] outbound/vless[测试线路 ]: outbound connection to www.example.test:443
+INFO [2331236780 434ms] outbound/vless[测试线路 ]: outbound connection to www.example.test:443
+INFO [3557609936 0ms] inbound/tun[tun-in]: inbound connection from [fdfe:dcba:9876::1]:46108
+INFO [3557609936 0ms] inbound/tun[tun-in]: inbound connection to [fc00::1b]:443
+INFO [3557609936 5ms] router: found package name: com.microsoft.emmx
+INFO [3557609936 29ms] outbound/vless[测试线路 ]: outbound connection to m.example.test:443
+INFO [3557609936 473ms] outbound/vless[测试线路 ]: outbound connection to m.example.test:443
+INFO [83538718 0ms] inbound/tun[tun-in]: inbound packet connection from 172.19.0.1:27234
+INFO [83538718 0ms] inbound/tun[tun-in]: inbound packet connection to 172.19.0.2:53
+INFO [83538718 2ms] router: found package name: com.microsoft.emmx
+INFO [83538718 3ms] dns: exchanged A img.example.test. 86400 IN A 198.18.0.28
+INFO [3065029418 0ms] inbound/tun[tun-in]: inbound connection from [fdfe:dcba:9876::1]:49004
+INFO [3065029418 0ms] inbound/tun[tun-in]: inbound connection to [fc00::1c]:443
+INFO [3065029418 2ms] router: found package name: com.microsoft.emmx
+INFO [3065029418 26ms] outbound/vless[测试线路 ]: outbound connection to img.example.test:443
+INFO [3065029418 406ms] outbound/vless[测试线路 ]: outbound connection to img.example.test:443
+INFO sing-box started (0.433s)
