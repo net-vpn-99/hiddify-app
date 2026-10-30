@@ -53,7 +53,8 @@ sealed class CoreStatus with _$CoreStatus {
           MessageType.ERROR_PARSING_CONFIG => CoreAlert.emptyConfiguration,
           MessageType.ERROR_BUILDING_CONFIG => CoreAlert.emptyConfiguration,
           MessageType.EMPTY_CONFIGURATION => CoreAlert.emptyConfiguration,
-          MessageType.ALREADY_STOPPED => CoreAlert.createService,
+          // 上一份核心已经停了，不是这次没创建成功。记成失败会在启动后几毫秒直接断开。
+          MessageType.ALREADY_STOPPED => null,
           MessageType.ALREADY_STARTED => CoreAlert.startService,
 
           // MessageType.REQUEST_VPN_PERMISSION => SingboxAlert.requestVPNPermission,
@@ -80,6 +81,9 @@ sealed class CoreStatus with _$CoreStatus {
         CoreAlert.requestNotificationPermission => ConnectionFailure.missingNotificationPermission(message),
 
         CoreAlert.requestVPNPermission => ConnectionFailure.missingVpnPermission(message),
+
+        CoreAlert.createService when ((message ?? '').isEmpty) =>
+          ConnectionFailure.unexpected("createService - command server did not start"),
 
         CoreAlert.startCommandServer ||
         CoreAlert.createService ||

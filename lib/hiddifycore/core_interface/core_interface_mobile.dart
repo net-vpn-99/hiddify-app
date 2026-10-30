@@ -103,7 +103,12 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
   @override
   Future<CoreStatus> setupBackground(String path, String name) async {
     // if (!await waitUntilPort(portBack, false, stop)) return const CoreStatus.stopped(alert: CoreAlert.createService);
-    if (!await stop()) return const CoreStatus.stopped(alert: CoreAlert.createService);
+    if (!await stop()) {
+      return const CoreStatus.stopped(
+        alert: CoreAlert.createService,
+        message: "background core did not release its port",
+      );
+    }
     _status.clean();
     await methodChannel.invokeMethod("start", {
       "path": path,

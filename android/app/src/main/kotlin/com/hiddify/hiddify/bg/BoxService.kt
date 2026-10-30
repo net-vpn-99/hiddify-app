@@ -39,10 +39,10 @@ import com.hiddify.core.libbox.SystemProxyStatus
 import com.hiddify.hiddify.BuildConfig
 import com.hiddify.hiddify.MainActivity
 import com.hiddify.hiddify.constant.Bugs
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -105,12 +105,24 @@ class BoxService(
         @JvmStatic
         var lastStopReason: String = ""
 
-        fun stop() {
+        @Volatile
+        private var pendingStop: CompletableDeferred<Unit>? = null
+
+        // 给停止入口看：状态已经是 Stopped 时，命令服务可能还开着，这时也要等关掉再连。
+        @Volatile
+        @JvmStatic
+        var commandServerOpen: Boolean = false
+            private set
+
+        fun stop(): CompletableDeferred<Unit> {
+            val gate = CompletableDeferred<Unit>()
+            pendingStop = gate
             Application.application.sendBroadcast(
                     Intent(Action.SERVICE_CLOSE).setPackage(
                             Application.application.packageName
                     )
             )
+            return gate
         }
 
 
@@ -144,6 +156,36 @@ class BoxService(
 
 
     private var activeProfileName = ""
+    // Mobile.setup 成功后命令服务还在。核心已经停、或状态已是 Stopped，也不能跳过 Mobile.close，
+    // 否则下一次 setup 会抛空消息的 CreateService（tun 授权后立刻重连时碰到）。
+    private fun releaseCommandServer() {
+        if (!commandServerOpen) return
+        runCatching { Mobile.close(4L) }
+        commandServerOpen = false
+    }
+
+    private fun forceReleaseCommandServer() {
+        runCatching { Mobile.close(4L) }
+        commandServerOpen = false
+    }
+
+    private fun setupMobile() {
+        Mobile.setup(
+            SetupOptions().also {
+                it.basePath = Settings.baseDir
+                it.workingDir = Settings.workingDir
+                it.tempDir = Settings.tempDir
+                it.fixAndroidStack = com.hiddify.hiddify.bg.Bugs.fixAndroidStack
+                it.mode = 4L
+                it.listen = "127.0.0.1:${Settings.grpcServiceModePort}"
+                it.secret = ""
+                it.debug = Settings.debugMode
+            },
+            platformInterface,
+        )
+        commandServerOpen = true
+    }
+
     private suspend fun startService() {
         try {
             status.postValue(Status.Starting)
@@ -177,25 +219,19 @@ class BoxService(
 
             DefaultNetworkMonitor.start()
             Libbox.setMemoryLimit(!Settings.disableMemoryLimit)
-            val newService = try {
-                Mobile.setup(
-                    SetupOptions().also {
-                        it.basePath = Settings.baseDir
-                        it.workingDir = Settings.workingDir
-                        it.tempDir = Settings.tempDir
-                        it.fixAndroidStack = com.hiddify.hiddify.bg.Bugs.fixAndroidStack
-                        it.mode=4L//mode.toLong()
-                        it.listen= "127.0.0.1:${Settings.grpcServiceModePort}"
-                        it.secret=""
-                        it.debug = Settings.debugMode
-                    },platformInterface)
-
-
-//                Libbox.newService(content,platformInterface)
-
+            releaseCommandServer()
+            try {
+                setupMobile()
             } catch (e: Exception) {
-                stopAndAlert(Alert.CreateService, e.message)
-                return
+                forceReleaseCommandServer()
+                try {
+                    setupMobile()
+                } catch (e2: Exception) {
+                    forceReleaseCommandServer()
+                    val detail = e2.message?.takeIf { it.isNotBlank() } ?: e2.javaClass.simpleName
+                    stopAndAlert(Alert.CreateService, detail)
+                    return
+                }
             }
             status.postValue(Status.Started)
             // OneRay：连着的时候顺手每分钟看一眼客服回复（只在 App 退后台、刚给客服发过消息时才真去查）。
@@ -285,7 +321,11 @@ class BoxService(
     }
 
     private fun stopService() {
-        if (status.value == Status.Stopped) return
+        val gate = pendingStop
+        if (status.value == Status.Stopped && !commandServerOpen) {
+            gate?.complete(Unit)
+            return
+        }
         status.value = Status.Stopping
         supportTicker?.cancel()
         supportTicker = null
@@ -295,42 +335,29 @@ class BoxService(
         }
         notification.close()
         GlobalScope.launch(Dispatchers.IO) {
-            val pfd = fileDescriptor
-            if (pfd != null) {
-                pfd.close()
-                fileDescriptor = null
+            try {
+                val pfd = fileDescriptor
+                if (pfd != null) {
+                    pfd.close()
+                    fileDescriptor = null
+                }
+                DefaultNetworkMonitor.stop()
+                Settings.startedByUser = false
+                withContext(Dispatchers.Main) {
+                    releaseCommandServer()
+                    status.value = Status.Stopped
+                    service.stopSelf()
+                }
+                notification.close()
+            } finally {
+                gate?.complete(Unit)
             }
-//            commandServer?.setService(null)
-//            boxService?.apply {
-//                runCatching {
-//                    close()
-//                }.onFailure {
-//                    writeLog("service: error when closing: $it")
-//                }
-//                //Seq.destroyRef(refnum)
-//            }
-
-//            boxService = null
-//            Libbox.registerLocalDNSTransport(null)
-            DefaultNetworkMonitor.stop()
-
-//            commandServer?.apply {
-//                close()
-//                Seq.destroyRef(refnum)
-//            }
-//            commandServer = null
-            Settings.startedByUser = false
-            withContext(Dispatchers.Main) {
-                Mobile.close(4L)
-                status.value = Status.Stopped
-                service.stopSelf()
-            }
-            notification.close()
         }
     }
 
     private suspend fun stopAndAlert(type: Alert, message: String? = null) {
         Settings.startedByUser = false
+        releaseCommandServer()
         withContext(Dispatchers.Main) {
             if (receiverRegistered) {
                 service.unregisterReceiver(receiver)

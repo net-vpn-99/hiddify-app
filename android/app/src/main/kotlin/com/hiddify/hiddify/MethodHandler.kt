@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 class MethodHandler(private val scope: CoroutineScope) : FlutterPlugin,
@@ -145,7 +146,9 @@ class MethodHandler(private val scope: CoroutineScope) : FlutterPlugin,
                             Log.w(TAG, "service is not running")
                             //    return@launch success(true)
                         }
-                        BoxService.stop()
+                        val waitForClose = mainActivity.serviceStatus.value != Status.Stopped || BoxService.commandServerOpen
+                        val gate = BoxService.stop()
+                        if (waitForClose) withTimeoutOrNull(3000) { gate.await() }
                         success(true)
                     }
                 }
